@@ -1,0 +1,222 @@
+import { useLiveQuery } from 'dexie-react-hooks';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRegisterSW } from 'virtual:pwa-register/react';
+import { clearJournal, createNote, openDaily, recoverJournal } from './lib/actions';
+import { db } from './lib/db';
+import { seedIfEmpty } from './lib/seed';
+import { useStore, store } from './lib/store';
+import { allTagPaths } from './lib/tags';
+import type { Note, Notebook } from './lib/types';
+import { Dialogs, ToastHost } from './components/Dialogs';
+import { EditorPane, Boundary } from './components/EditorPane';
+import { ListColumn } from './components/ListColumn';
+import { Sidebar } from './components/Sidebar';
+
+const THEME_COLORS = { light: '#f5f2eb', dark: '#191816' };
+
+function useTheme() {
+  const pref = useStore((s) => s.theme);
+  useEffect(() => {
+    const mq = matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => {
+      const mode = pref === 'system' ? (mq.matches ? 'dark' : 'light') : pref;
+      document.documentElement.dataset.theme = mode;
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLORS[mode]);
+    };
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, [pref]);
+}
+
+function Resizer({ target, min, max }: { target: 'sidebar' | 'list'; min: number; max: number }) {
+  const width = useStore((s) => s.widths[target]);
+  const setWidth = useStore((s) => s.setWidth);
+  return (
+    <div
+      className="resizer"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Resize ${target === 'sidebar' ? 'library' : 'note list'}`}
+      aria-valuenow={width}
+      aria-valuemin={min}
+      aria-valuemax={max}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'ArrowLeft') setWidth(target, Math.max(min, width - 16));
+        if (e.key === 'ArrowRight') setWidth(target, Math.min(max, width + 16));
+      }}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const el = e.currentTarget;
+        el.setPointerCapture(e.pointerId);
+        const move = (ev: PointerEvent) => setWidth(target, Math.max(min, Math.min(max, width + ev.clientX - startX)));
+        const up = () => {
+          el.removeEventListener('pointermove', move);
+          el.removeEventListener('pointerup', up);
+          el.removeEventListener('pointercancel', up);
+        };
+        el.addEventListener('pointermove', move);
+        el.addEventListener('pointerup', up);
+        el.addEventListener('pointercancel', up);
+      }}
+    />
+  );
+}
+
+function UpdatePrompt() {
+  const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW();
+  const showToast = useStore((s) => s.showToast);
+  useEffect(() => {
+    if (needRefresh) {
+      showToast({
+        message: 'A new version is ready.',
+        sticky: true,
+        action: { label: 'Update', run: () => void updateServiceWorker(true) },
+      });
+    }
+  }, [needRefresh, showToast, updateServiceWorker]);
+  return null;
+}
+
+export function App() {
+  useTheme();
+  const notes = useLiveQuery(() => db.notes.toArray(), [], [] as Note[]);
+  const notebooks = useLiveQuery(() => db.notebooks.orderBy('createdAt').toArray(), [], [] as Notebook[]);
+  const [ready, setReady] = useState(false);
+  const [dbError, setDbError] = useState(false);
+  const widths = useStore((s) => s.widths);
+  const focusMode = useStore((s) => s.focusMode);
+  const pane = useStore((s) => s.pane);
+  const pdf = useStore((s) => s.pdf);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const allTags = useMemo(() => allTagPaths(notes.filter((n) => !n.trashedAt).map((n) => n.tags)), [notes]);
+
+  // First run, plus the launch shortcuts declared in the web app manifest.
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        await recoverJournal();
+        const seeded = await seedIfEmpty();
+        const params = new URLSearchParams(location.search);
+        const open = params.get('open');
+        if (open) history.replaceState(null, '', location.pathname);
+        if (!live) return;
+        const s = store.getState();
+        if (open === 'today') await openDaily();
+        else if (open === 'new') await createNote({ type: 'all' });
+        else if (open === 'tasks') s.setView({ type: 'tasks' });
+        else if (seeded) s.openNote(seeded);
+        else if (s.noteId && !(await db.notes.get(s.noteId))) s.openNote(null);
+        else if (s.view.type === 'daily') await openDaily();
+        // Phones start on the list even if a note was open last time.
+        if (matchMedia('(max-width: 767px)').matches && !open) s.setPane('list');
+        setReady(true);
+      } catch {
+        setDbError(true);
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // A page restored from the back/forward cache is still live, so its journal is stale.
+  useEffect(() => {
+    const onShow = (e: PageTransitionEvent) => {
+      if (e.persisted) clearJournal();
+    };
+    window.addEventListener('pageshow', onShow);
+    return () => window.removeEventListener('pageshow', onShow);
+  }, []);
+
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        const s = store.getState();
+        if (s.focusMode) s.toggleFocus();
+        // On smaller windows the search box lives in the library drawer.
+        s.setPane(matchMedia('(max-width: 1099px)').matches ? 'sidebar' : 'list');
+        const go = () => {
+          searchRef.current?.focus();
+          searchRef.current?.select();
+        };
+        go();
+        setTimeout(go, 30);
+      } else if (mod && e.key === '\\') {
+        e.preventDefault();
+        store.getState().toggleFocus();
+      } else if (e.altKey && e.code === 'KeyN') {
+        e.preventDefault();
+        void createNote();
+      } else if (e.altKey && e.code === 'KeyT') {
+        e.preventDefault();
+        void openDaily();
+      }
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, []);
+
+  // On phones, the system back button steps from editor to list to library.
+  useEffect(() => {
+    const mobile = matchMedia('(max-width: 767px)');
+    let depth = 0;
+    const order = { sidebar: 0, list: 1, editor: 2 } as const;
+    let last = store.getState().pane;
+    const unsub = store.subscribe((s) => {
+      if (s.pane === last) return;
+      if (mobile.matches && s.pane === 'editor' && order[last] < order.editor) {
+        history.pushState({ pane: 'editor' }, '');
+        depth++;
+      }
+      last = s.pane;
+    });
+    const pop = () => {
+      if (depth > 0) depth--;
+      if (store.getState().pane === 'editor') store.getState().setPane('list');
+    };
+    window.addEventListener('popstate', pop);
+    return () => {
+      unsub();
+      window.removeEventListener('popstate', pop);
+    };
+  }, []);
+
+  if (dbError) {
+    return (
+      <div className="fatal">
+        <h1>Clean Notes can't open its storage</h1>
+        <p>The browser is blocking local storage, which often happens in private windows. Open the app in a normal window to continue.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="app"
+      data-ready={ready}
+      data-pane={pane}
+      data-focus={focusMode}
+      data-pdf={Boolean(pdf)}
+      style={{ '--w-sidebar': `${widths.sidebar}px`, '--w-list': `${widths.list}px` } as React.CSSProperties}
+    >
+      <Sidebar notes={notes} notebooks={notebooks} searchRef={searchRef} />
+      <Resizer target="sidebar" min={190} max={380} />
+      <ListColumn notes={notes} notebooks={notebooks} />
+      <Resizer target="list" min={240} max={480} />
+      <Boundary message="Reload the app to continue. Your saved notes are safe.">
+        {ready ? <EditorPane notes={notes} notebooks={notebooks} allTags={allTags} /> : <main className="editor-col" />}
+      </Boundary>
+      {pane === 'sidebar' && <button type="button" className="scrim" aria-label="Close library" onClick={() => store.getState().setPane('list')} />}
+      <Dialogs />
+      <ToastHost />
+      <UpdatePrompt />
+    </div>
+  );
+}

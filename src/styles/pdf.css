@@ -1,0 +1,66 @@
+.pdf-pane { flex: 1 1 50%; min-width: 0; height: 100%; background: var(--pdf-bg); border-left: 1px solid var(--line); }
+@container (max-width: 819px) {
+  .pdf-pane { position: absolute; inset: 0; z-index: 8; flex: none; border-left: 0; animation: fade 0.16s var(--ease); }
+}
+.pdf-viewer { display: flex; flex-direction: column; height: 100%; }
+.pdf-viewer:focus { outline: none; }
+.pdf-bar {
+  flex: none; height: 52px; padding: 0 8px;
+  display: flex; align-items: center; gap: 3px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+.pdf-name { flex: 1; min-width: 40px; padding: 0 5px; font-weight: 500; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdf-pages { display: inline-flex; align-items: center; gap: 4px; font: 400 11px var(--font-mono); color: var(--ink-3); white-space: nowrap; }
+.pdf-pages input { width: 32px; height: 24px; text-align: center; font: inherit; color: var(--ink); background: var(--hover); border: 0; border-radius: 5px; }
+.pdf-zoom { display: inline-flex; align-items: center; margin: 0 2px; }
+.pdf-zoom-val { width: 42px; height: 24px; font: 400 11px var(--font-mono); color: var(--ink-2); border-radius: 5px; }
+.pdf-zoom-val:hover { background: var(--hover); }
+.pdf-search {
+  flex: none; height: 38px; padding: 0 8px 0 13px;
+  display: flex; align-items: center; gap: 7px;
+  background: var(--paper); border-bottom: 1px solid var(--line); color: var(--ink-3);
+}
+.pdf-search input { flex: 1; min-width: 0; border: 0; background: none; color: var(--ink); }
+.pdf-search input:focus-visible { outline: none; }
+.pdf-search-count { font: 400 11px var(--font-mono); white-space: nowrap; }
+.pdf-scroll { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px; }
+.pdf-page { position: relative; margin: 0 auto 14px; background: #fff; box-shadow: 0 1px 2px rgb(30 20 5 / 0.14), 0 6px 22px -8px rgb(30 20 5 / 0.3); }
+.pdf-page canvas { display: block; position: absolute; inset: 0; }
+.pdf-scroll[data-dim='true'] .pdf-page canvas { filter: invert(0.9) hue-rotate(180deg); }
+.pdf-scroll[data-dim='true'] .pdf-page { background: #1a1a1a; }
+.pdf-loading { display: grid; place-items: center; height: 100%; color: var(--ink-3); }
+.pdf-password input { width: 220px; height: 34px; padding: 0 10px; margin-top: 5px; background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius); }
+.pdf-password p { color: var(--accent); }
+
+/* pdf.js text layer: invisible text over the canvas, for selection and search. */
+.textLayer {
+  position: absolute; inset: 0; overflow: clip;
+  opacity: 1; line-height: 1;
+  text-align: initial; letter-spacing: normal; word-spacing: normal;
+  -webkit-text-size-adjust: none; text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 1;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.textLayer :is(span, br) { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; user-select: text; }
+.textLayer > :not(.markedContent), .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.textLayer .markedContent { display: contents; }
+.textLayer span::selection { background: rgb(60 110 220 / 0.35); color: transparent; }
+::highlight(pdf-match) { background-color: rgb(245 190 40 / 0.45); color: transparent; }
+::highlight(pdf-match-current) { background-color: rgb(235 90 30 / 0.55); color: transparent; }
+
+/* In a split, the note's margins give way to the document. */
+@container (min-width: 820px) {
+  .editor-split:has(.pdf-pane) .doc { padding-inline: 26px; }
+}

@@ -1,0 +1,58 @@
+:root {
+  --font-ui: 'Commissioner Variable', system-ui, sans-serif;
+  --font-text: 'Literata Variable', Georgia, serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --radius: 7px;
+  color-scheme: light;
+
+  /* Day: warm paper, printer's ink, one vermilion accent. */
+  --rail: #ece8df;
+  --list: #f4f1ea;
+  --paper: #fbf9f5;
+  --raised: #fffefb;
+  --ink: #211e1a;
+  --ink-2: #57514a;
+  --ink-3: #6f685d;
+  --line: rgb(33 30 26 / 0.11);
+  --line-strong: rgb(33 30 26 / 0.22);
+  --hover: rgb(33 30 26 / 0.055);
+  --active: rgb(33 30 26 / 0.09);
+  --accent: #b5391b;
+  --accent-ink: #fff9f5;
+  --accent-soft: rgb(181 57 27 / 0.1);
+  --mark: #f5e2a0;
+  --mark-ink: #2d2505;
+  --code-bg: rgb(33 30 26 / 0.06);
+  --shadow: 0 1px 2px rgb(40 30 15 / 0.08), 0 10px 32px -8px rgb(40 30 15 / 0.2);
+  --glow: rgb(214 158 96 / 0.11);
+  --grain-opacity: 0.32;
+  --pdf-bg: #e4dfd4;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Night: a lamp-lit desk. Warm blacks, and the accent turns to ember. */
+  --rail: #121110;
+  --list: #181715;
+  --paper: #1e1c1a;
+  --raised: #2a2825;
+  --ink: #ece7dd;
+  --ink-2: #b3ac9f;
+  --ink-3: #979085;
+  --line: rgb(236 231 221 / 0.09);
+  --line-strong: rgb(236 231 221 / 0.2);
+  --hover: rgb(236 231 221 / 0.06);
+  --active: rgb(236 231 221 / 0.1);
+  --accent: #f0805f;
+  --accent-ink: #1e0f09;
+  --accent-soft: rgb(240 128 95 / 0.15);
+  --mark: rgb(224 182 74 / 0.3);
+  --mark-ink: #f6e9c6;
+  --code-bg: rgb(236 231 221 / 0.08);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 36px -8px rgb(0 0 0 / 0.65);
+  --glow: rgb(240 128 95 / 0.045);
+  --grain-opacity: 0.16;
+  --pdf-bg: #121110;
+}
