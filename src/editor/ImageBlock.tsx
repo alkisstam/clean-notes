@@ -1,7 +1,7 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Download, ImageOff, Maximize2, Type, X } from 'lucide-react';
+import { AlignEndVertical, AlignStartVertical, Download, ImageOff, Maximize2, Rows2, Type, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { db } from '../lib/db';
 import { saveBlob } from '../lib/pdf';
@@ -14,6 +14,13 @@ const SIZES = [
   { label: 'M', name: 'Medium', width: 60 },
   { label: 'L', name: 'Full width', width: 100 },
 ];
+const ALIGNS = [
+  { align: 'left', name: 'Left, text beside it', icon: AlignStartVertical },
+  { align: null, name: 'On its own line', icon: Rows2 },
+  { align: 'right', name: 'Right, text beside it', icon: AlignEndVertical },
+];
+// Two images beside each other still fit on one line at this width.
+const SIDE_WIDTH = 45;
 
 function useObjectUrl(blob?: Blob) {
   const [url, setUrl] = useState<string | null>(null);
@@ -57,10 +64,10 @@ function ImageView({ node, selected, editor, updateAttributes }: NodeViewProps) 
   const alt: string = node.attrs.alt ?? '';
   const image = useLiveQuery(() => db.images.get(imageId), [imageId], null as NoteImage | null | undefined);
   const src = useObjectUrl(image?.blob);
-  const [liveWidth, setLiveWidth] = useState<number | null>(null);
   const [viewing, setViewing] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
-  const width: number = liveWidth ?? node.attrs.width ?? 100;
+  const width: number = node.attrs.width ?? 100;
+  const align: 'left' | 'right' | null = node.attrs.align ?? null;
   const editable = editor.isEditable;
 
   const startResize = (e: React.PointerEvent<HTMLElement>) => {
@@ -68,18 +75,21 @@ function ImageView({ node, selected, editor, updateAttributes }: NodeViewProps) 
     e.stopPropagation();
     const handle = e.currentTarget;
     handle.setPointerCapture(e.pointerId);
-    const box = wrap.current!.getBoundingClientRect();
+    // Width is a share of the column. A right-floated image grows to the left.
+    const column = editor.view.dom.getBoundingClientRect().width;
+    const frame = handle.parentElement!.getBoundingClientRect();
+    const outer = wrap.current!.parentElement!;
     let next = width;
     const move = (ev: PointerEvent) => {
-      next = Math.round(Math.max(MIN_WIDTH, Math.min(100, ((ev.clientX - box.left) / box.width) * 100)));
-      setLiveWidth(next);
+      const px = align === 'right' ? frame.right - ev.clientX : ev.clientX - frame.left;
+      next = Math.round(Math.max(MIN_WIDTH, Math.min(100, (px / column) * 100)));
+      outer.style.setProperty('--w', `${next}%`);
     };
     const up = () => {
       handle.removeEventListener('pointermove', move);
       handle.removeEventListener('pointerup', up);
       handle.removeEventListener('pointercancel', up);
       updateAttributes({ width: next });
-      setLiveWidth(null);
     };
     handle.addEventListener('pointermove', move);
     handle.addEventListener('pointerup', up);
@@ -103,10 +113,7 @@ function ImageView({ node, selected, editor, updateAttributes }: NodeViewProps) 
         data-selected={selected && editable}
         contentEditable={false}
         data-drag-handle
-        style={{
-          width: `${width}%`,
-          aspectRatio: image?.width && image.height ? `${image.width} / ${image.height}` : undefined,
-        }}
+        style={{ aspectRatio: image?.width && image.height ? `${image.width} / ${image.height}` : undefined }}
         onDoubleClick={() => setViewing(true)}
         onClick={() => {
           if (!editable) setViewing(true);
@@ -127,6 +134,19 @@ function ImageView({ node, selected, editor, updateAttributes }: NodeViewProps) 
                   onClick={() => updateAttributes({ width: s.width })}
                 >
                   {s.label}
+                </button>
+              ))}
+              <span className="format-sep" />
+              {ALIGNS.map((a) => (
+                <button
+                  key={a.name}
+                  type="button"
+                  title={a.name}
+                  aria-label={a.name}
+                  aria-pressed={align === a.align}
+                  onClick={() => updateAttributes({ align: a.align, ...(a.align && width > SIDE_WIDTH ? { width: SIDE_WIDTH } : {}) })}
+                >
+                  <a.icon size={15} />
                 </button>
               ))}
               <span className="format-sep" />
@@ -182,6 +202,7 @@ export const ImageBlock = Node.create({
       imageId: { default: null, parseHTML: (el) => el.getAttribute('data-image-id') },
       alt: { default: '', parseHTML: (el) => el.getAttribute('data-alt') ?? '' },
       width: { default: 100, parseHTML: (el) => Number(el.getAttribute('data-width')) || 100 },
+      align: { default: null, parseHTML: (el) => el.getAttribute('data-align') },
     };
   },
   parseHTML() {
@@ -195,11 +216,14 @@ export const ImageBlock = Node.create({
         'data-image-id': node.attrs.imageId,
         'data-alt': node.attrs.alt,
         'data-width': node.attrs.width,
+        'data-align': node.attrs.align,
       }),
     ];
   },
   addNodeView() {
     return ReactNodeViewRenderer(ImageView, {
+      // Set on the outer element, because a floated image must be a direct child of the text.
+      attrs: ({ node }) => ({ 'data-align': node.attrs.align ?? 'none', style: `--w: ${node.attrs.width ?? 100}%` }),
       // The toolbar, handle and full-size view handle their own events.
       stopEvent: ({ event }) => {
         const t = event.target as HTMLElement | null;

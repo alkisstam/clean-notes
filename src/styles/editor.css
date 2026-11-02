@@ -124,14 +124,14 @@ li.task-flash { background: var(--accent-soft); box-shadow: 0 0 0 5px var(--acce
 /* images */
 .image-node { margin: 1.1em 0; }
 .image-frame {
-  position: relative; margin: 0; max-width: 100%;
+  position: relative; margin: 0; width: var(--w, 100%); max-width: 100%;
   border-radius: 7px; line-height: 0;
   background: var(--code-bg);
 }
 .image-frame img { display: block; width: 100%; height: 100%; object-fit: contain; border-radius: 7px; }
 .ProseMirror-selectednode .image-frame { outline: 2px solid var(--accent); outline-offset: 2px; }
 .image-tools {
-  position: absolute; z-index: 4; top: 8px; left: 8px;
+  position: absolute; z-index: 4; bottom: calc(100% + 6px); left: 0;
   display: flex; align-items: center; gap: 1px; padding: 3px;
   background: var(--ink); color: var(--paper);
   border-radius: 9px; box-shadow: var(--shadow);
@@ -147,6 +147,16 @@ li.task-flash { background: var(--accent-soft); box-shadow: 0 0 0 5px var(--acce
   cursor: ew-resize; touch-action: none;
 }
 .image-handle::before { content: ''; position: absolute; inset: -12px -14px; }
+/* Floated images: text wraps beside them, and two in a row sit side by side. */
+.prose { display: flow-root; }
+.prose > :is(h1, h2, h3, hr, table, pre, .tableWrapper) { clear: both; }
+.prose > .node-noteImage:not([data-align='none']) { width: var(--w); margin-top: 0.3em; margin-bottom: 0.6em; }
+.prose > .node-noteImage[data-align='left'] { float: left; margin-right: 3%; }
+.prose > .node-noteImage[data-align='right'] { float: right; margin-left: 3%; }
+.prose > .node-noteImage:not([data-align='none']) .image-node { margin: 0; }
+.prose > .node-noteImage:not([data-align='none']) .image-frame { width: 100%; }
+.prose > .node-noteImage[data-align='right'] .image-handle { right: auto; left: -7px; }
+.prose > .node-noteImage[data-align='right'] .image-tools { left: auto; right: 0; }
 .image-missing {
   display: flex; align-items: center; gap: 8px; padding: 14px;
   font: 400 12.5px/1.4 var(--font-ui); color: var(--ink-3);

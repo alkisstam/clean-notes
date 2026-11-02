@@ -357,6 +357,14 @@ const check = (name, ok, extra = '') => { results.push(ok); console.log(`${ok ? 
   check('dragging the handle resizes', Math.abs(dragged / col - 0.63) < 0.05, (dragged / col).toFixed(2));
   const ratio = await page.locator('.image-frame').first().evaluate((f) => f.offsetWidth / f.offsetHeight);
   check('aspect ratio is kept', Math.abs(ratio - 16 / 9) < 0.03, ratio.toFixed(3));
+  await page.getByRole('button', { name: 'Left, text beside it', exact: true }).click();
+  await wait(150);
+  const floated = page.locator('.prose > .node-noteImage').first();
+  const floatW = (await page.locator('.image-frame').first().boundingBox()).width;
+  check('image floats left at side-by-side width', (await floated.getAttribute('data-align')) === 'left' && Math.abs(floatW / col - 0.45) < 0.03, (floatW / col).toFixed(2));
+  await page.getByRole('button', { name: 'On its own line', exact: true }).click();
+  await wait(150);
+  check('image goes back on its own line', (await floated.getAttribute('data-align')) === 'none');
   await page.getByRole('button', { name: 'Describe image' }).click();
   await page.getByLabel('Description').fill('Sunset over the zebrafish quay');
   await page.keyboard.press('Enter');
@@ -451,7 +459,7 @@ const check = (name, ok, extra = '') => { results.push(ok); console.log(`${ok ? 
   await wait(500);
   check('typing just before a reload is saved', (await prose.innerText()).includes('Saved immediately'));
   check('images survive a reload', await page.locator('.image-frame img').count() === 3 && await page.locator('.image-frame img').first().evaluate(async (i) => { await i.decode(); return i.naturalWidth === 1600; }));
-  check('image size survives a reload', Math.abs((await page.locator('.image-frame').first().boundingBox()).width / (await page.locator('.image-node').first().boundingBox()).width - 0.63) < 0.05);
+  check('image size survives a reload', Math.abs((await page.locator('.image-frame').first().boundingBox()).width / (await page.locator('.image-node').first().boundingBox()).width - 0.45) < 0.05);
   check('rich content survives a reload', await page.locator('.prose table').count() === 1 && await page.locator('.prose h2').count() === 1 && await page.locator('.pdf-card').count() === 2);
 
   // Trash, undo, restore, delete forever and file cleanup
