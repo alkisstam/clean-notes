@@ -33,6 +33,12 @@ describe('search', () => {
     expect(includesFolded('Café', 'CAFE')).toBe(true);
     expect(includesFolded('Café', 'tea')).toBe(false);
   });
+  it('treats final sigma like sigma, in both search paths', () => {
+    expect(includesFolded('ΚΑΛΗΜΕΡΑ ΚΟΣΜΟΣ', 'κόσμος')).toBe(true);
+    expect(includesFolded('ο κόσμος', 'ΚΟΣΜΟΣ')).toBe(true);
+    const text = 'ΚΑΛΗΜΕΡΑ ΚΟΣΜΟΣ';
+    expect(findRanges(text, 'κόσμος').map(([s, e]) => text.slice(s, e))).toEqual(['ΚΟΣΜΟΣ']);
+  });
   it('maps ranges back to the original text', () => {
     const text = 'Το Café και το café';
     expect(findRanges(text, 'cafe').map(([s, e]) => text.slice(s, e))).toEqual(['Café', 'café']);

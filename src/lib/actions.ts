@@ -114,21 +114,39 @@ export async function saveContent(id: string, content: JSONContent, writer: stri
 
 export async function trashNote(id: string) {
   flushEditor();
-  await db.notes.update(id, { trashedAt: Date.now() });
+  await db.notes.update(id, { trashedAt: Date.now(), updatedAt: Date.now() });
   const s = store.getState();
   if (s.noteId === id) s.openNote(null);
   s.showToast({
     message: 'Moved to Trash',
     action: {
       label: 'Undo',
-      run: () => {
-        void db.notes.update(id, { trashedAt: null });
-      },
+      run: () => void restoreNote(id),
     },
   });
 }
 
-export const restoreNote = (id: string) => db.notes.update(id, { trashedAt: null });
+export async function restoreNote(id: string) {
+  flushEditor();
+  const twinId = await db.transaction('rw', db.notes, async () => {
+    const note = await db.notes.get(id);
+    if (!note) return null;
+    // A new daily note may have been made for this date while this one was in the Trash.
+    const twin = note.kind === 'daily'
+      ? await db.notes.where('date').equals(note.date!).filter((n) => n.kind === 'daily' && !n.trashedAt).first()
+      : undefined;
+    if (!twin) {
+      await db.notes.update(id, { trashedAt: null, updatedAt: Date.now() });
+      return null;
+    }
+    const content = { ...twin.content, content: [...(twin.content.content ?? []), ...(note.content.content ?? [])] };
+    await db.notes.update(twin.id, { content, text: docText(content), writer: `restore:${uid()}`, updatedAt: Date.now() });
+    await db.notes.delete(id);
+    return twin.id;
+  });
+  const s = store.getState();
+  if (twinId && s.noteId === id) s.openNote(twinId);
+}
 
 /** Removes stored PDFs and images that no remaining note refers to. */
 async function collectOrphanFiles() {
@@ -217,7 +235,7 @@ export const renameNotebook = (id: string, name: string) => db.notebooks.update(
 
 export async function deleteNotebook(id: string) {
   await db.transaction('rw', db.notes, db.notebooks, async () => {
-    await db.notes.where('notebookId').equals(id).modify({ notebookId: null });
+    await db.notes.where('notebookId').equals(id).modify({ notebookId: null, updatedAt: Date.now() });
     await db.notebooks.delete(id);
   });
   const s = store.getState();
@@ -228,6 +246,7 @@ export async function retag(from: string, to: string) {
   flushEditor();
   await db.notes.where('tags').startsWith(from).modify((n) => {
     n.tags = renameTagIn(n.tags, from, to);
+    n.updatedAt = Date.now();
   });
   const s = store.getState();
   if (s.view.type === 'tag' && (s.view.path === from || s.view.path.startsWith(from + '/'))) {

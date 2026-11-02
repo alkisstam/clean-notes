@@ -8,7 +8,7 @@ import { db } from '../lib/db';
 import { dateKey, dueLabel, firstDayOfWeek, longDate, monthGrid, parseKey, relativeTime, shortDate } from '../lib/dates';
 import { imageIdsIn, pdfIdsIn } from '../lib/doc';
 import { formatBytes } from '../lib/pdf';
-import { fold, foldQuery, snippet, type Snippet } from '../lib/search';
+import { foldQuery, includesFolded, snippet, type Snippet } from '../lib/search';
 import { store, useStore, type SortKey } from '../lib/store';
 import { noteHasTag } from '../lib/tags';
 import { extractTasks, groupTasks } from '../lib/tasks';
@@ -325,7 +325,7 @@ export function ListColumn({ notes, notebooks }: { notes: Note[]; notebooks: Not
   const hits = useMemo<SearchHit[]>(() => {
     const q = foldQuery(query);
     if (!q) return [];
-    const has = (t: string) => fold(t).folded.includes(q);
+    const has = (t: string) => includesFolded(t, query);
     const out: SearchHit[] = [];
     const titled: SearchHit[] = [];
     for (const note of live) {

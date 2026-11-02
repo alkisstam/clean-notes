@@ -2,9 +2,12 @@ import { flushEditor } from './actions';
 import { db } from './db';
 import { dateKey } from './dates';
 import { saveBlob } from './pdf';
+import { store } from './store';
 import type { Note, NoteImage, Notebook, PdfFile } from './types';
 
 const FORMAT = 'clean-notes-backup';
+// Restore reads the file as one string, and Chrome strings stop at about 512 million characters.
+const MAX_RESTORE_BYTES = 500 * 1024 * 1024;
 
 const toBase64 = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
@@ -44,7 +47,14 @@ export async function exportBackup() {
     parts.push(`${i ? ',' : ''}${JSON.stringify({ ...meta, type: blob.type })}`.slice(0, -1), ',"data":"', await toBase64(blob), '"}');
   }
   parts.push(']}');
-  saveBlob(new Blob(parts, { type: 'application/json' }), `clean-notes-backup-${dateKey()}.json`);
+  const backup = new Blob(parts, { type: 'application/json' });
+  saveBlob(backup, `clean-notes-backup-${dateKey()}.json`);
+  if (backup.size > MAX_RESTORE_BYTES) {
+    store.getState().showToast({
+      message: `This backup is ${Math.round(backup.size / 1024 / 1024)} MB, too large to restore in one file. Keep it, and remove large PDFs to make a restorable one.`,
+      sticky: true,
+    });
+  }
 }
 
 interface Backup {
@@ -59,6 +69,7 @@ interface Backup {
 
 /** Merges a backup into this device. When both copies of a note exist, the newer wins. */
 export async function importBackup(file: File): Promise<{ added: number; updated: number; skipped: number }> {
+  if (file.size > MAX_RESTORE_BYTES) throw new Error('That backup is too large for this browser to restore.');
   let data: Backup;
   try {
     data = JSON.parse(await file.text());
@@ -79,7 +90,9 @@ export async function importBackup(file: File): Promise<{ added: number; updated
   let updated = 0;
   let skipped = 0;
   await db.transaction('rw', [db.notes, db.notebooks, db.files, db.blobs, db.images], async () => {
-    await db.notebooks.bulkPut(data.notebooks ?? []);
+    // Notebooks carry no edit time, so a local rename beats the backup's name.
+    const have = new Set(await db.notebooks.toCollection().primaryKeys());
+    await db.notebooks.bulkAdd((data.notebooks ?? []).filter((b) => !have.has(b.id)));
     await db.files.bulkPut(data.files ?? []);
     await db.blobs.bulkPut(blobs);
     await db.images.bulkPut(images);
