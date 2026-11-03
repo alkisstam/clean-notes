@@ -270,10 +270,11 @@ function setColumnWidth(editor: Editor, cellPos: number, width: number) {
 type Handle = { cellPos: number; x: number; y: number; width: number };
 
 // Controls around the table holding the cursor: "+" to add a row or column at its end,
-// and drag handles on the first row's column borders, since the extension's resize is mouse-only.
+// and a drag handle on the first row for a column border tapped, since the extension's resize is mouse-only.
 function TableAdders({ editor }: { editor: Editor }) {
   const [box, setBox] = useState<{ pos: number; rect: DOMRect; handles: Handle[] } | null>(null);
   const drag = useRef<{ cellPos: number; startX: number; startWidth: number } | null>(null);
+  const active = useRef<number | null>(null);
   useEffect(() => {
     const update = () => {
       const { $from } = editor.state.selection;
@@ -287,15 +288,34 @@ function TableAdders({ editor }: { editor: Editor }) {
         const r = cell.getBoundingClientRect();
         // Skip borders scrolled out of the table's box.
         if (r.right < rect.left + 4 || r.right > rect.right + 1) continue;
+        if (editor.view.posAtDOM(cell, 0) - 1 !== active.current) continue;
         handles.push({ cellPos: editor.view.posAtDOM(cell, 0) - 1, x: r.right, y: r.top + r.height / 2, width: cell.offsetWidth });
       }
       setBox({ pos, rect, handles });
     };
+    // A tap within reach of a vertical cell border shows that column's handle; any other tap hides it.
+    const onTap = (e: PointerEvent) => {
+      active.current = null;
+      const cell = (e.target as HTMLElement).closest('td, th');
+      const table = cell?.closest('table');
+      if (cell && table) {
+        const r = cell.getBoundingClientRect();
+        const border = e.clientX - r.left < 14 ? r.left : r.right - e.clientX < 14 ? r.right : null;
+        if (border !== null) {
+          for (const first of table.querySelectorAll<HTMLElement>('tr:first-child > th, tr:first-child > td')) {
+            if (Math.abs(first.getBoundingClientRect().right - border) < 3) active.current = editor.view.posAtDOM(first, 0) - 1;
+          }
+        }
+      }
+      update();
+    };
+    editor.view.dom.addEventListener('pointerdown', onTap);
     editor.on('transaction', update);
     editor.on('blur', update);
     window.addEventListener('scroll', update, true);
     window.addEventListener('resize', update);
     return () => {
+      editor.view.dom.removeEventListener('pointerdown', onTap);
       editor.off('transaction', update);
       editor.off('blur', update);
       window.removeEventListener('scroll', update, true);
