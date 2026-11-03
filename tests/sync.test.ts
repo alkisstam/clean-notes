@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { baseNote, deleteForever } from '../src/lib/actions';
+import { importBackup } from '../src/lib/backup';
 import { db } from '../src/lib/db';
 import { enableServerSync, syncNow } from '../src/lib/sync';
 
@@ -47,6 +48,16 @@ it('moves notes, images and deletes between devices through the server', async (
   await freshDevice();
   expect(await db.notes.get(gone.id)).toBeUndefined();
   expect(await db.notes.get(keep.id)).toBeDefined();
+});
+
+it('passes on old edits that arrive through a backup file', async () => {
+  await syncNow();
+  const old = baseNote({ title: 'from the file', updatedAt: 1000 });
+  const file = new File([JSON.stringify({ format: 'clean-notes-backup', notes: [old], notebooks: [], files: [], blobs: [] })], 'b.json');
+  await importBackup(file);
+  await syncNow();
+  await freshDevice();
+  expect((await db.notes.get(old.id))?.title).toBe('from the file');
 });
 
 it('reports a wrong token without wiping anything', async () => {

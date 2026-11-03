@@ -84,19 +84,17 @@ async function serverSync(): Promise<boolean> {
     images: newImages,
   });
   await setMeta('serverSeq', seq);
-  await setMeta('lastPushAt', startedAt);
+  // A restore or file merge during this sync may have moved the marker back; keep that.
+  if (((await getMeta<number>('lastPushAt')) ?? 0) >= pushFrom) await setMeta('lastPushAt', startedAt);
   await setMeta('syncedAt', Date.now());
   return r.added + r.updated + r.deleted > 0;
 }
 
 export async function enableServerSync(token: string) {
   await setMeta('syncToken', token.trim());
-  await resetServerSync();
+  await Promise.all([setMeta('serverSeq', 0), setMeta('lastPushAt', 0)]);
   await syncNow();
 }
-
-/** Makes the next sync send everything, as after restoring a backup. */
-export const resetServerSync = () => Promise.all([setMeta('serverSeq', 0), setMeta('lastPushAt', 0)]);
 
 export const disableServerSync = () =>
   Promise.all(['syncToken', 'serverSeq', 'lastPushAt', 'syncedAt'].map((k) => setMeta(k, undefined)));

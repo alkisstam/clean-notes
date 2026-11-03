@@ -6,7 +6,7 @@ import { relativeTime } from '../lib/dates';
 import { db } from '../lib/db';
 import { formatBytes } from '../lib/pdf';
 import { useStore, type DialogState, type ThemePref } from '../lib/store';
-import { disableServerSync, enableServerSync, resetServerSync, syncNow } from '../lib/sync';
+import { disableServerSync, enableServerSync, syncNow } from '../lib/sync';
 
 export const THEMES: { id: ThemePref; label: string; icon: typeof Sun }[] = [
   { id: 'system', label: 'System', icon: Laptop },
@@ -190,8 +190,6 @@ function Settings({ close }: { close: () => void }) {
               void importBackup(file)
                 .then(async ({ added, updated, skipped }) => {
                   showToast({ message: `Restored: ${added} added, ${updated} updated, ${skipped} already current.` });
-                  // Restored notes keep their old edit times, so the next sync has to send everything.
-                  await resetServerSync();
                   await syncNow(true);
                 })
                 .catch((err: Error) => showToast({ message: err.message }));

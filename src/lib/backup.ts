@@ -80,25 +80,36 @@ export interface MergeResult {
   updated: number;
   skipped: number;
   deleted: number;
+  /** Edit time of the oldest row this merge brought in, or Infinity if none. */
+  oldest: number;
 }
 
 const editTime = (row: Note | Notebook) => row.updatedAt ?? row.createdAt;
 
 /** Merges another device's data into this one. Per row the newer edit wins, and a delete counts as an edit. */
 export async function mergeSnapshot(data: Snapshot): Promise<MergeResult> {
-  const r: MergeResult = { added: 0, updated: 0, skipped: 0, deleted: 0 };
+  const r: MergeResult = { added: 0, updated: 0, skipped: 0, deleted: 0, oldest: Infinity };
+  const took = (time: number) => (r.oldest = Math.min(r.oldest, time));
   await db.transaction('rw', [db.notes, db.notebooks, db.files, db.blobs, db.images, db.tombstones], async () => {
     const dead = new Map((await db.tombstones.toArray()).map((t) => [t.id, t]));
     const diedAt = (id: string) => dead.get(id)?.deletedAt ?? -1;
     const incoming = (data.tombstones ?? []).filter((t) => t.deletedAt > diedAt(t.id));
     await db.tombstones.bulkPut(incoming);
+    incoming.forEach((t) => took(t.deletedAt));
     incoming.forEach((t) => dead.set(t.id, t));
     const alive = (row: Note | Notebook) => diedAt(row.id) < editTime(row);
 
     for (const nb of data.notebooks ?? []) {
       if (!alive(nb)) continue;
       const cur = await db.notebooks.get(nb.id);
-      if (!cur || editTime(nb) > editTime(cur)) await db.notebooks.put(nb);
+      if (cur && editTime(nb) <= editTime(cur)) continue;
+      await db.notebooks.put(nb);
+      took(editTime(nb));
+    }
+    const haveFiles = new Set(await db.files.toCollection().primaryKeys());
+    const haveImages = new Set(await db.images.toCollection().primaryKeys());
+    for (const f of [...(data.files ?? []).filter((f) => !haveFiles.has(f.id)), ...(data.images ?? []).filter((i) => !haveImages.has(i.id))]) {
+      took(f.createdAt);
     }
     await db.files.bulkPut(data.files ?? []);
     await db.blobs.bulkPut(data.blobs ?? []);
@@ -111,6 +122,7 @@ export async function mergeSnapshot(data: Snapshot): Promise<MergeResult> {
       }
       if (cur) r.updated++;
       else r.added++;
+      took(note.updatedAt);
       await db.notes.put(note);
     }
     for (const t of incoming) {
@@ -151,7 +163,7 @@ export async function importBackup(file: File): Promise<MergeResult> {
   if (data?.format !== FORMAT || !Array.isArray(data.notes) || !data.notes.every(validNote)) {
     throw new Error('That file is not a Clean Notes backup.');
   }
-  return mergeSnapshot({
+  const r = await mergeSnapshot({
     notes: data.notes,
     notebooks: data.notebooks,
     tombstones: data.tombstones,
@@ -159,6 +171,10 @@ export async function importBackup(file: File): Promise<MergeResult> {
     blobs: (data.blobs ?? []).map((b) => ({ id: b.id, blob: fromBase64(b.data) })),
     images: (data.images ?? []).map(({ data: b64, type, ...meta }) => ({ ...meta, blob: fromBase64(b64, type) })),
   });
+  // Rows from a file keep their old edit times, so move the sync push marker back far enough to send them on.
+  const pushFrom = await getMeta<number>('lastPushAt');
+  if (pushFrom !== undefined && r.oldest <= pushFrom) await setMeta('lastPushAt', r.oldest - 1);
+  return r;
 }
 
 // File System Access API, Chromium desktop only. Its permission methods are missing from TypeScript's DOM types.
