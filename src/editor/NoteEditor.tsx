@@ -4,6 +4,7 @@ import { FontSize, TextStyle } from '@tiptap/extension-text-style';
 import { NodeSelection, Selection } from '@tiptap/pm/state';
 import { TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
+import { TableMap } from '@tiptap/pm/tables';
 import { Placeholder } from '@tiptap/extensions';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
@@ -27,6 +28,7 @@ import { SlashCommands, slashItems, type SlashHandlers, type SlashItem } from '.
 import { TaskItemDue } from './TaskItemDue';
 
 const SAVE_DELAY = 350;
+const CELL_MIN_WIDTH = 80;
 
 const canInsert = (file: File) => looksLikePdf(file) || looksLikeImage(file);
 
@@ -490,7 +492,7 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
       FontSize,
       TaskList,
       TaskItemDue.configure({ nested: true }),
-      TableKit.configure({ table: { resizable: true } }),
+      TableKit.configure({ table: { resizable: true, cellMinWidth: CELL_MIN_WIDTH } }),
       PdfAttachment,
       ImageBlock,
       Placeholder.configure({
@@ -587,6 +589,76 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
     editor.commands.setContent(note.content, { emitUpdate: false });
     lastDoc.current = editor.state.doc;
   }, [note.content, note.writer, editor, writer]);
+
+  // Touch: hold near a cell's right edge, then drag to resize its column.
+  // The mouse resize from the table extension does not listen to touch events.
+  useEffect(() => {
+    const dom = editor.view.dom;
+    let hold = 0;
+    let drag: { cellPos: number; startX: number; startWidth: number } | null = null;
+    let origin = { x: 0, y: 0 };
+    const cancel = () => {
+      window.clearTimeout(hold);
+      drag = null;
+    };
+    const onStart = (e: TouchEvent) => {
+      cancel();
+      const t = e.touches[0];
+      const cell = (e.target as HTMLElement).closest('td, th');
+      if (e.touches.length !== 1 || !cell || !editor.isEditable) return;
+      if (cell.getBoundingClientRect().right - t.clientX > 24) return;
+      origin = { x: t.clientX, y: t.clientY };
+      hold = window.setTimeout(() => {
+        drag = { cellPos: editor.view.posAtDOM(cell, 0) - 1, startX: origin.x, startWidth: (cell as HTMLElement).offsetWidth };
+        navigator.vibrate?.(15);
+      }, 300);
+    };
+    const onMove = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!drag) {
+        if (Math.hypot(t.clientX - origin.x, t.clientY - origin.y) > 8) window.clearTimeout(hold);
+        return;
+      }
+      e.preventDefault();
+      const width = Math.max(CELL_MIN_WIDTH, Math.round(drag.startWidth + t.clientX - drag.startX));
+      const { state } = editor.view;
+      const $cell = state.doc.resolve(drag.cellPos);
+      const table = $cell.node(-1);
+      const start = $cell.start(-1);
+      const map = TableMap.get(table);
+      const col = map.colCount(drag.cellPos - start) + ($cell.nodeAfter?.attrs.colspan ?? 1) - 1;
+      const tr = state.tr;
+      // Same per-cell colwidth update as the extension's mouse resize.
+      for (let row = 0; row < map.height; row++) {
+        const i = row * map.width + col;
+        if (row && map.map[i] === map.map[i - map.width]) continue;
+        const pos = map.map[i];
+        const attrs = table.nodeAt(pos)!.attrs;
+        const index = attrs.colspan === 1 ? 0 : col - map.colCount(pos);
+        if (attrs.colwidth?.[index] === width) continue;
+        const colwidth = attrs.colwidth ? [...attrs.colwidth] : Array(attrs.colspan).fill(0);
+        colwidth[index] = width;
+        tr.setNodeMarkup(start + pos, null, { ...attrs, colwidth });
+      }
+      if (tr.docChanged) editor.view.dispatch(tr);
+    };
+    const onMenu = (e: Event) => {
+      if (drag) e.preventDefault();
+    };
+    dom.addEventListener('touchstart', onStart, { passive: true });
+    dom.addEventListener('touchmove', onMove, { passive: false });
+    dom.addEventListener('touchend', cancel);
+    dom.addEventListener('touchcancel', cancel);
+    dom.addEventListener('contextmenu', onMenu);
+    return () => {
+      cancel();
+      dom.removeEventListener('touchstart', onStart);
+      dom.removeEventListener('touchmove', onMove);
+      dom.removeEventListener('touchend', cancel);
+      dom.removeEventListener('touchcancel', cancel);
+      dom.removeEventListener('contextmenu', onMenu);
+    };
+  }, [editor]);
 
   useEffect(() => {
     if (editor.isEditable === readOnly) editor.setEditable(!readOnly, false);
