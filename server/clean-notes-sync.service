@@ -1,0 +1,15 @@
+[Unit]
+Description=Clean Notes sync server
+After=network.target
+
+[Service]
+# SYNC_TOKEN lives in this file, readable by root only: SYNC_TOKEN=<long random string>
+EnvironmentFile=/etc/clean-notes-sync.env
+Environment=DATA_DIR=/var/lib/clean-notes PORT=8787
+ExecStart=/usr/bin/node /opt/clean-notes-sync/sync.mjs
+DynamicUser=yes
+StateDirectory=clean-notes
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

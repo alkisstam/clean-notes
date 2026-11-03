@@ -5,7 +5,7 @@ import { docText, emptyDoc, imageIdsIn, pdfIdsIn } from './doc';
 import { store } from './store';
 import { renameTagIn } from './tags';
 import { appendTask, patchTask } from './tasks';
-import type { Note, View } from './types';
+import type { Note, Tombstone, View } from './types';
 
 /** The open editor registers this so other actions can save its pending keystrokes first. */
 let flusher: (() => void) | null = null;
@@ -13,6 +13,9 @@ export const registerFlusher = (fn: (() => void) | null) => {
   flusher = fn;
 };
 export const flushEditor = () => flusher?.();
+
+const bury = (table: Tombstone['table'], ids: string[]) =>
+  db.tombstones.bulkPut(ids.map((id) => ({ id, table, deletedAt: Date.now() })));
 
 export function baseNote(patch: Partial<Note> = {}): Note {
   const now = Date.now();
@@ -128,7 +131,7 @@ export async function trashNote(id: string) {
 
 export async function restoreNote(id: string) {
   flushEditor();
-  const twinId = await db.transaction('rw', db.notes, async () => {
+  const twinId = await db.transaction('rw', db.notes, db.tombstones, async () => {
     const note = await db.notes.get(id);
     if (!note) return null;
     // A new daily note may have been made for this date while this one was in the Trash.
@@ -142,14 +145,15 @@ export async function restoreNote(id: string) {
     const content = { ...twin.content, content: [...(twin.content.content ?? []), ...(note.content.content ?? [])] };
     await db.notes.update(twin.id, { content, text: docText(content), writer: `restore:${uid()}`, updatedAt: Date.now() });
     await db.notes.delete(id);
+    await bury('notes', [id]);
     return twin.id;
   });
   const s = store.getState();
   if (twinId && s.noteId === id) s.openNote(twinId);
 }
 
-/** Removes stored PDFs and images that no remaining note refers to. */
-async function collectOrphanFiles() {
+/** Removes stored PDFs and images that no remaining note refers to. Each device does this itself, so files need no tombstones. */
+export async function collectOrphanFiles() {
   const notes = await db.notes.toArray();
   const used = new Set(notes.flatMap((n) => pdfIdsIn(n.content)));
   const ids = (await db.files.toCollection().primaryKeys()) as string[];
@@ -163,6 +167,7 @@ async function collectOrphanFiles() {
 
 export async function deleteForever(ids: string[]) {
   await db.notes.bulkDelete(ids);
+  await bury('notes', ids);
   await collectOrphanFiles();
   const s = store.getState();
   if (s.noteId && ids.includes(s.noteId)) s.openNote(null);
@@ -226,17 +231,19 @@ export async function quickAddTask(text: string, due: string | null) {
 
 export async function createNotebook(name: string) {
   const id = uid();
-  await db.notebooks.add({ id, name: name.trim(), createdAt: Date.now() });
+  await db.notebooks.add({ id, name: name.trim(), createdAt: Date.now(), updatedAt: Date.now() });
   store.getState().setView({ type: 'notebook', id });
   return id;
 }
 
-export const renameNotebook = (id: string, name: string) => db.notebooks.update(id, { name: name.trim() });
+export const renameNotebook = (id: string, name: string) =>
+  db.notebooks.update(id, { name: name.trim(), updatedAt: Date.now() });
 
 export async function deleteNotebook(id: string) {
-  await db.transaction('rw', db.notes, db.notebooks, async () => {
+  await db.transaction('rw', db.notes, db.notebooks, db.tombstones, async () => {
     await db.notes.where('notebookId').equals(id).modify({ notebookId: null, updatedAt: Date.now() });
     await db.notebooks.delete(id);
+    await bury('notebooks', [id]);
   });
   const s = store.getState();
   if (s.view.type === 'notebook' && s.view.id === id) s.setView({ type: 'all' });

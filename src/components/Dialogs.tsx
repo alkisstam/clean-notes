@@ -1,10 +1,12 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Download, HardDrive, Laptop, Moon, Sun, Upload, X } from 'lucide-react';
+import { Download, FileClock, HardDrive, Laptop, Moon, RefreshCw, Sun, Upload, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { exportBackup, importBackup } from '../lib/backup';
+import { autoBackupSupported, chooseBackupFile, exportBackup, importBackup, stopAutoBackup } from '../lib/backup';
+import { relativeTime } from '../lib/dates';
 import { db } from '../lib/db';
 import { formatBytes } from '../lib/pdf';
 import { useStore, type DialogState, type ThemePref } from '../lib/store';
+import { disableServerSync, enableServerSync, resetServerSync, syncNow } from '../lib/sync';
 
 export const THEMES: { id: ThemePref; label: string; icon: typeof Sun }[] = [
   { id: 'system', label: 'System', icon: Laptop },
@@ -100,6 +102,17 @@ function Settings({ close }: { close: () => void }) {
     files: await db.files.count(),
     images: await db.images.count(),
   }), []);
+  const autoBackup = useLiveQuery(async () => {
+    const handle = (await db.meta.get('backupFile'))?.value as FileSystemFileHandle | undefined;
+    const at = (await db.meta.get('backupWrittenTime'))?.value as number | undefined;
+    return handle ? { name: handle.name, at } : null;
+  }, []);
+  const sync = useLiveQuery(async () => {
+    const on = !!(await db.meta.get('syncToken'))?.value;
+    const at = (await db.meta.get('syncedAt'))?.value as number | undefined;
+    return { on, at };
+  }, []);
+  const [token, setToken] = useState('');
   const [usage, setUsage] = useState<string | null>(null);
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [, bump] = useState(0);
@@ -175,14 +188,90 @@ function Settings({ close }: { close: () => void }) {
               e.target.value = '';
               if (!file) return;
               void importBackup(file)
-                .then(({ added, updated, skipped }) =>
-                  showToast({ message: `Restored: ${added} added, ${updated} updated, ${skipped} already current.` }),
-                )
+                .then(async ({ added, updated, skipped }) => {
+                  showToast({ message: `Restored: ${added} added, ${updated} updated, ${skipped} already current.` });
+                  // Restored notes keep their old edit times, so the next sync has to send everything.
+                  await resetServerSync();
+                  await syncNow(true);
+                })
                 .catch((err: Error) => showToast({ message: err.message }));
             }}
           />
         </div>
         <p className="dialog-hint">Restoring merges with what is here. If a note exists in both, the newer copy wins.</p>
+        {autoBackupSupported && (
+          <>
+            <p className="settings-stat">
+              <FileClock size={14} />
+              <span>
+                {autoBackup
+                  ? `Auto-backup to ${autoBackup.name}${autoBackup.at ? `, last saved ${relativeTime(autoBackup.at)}` : ''}.`
+                  : 'Auto-backup is off.'}
+              </span>
+            </p>
+            <div className="settings-row">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void chooseBackupFile()
+                  .then(() => syncNow(true))
+                  .catch((err: Error) => err.name !== 'AbortError' && showToast({ message: 'Auto-backup could not be set up.' }))}
+              >
+                <FileClock size={14} /> {autoBackup ? 'Change file' : 'Auto-backup to a file'}
+              </button>
+              {autoBackup && (
+                <button type="button" className="btn" onClick={() => void stopAutoBackup()}>
+                  Stop
+                </button>
+              )}
+            </div>
+            <p className="dialog-hint">
+              The file is rewritten about a minute after each change. Put it in a Dropbox, Drive or Syncthing folder and choose the same file on your other computers to keep them in sync.
+            </p>
+          </>
+        )}
+      </section>
+
+      <section className="settings-section">
+        <h3>Sync</h3>
+        <p>Keep your devices in step through the server this app is hosted on. Notes are sent to that server over HTTPS.</p>
+        {sync?.on ? (
+          <>
+            <p className="settings-stat">
+              <RefreshCw size={14} />
+              <span>{sync.at ? `Last synced ${relativeTime(sync.at)}.` : 'Not synced yet.'}</span>
+            </p>
+            <div className="settings-row">
+              <button type="button" className="btn" onClick={() => void syncNow()}>
+                <RefreshCw size={14} /> Sync now
+              </button>
+              <button type="button" className="btn" onClick={() => void disableServerSync()}>
+                Turn off
+              </button>
+            </div>
+          </>
+        ) : (
+          <form
+            className="settings-row"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (token.trim()) void enableServerSync(token).then(() => setToken(''));
+            }}
+          >
+            <input
+              type="password"
+              autoComplete="off"
+              placeholder="Sync token"
+              aria-label="Sync token"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+            />
+            <button type="submit" className="btn">
+              <RefreshCw size={14} /> Turn on sync
+            </button>
+          </form>
+        )}
+        <p className="dialog-hint">Changes sync about a minute after you make them, and when you come back to the app. If a note was edited on two devices, the newer edit wins.</p>
       </section>
 
       {installEvent && (

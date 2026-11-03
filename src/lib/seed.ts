@@ -17,6 +17,8 @@ const task = (text: string, checked = false, due: string | null = null): JSONCon
 });
 const bullet = (...content: JSONContent[]): JSONContent => ({ type: 'listItem', content: [p(...content)] });
 
+const SEED_TIME = Date.UTC(2026, 0, 1);
+
 /** Writes a short guide on first run. It is an ordinary note and can be deleted. */
 export async function seedIfEmpty() {
   let seeded = false;
@@ -26,7 +28,8 @@ export async function seedIfEmpty() {
     /* no localStorage: fall through to the note count check */
   }
   if (seeded || (await db.notes.count()) > 0) return null;
-  const notebookId = uid();
+  // Fixed ids and an old edit time, so every device seeds the same rows and any real edit or delete wins a sync.
+  const notebookId = 'getting-started';
   const content: JSONContent = {
     type: 'doc',
     content: [
@@ -56,10 +59,10 @@ export async function seedIfEmpty() {
       p(t('Notes live in this browser, so export a backup from Settings now and then.')),
     ],
   };
-  const note = baseNote({ title: 'Welcome to Clean Notes', content, notebookId, tags: ['guide/basics'], pinned: true });
+  const note = baseNote({ id: 'welcome', title: 'Welcome to Clean Notes', content, notebookId, tags: ['guide/basics'], pinned: true, updatedAt: SEED_TIME });
   await db.transaction('rw', db.notes, db.notebooks, async () => {
-    await db.notebooks.add({ id: notebookId, name: 'Getting started', createdAt: Date.now() });
-    await db.notes.add(note);
+    await db.notebooks.put({ id: notebookId, name: 'Getting started', createdAt: SEED_TIME, updatedAt: SEED_TIME });
+    await db.notes.put(note);
   });
   try {
     localStorage.setItem('cn.seeded', '1');

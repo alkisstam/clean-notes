@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { baseNote, deleteForever, getOrCreateDaily, restoreNote, trashNote } from '../src/lib/actions';
-import { importBackup } from '../src/lib/backup';
+import { baseNote, deleteForever, deleteNotebook, getOrCreateDaily, renameNotebook, restoreNote, trashNote } from '../src/lib/actions';
+import { importBackup, mergeSnapshot } from '../src/lib/backup';
 import { db } from '../src/lib/db';
 import type { Note } from '../src/lib/types';
 
@@ -58,5 +58,37 @@ describe('data', () => {
     await restoreNote(old.id);
     expect(await db.notes.get(old.id)).toBeUndefined();
     expect((await db.notes.get(fresh.id))?.text).toContain('old');
+  });
+
+  it('carries a delete to another device, unless that device edited the note later', async () => {
+    const gone = baseNote({ updatedAt: 100 });
+    const edited = baseNote({ updatedAt: 100 });
+    await db.notes.bulkAdd([gone, edited]);
+    await deleteForever([gone.id, edited.id]);
+    const tombstones = await db.tombstones.toArray();
+    expect(tombstones).toHaveLength(2);
+    await db.tombstones.clear();
+    await db.notes.bulkAdd([gone, { ...edited, updatedAt: Date.now() + 10_000 }]);
+    expect(await mergeSnapshot({ notes: [], tombstones })).toMatchObject({ deleted: 1 });
+    expect(await db.notes.get(gone.id)).toBeUndefined();
+    expect(await db.notes.get(edited.id)).toBeDefined();
+    // The deleted note in an old backup must not come back.
+    await mergeSnapshot({ notes: [gone] });
+    expect(await db.notes.get(gone.id)).toBeUndefined();
+  });
+
+  it('merges notebook renames and deletes by edit time', async () => {
+    await db.notebooks.add({ id: 'nb', name: 'Old', createdAt: 0 });
+    await renameNotebook('nb', 'New');
+    const renamed = (await db.notebooks.get('nb'))!;
+    await db.notebooks.put({ id: 'nb', name: 'Old', createdAt: 0 });
+    await mergeSnapshot({ notes: [], notebooks: [renamed] });
+    expect((await db.notebooks.get('nb'))?.name).toBe('New');
+    await deleteNotebook('nb');
+    const tombstones = await db.tombstones.toArray();
+    await db.tombstones.clear();
+    await db.notebooks.put(renamed);
+    await mergeSnapshot({ notes: [], tombstones });
+    expect(await db.notebooks.get('nb')).toBeUndefined();
   });
 });

@@ -4,6 +4,7 @@ import { useRegisterSW } from 'virtual:pwa-register/react';
 import { clearJournal, createNote, openDaily, recoverJournal } from './lib/actions';
 import { db } from './lib/db';
 import { seedIfEmpty } from './lib/seed';
+import { startAutoSync } from './lib/sync';
 import { useStore, store } from './lib/store';
 import { allTagPaths } from './lib/tags';
 import type { Note, Notebook } from './lib/types';
@@ -115,6 +116,7 @@ export function App() {
         // Phones start on the list even if a note was open last time.
         if (matchMedia('(max-width: 767px)').matches && !open) s.setPane('list');
         setReady(true);
+        startAutoSync();
       } catch {
         setDbError(true);
       }

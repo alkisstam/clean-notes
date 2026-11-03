@@ -23,6 +23,15 @@ export interface Notebook {
   id: string;
   name: string;
   createdAt: number;
+  /** Absent on notebooks made before sync existed. */
+  updatedAt?: number;
+}
+
+/** Remembers a hard delete so merges on other devices remove the row too. */
+export interface Tombstone {
+  id: string;
+  table: 'notes' | 'notebooks';
+  deletedAt: number;
 }
 
 export interface PdfFile {

@@ -379,8 +379,8 @@ kbd { font: 500 10.5px var(--font-mono); color: var(--ink-3); }
 .dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .dialog-hint { font-size: 12px; margin-top: 8px; color: var(--ink-3) !important; }
 .field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 500; color: var(--ink-2); }
-.field input { height: 36px; padding: 0 10px; font-size: 14px; font-weight: 400; color: var(--ink); background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius); }
-.field input:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.field input, .settings-row input { height: 36px; padding: 0 10px; font-size: 14px; font-weight: 400; color: var(--ink); background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius); }
+.field input:focus-visible, .settings-row input:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
 .settings-section { padding: 13px 0; border-top: 1px solid var(--line); }
 .settings-section:first-of-type { border-top: 0; padding-top: 5px; }
 .settings-section h3 { font-size: 12.5px; font-weight: 600; margin-bottom: 7px; }
@@ -449,7 +449,7 @@ kbd { font: 500 10.5px var(--font-mono); color: var(--ink-3); }
   .task-row-date { opacity: 1; }
   .search kbd { display: none; }
   .search { height: 38px; }
-  .search input, .tags-entry input, .quick-task input, .field input { font-size: 16px; }
+  .search input, .tags-entry input, .quick-task input, .field input, .settings-row input { font-size: 16px; }
   .doc { padding: 10px 16px 40vh; }
   .doc-title { font-size: 28px; }
   .doc-bar { padding: 0 6px; }
