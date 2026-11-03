@@ -272,14 +272,19 @@ type Handle = { cellPos: number; x: number; y: number; width: number };
 // Controls around the table holding the cursor: "+" to add a row or column at its end,
 // and a drag handle on the first row for a column border tapped, since the extension's resize is mouse-only.
 function TableAdders({ editor }: { editor: Editor }) {
-  const [box, setBox] = useState<{ pos: number; rect: DOMRect; handles: Handle[] } | null>(null);
+  const [box, setBox] = useState<{ pos: number; rect: DOMRect; cell: DOMRect | null; handles: Handle[] } | null>(null);
   const drag = useRef<{ cellPos: number; startX: number; startWidth: number } | null>(null);
   const active = useRef<number | null>(null);
   useEffect(() => {
     const update = () => {
       const { $from } = editor.state.selection;
       let pos = -1;
-      for (let d = $from.depth; d > 0; d--) if ($from.node(d).type.name === 'table') pos = $from.before(d);
+      let cellPos = -1;
+      for (let d = $from.depth; d > 0; d--) {
+        const name = $from.node(d).type.name;
+        if (name === 'table') pos = $from.before(d);
+        if (cellPos < 0 && (name === 'tableCell' || name === 'tableHeader')) cellPos = $from.before(d);
+      }
       const dom = pos >= 0 && (editor.isFocused || drag.current) ? (editor.view.nodeDOM(pos) as HTMLElement | null) : null;
       if (!dom) return setBox(null);
       const rect = dom.getBoundingClientRect();
@@ -291,7 +296,8 @@ function TableAdders({ editor }: { editor: Editor }) {
         if (editor.view.posAtDOM(cell, 0) - 1 !== active.current) continue;
         handles.push({ cellPos: editor.view.posAtDOM(cell, 0) - 1, x: r.right, y: r.top + r.height / 2, width: cell.offsetWidth });
       }
-      setBox({ pos, rect, handles });
+      const cell = cellPos >= 0 ? (editor.view.nodeDOM(cellPos) as HTMLElement | null)?.getBoundingClientRect() ?? null : null;
+      setBox({ pos, rect, cell, handles });
     };
     // A tap within reach of a vertical cell border shows that column's handle; any other tap hides it.
     const onTap = (e: PointerEvent) => {
@@ -335,9 +341,23 @@ function TableAdders({ editor }: { editor: Editor }) {
     });
     (where === 'row' ? chain.addRowAfter() : chain.addColumnAfter()).run();
   };
-  const { rect } = box;
+  const { rect, cell } = box;
   return createPortal(
     <>
+      {cell && (
+        <>
+          <button
+            type="button" className="table-add" aria-label="Delete row" title="Delete row"
+            style={{ left: Math.max(0, rect.left - 20), top: cell.top, height: cell.height }}
+            onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().deleteRow().run()}
+          ><X size={12} /></button>
+          <button
+            type="button" className="table-add" aria-label="Delete column" title="Delete column"
+            style={{ left: cell.left, top: rect.top - 20, width: cell.width }}
+            onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().deleteColumn().run()}
+          ><X size={12} /></button>
+        </>
+      )}
       <button
         type="button" className="table-add" aria-label="Add row" title="Add row"
         style={{ left: rect.left, top: rect.bottom + 2, width: rect.width }}
