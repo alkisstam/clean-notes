@@ -1,5 +1,5 @@
 import {
-  ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Copy, CornerLeftUp, Feather, FilePlus, Maximize2, Minimize2, Pin, PinOff, RotateCcw, Trash2, X,
+  ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Copy, CornerLeftUp, PanelTop, Feather, FilePlus, Maximize2, Minimize2, Pin, PinOff, RotateCcw, Trash2, X,
 } from 'lucide-react';
 import { lazy, Component, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createNote, createSubNote, deleteForever, duplicateNote, editTags, journalEdit, openDaily, patchNote, restoreNote, trashNote } from '../lib/actions';
@@ -110,6 +110,7 @@ function wordCount(text: string) {
 function Document({ note, notebooks, allTags }: { note: Note; notebooks: Notebook[]; allTags: string[] }) {
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const focusMode = useStore((s) => s.focusMode);
+  const showToolbar = useStore((s) => s.showToolbar);
   const toggleFocus = useStore((s) => s.toggleFocus);
   const focusTitle = useStore((s) => s.focusTitle);
   const setPane = useStore((s) => s.setPane);
@@ -258,6 +259,7 @@ function Document({ note, notebooks, allTags }: { note: Note; notebooks: Noteboo
               items={[
                 ...(note.parentId ? [{ label: 'Move to top level', icon: <CornerLeftUp size={14} />, run: () => void patchNote(note.id, { parentId: null }) }] : []),
                 ...(!isDaily ? [{ label: 'Duplicate', icon: <Copy size={14} />, run: () => void duplicateNote(note.id) }] : []),
+                { label: showToolbar ? 'Hide toolbar' : 'Show toolbar', icon: <PanelTop size={14} />, run: () => store.getState().toggleToolbar() },
                 { label: 'Move to Trash', icon: <Trash2 size={14} />, danger: true, run: () => void trashNote(note.id) },
               ]}
             />

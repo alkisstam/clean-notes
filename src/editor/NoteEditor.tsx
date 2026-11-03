@@ -1,5 +1,6 @@
 import type { Editor, JSONContent, Range } from '@tiptap/core';
 import { Highlight } from '@tiptap/extension-highlight';
+import { FontSize, TextStyle } from '@tiptap/extension-text-style';
 import { NodeSelection, Selection } from '@tiptap/pm/state';
 import { TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
@@ -9,13 +10,15 @@ import { BubbleMenu } from '@tiptap/react/menus';
 import { StarterKit } from '@tiptap/starter-kit';
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
 import {
-  Bold, Check, Code, ExternalLink, Heading2, Highlighter, Italic, Link2, Strikethrough, Underline, X,
+  Bold, CalendarPlus, Check, Code, ExternalLink, FileText, Heading2, Highlighter, ImagePlus, Italic, Link2, List, ListOrdered, ListTodo,
+  Minus, Quote, SquareCode, Strikethrough, Table, Table2, Underline, X,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { journalEdit, registerFlusher, saveContent } from '../lib/actions';
 import { importImage, looksLikeImage } from '../lib/images';
 import { importPdf, looksLikePdf } from '../lib/pdf';
+import { Menu } from '../components/Overlay';
 import { store, useStore } from '../lib/store';
 import type { Note } from '../lib/types';
 import { ImageBlock } from './ImageBlock';
@@ -129,6 +132,116 @@ function SlashMenu({ state, index, onHover }: { state: SlashState; index: number
   );
 }
 
+const formatButtons = (editor: Editor) => [
+  { label: 'Bold', icon: Bold, active: 'bold', run: () => editor.chain().focus().toggleBold().run() },
+  { label: 'Italic', icon: Italic, active: 'italic', run: () => editor.chain().focus().toggleItalic().run() },
+  { label: 'Underline', icon: Underline, active: 'underline', run: () => editor.chain().focus().toggleUnderline().run() },
+  { label: 'Strikethrough', icon: Strikethrough, active: 'strike', run: () => editor.chain().focus().toggleStrike().run() },
+  { label: 'Inline code', icon: Code, active: 'code', run: () => editor.chain().focus().toggleCode().run() },
+  { label: 'Highlight', icon: Highlighter, active: 'highlight', run: () => editor.chain().focus().toggleHighlight().run() },
+];
+
+const FONT_SIZES = ['12px', '14px', '16px', '18px', '20px', '24px', '30px', '36px'];
+
+function Toolbar({ editor, items }: { editor: Editor; items: SlashItem[] }) {
+  const [, rerender] = useState(0);
+  useEffect(() => {
+    const update = () => rerender((n) => n + 1);
+    editor.on('transaction', update);
+    return () => {
+      editor.off('transaction', update);
+    };
+  }, [editor]);
+
+  // Slash items replace the typed "/query"; here there is none, so give them an empty range.
+  const slash = (id: string) => {
+    const at = editor.state.selection.from;
+    items.find((i) => i.id === id)?.run(editor, { from: at, to: at });
+  };
+  const block = [1, 2, 3].find((level) => editor.isActive('heading', { level }));
+  const size = (editor.getAttributes('textStyle').fontSize as string | undefined) ?? '';
+  const startLink = () =>
+    store.getState().setDialog({
+      kind: 'prompt',
+      title: 'Link',
+      label: 'Address',
+      value: editor.getAttributes('link').href ?? '',
+      confirm: 'Apply',
+      allowEmpty: true,
+      onConfirm: (raw) => {
+        const value = raw.trim();
+        const chain = editor.chain().focus().extendMarkRange('link');
+        if (!value) chain.unsetLink().run();
+        else chain.setLink({ href: /^[a-z][a-z0-9+.-]*:/i.test(value) ? value : `https://${value}` }).run();
+      },
+    });
+  const btn = (label: string, Icon: typeof Bold, run: () => void, active?: boolean) => (
+    <button
+      key={label}
+      type="button"
+      aria-label={label}
+      title={label}
+      data-active={active}
+      aria-pressed={active}
+      // Keep the editor's selection while clicking.
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={run}
+    >
+      <Icon size={15} />
+    </button>
+  );
+
+  return (
+    <div className="editor-toolbar" role="toolbar" aria-label="Formatting">
+      <select
+        aria-label="Text style"
+        value={block ? `h${block}` : 'text'}
+        onChange={(e) => slash(e.target.value)}
+      >
+        <option value="text">Text</option>
+        <option value="h1">Heading 1</option>
+        <option value="h2">Heading 2</option>
+        <option value="h3">Heading 3</option>
+      </select>
+      <select
+        aria-label="Font size"
+        value={size}
+        onChange={(e) => {
+          const chain = editor.chain().focus();
+          (e.target.value ? chain.setFontSize(e.target.value) : chain.unsetFontSize()).run();
+        }}
+      >
+        <option value="">Size</option>
+        {size && !FONT_SIZES.includes(size) && <option value={size}>{parseInt(size)}</option>}
+        {FONT_SIZES.map((s) => <option key={s} value={s}>{parseInt(s)}</option>)}
+      </select>
+      <span className="toolbar-sep" />
+      {formatButtons(editor).map(({ label, icon, active, run }) => btn(label, icon, run, editor.isActive(active)))}
+      {btn('Link', Link2, startLink, editor.isActive('link'))}
+      <span className="toolbar-sep" />
+      {btn('To-do list', ListTodo, () => slash('todo'), editor.isActive('taskList'))}
+      {btn('Bullet list', List, () => slash('bullet'), editor.isActive('bulletList'))}
+      {btn('Numbered list', ListOrdered, () => slash('number'), editor.isActive('orderedList'))}
+      {btn('Quote', Quote, () => slash('quote'), editor.isActive('blockquote'))}
+      {btn('Code block', SquareCode, () => slash('code'), editor.isActive('codeBlock'))}
+      <span className="toolbar-sep" />
+      {btn('Table', Table, () => slash('table'))}
+      {btn('Divider', Minus, () => slash('divider'))}
+      {btn('Image', ImagePlus, () => slash('image'))}
+      {btn('PDF', FileText, () => slash('pdf'))}
+      {btn("Today's date", CalendarPlus, () => slash('date'))}
+      {editor.isActive('table') && (
+        <Menu
+          label="Table actions"
+          className="menu-trigger"
+          trigger={<Table2 size={15} />}
+          items={items.filter((i) => i.inTable).map((i) => ({ label: i.title, danger: i.id.startsWith('del'), run: () => slash(i.id) }))}
+        />
+      )}
+    </div>
+  );
+}
+
 function FormatMenu({ editor }: { editor: Editor }) {
   const [linking, setLinking] = useState(false);
   const [url, setUrl] = useState('');
@@ -147,14 +260,7 @@ function FormatMenu({ editor }: { editor: Editor }) {
     setLinking(false);
   };
 
-  const buttons = [
-    { label: 'Bold', icon: Bold, active: 'bold', run: () => editor.chain().focus().toggleBold().run() },
-    { label: 'Italic', icon: Italic, active: 'italic', run: () => editor.chain().focus().toggleItalic().run() },
-    { label: 'Underline', icon: Underline, active: 'underline', run: () => editor.chain().focus().toggleUnderline().run() },
-    { label: 'Strikethrough', icon: Strikethrough, active: 'strike', run: () => editor.chain().focus().toggleStrike().run() },
-    { label: 'Inline code', icon: Code, active: 'code', run: () => editor.chain().focus().toggleCode().run() },
-    { label: 'Highlight', icon: Highlighter, active: 'highlight', run: () => editor.chain().focus().toggleHighlight().run() },
-  ];
+  const buttons = formatButtons(editor);
 
   return (
     <BubbleMenu
@@ -326,6 +432,8 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
         link: { openOnClick: false, autolink: true, defaultProtocol: 'https' },
       }),
       Highlight,
+      TextStyle,
+      FontSize,
       TaskList,
       TaskItemDue.configure({ nested: true }),
       TableKit.configure({ table: { resizable: true } }),
@@ -432,6 +540,7 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
 
   // Jump to a to-do opened from the Tasks view.
   const focusTaskId = useStore((s) => s.focusTaskId);
+  const showToolbar = useStore((s) => s.showToolbar);
   useEffect(() => {
     if (!focusTaskId) return;
     const el = editor.view.dom.querySelector(`[data-task-id="${CSS.escape(focusTaskId)}"]`);
@@ -445,6 +554,7 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
 
   return (
     <>
+      {!readOnly && showToolbar && <Toolbar editor={editor} items={items} />}
       <EditorContent editor={editor} />
       {!readOnly && <FormatMenu editor={editor} />}
       {slash && <SlashMenu state={slash} index={slashIndex} onHover={setSlashIndex} />}

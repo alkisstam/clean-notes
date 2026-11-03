@@ -51,6 +51,7 @@ interface State {
   widths: { sidebar: number; list: number };
   collapsedTags: string[];
   collapsedNotes: string[];
+  showToolbar: boolean;
   focusTaskId: string | null;
   focusTitle: boolean;
   toast: Toast | null;
@@ -68,6 +69,7 @@ interface State {
   setWidth: (key: 'sidebar' | 'list', px: number) => void;
   toggleTag: (path: string) => void;
   toggleNote: (id: string) => void;
+  toggleToolbar: () => void;
   clearFocusRequests: () => void;
   showToast: (t: Omit<Toast, 'id'>) => void;
   dismissToast: () => void;
@@ -95,6 +97,7 @@ export const useStore = create<State>((set, get) => ({
   widths: read('cn.widths', { sidebar: 244, list: 320 }),
   collapsedTags: read<string[]>('cn.collapsedTags', []),
   collapsedNotes: read<string[]>('cn.collapsedNotes', []),
+  showToolbar: read('cn.toolbar', true),
   focusTaskId: null,
   focusTitle: false,
   toast: null,
@@ -136,6 +139,10 @@ export const useStore = create<State>((set, get) => ({
     const widths = { ...get().widths, [key]: px };
     write('cn.widths', widths);
     set({ widths });
+  },
+  toggleToolbar: () => {
+    write('cn.toolbar', !get().showToolbar);
+    set({ showToolbar: !get().showToolbar });
   },
   toggleNote: (id) => {
     const cur = get().collapsedNotes;

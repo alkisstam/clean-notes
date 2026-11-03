@@ -178,3 +178,23 @@ li.task-flash { background: var(--accent-soft); box-shadow: 0 0 0 5px var(--acce
   color: #fff; background: rgb(255 255 255 / 0.14);
 }
 .lightbox-close:hover { background: rgb(255 255 255 / 0.26); }
+
+/* editor toolbar */
+.editor-toolbar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; gap: 1px; margin: 6px 0 14px; padding: 4px;
+  background: var(--raised); border: 1px solid var(--line); border-radius: 10px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.editor-toolbar > button, .editor-toolbar .menu-trigger {
+  flex: none; width: 30px; height: 28px; display: grid; place-items: center; border-radius: 6px; color: var(--ink-2);
+}
+.editor-toolbar button:hover { background: var(--hover); color: var(--ink); }
+.editor-toolbar button[data-active='true'] { background: var(--accent-soft); color: var(--accent); }
+.editor-toolbar select {
+  flex: none; height: 28px; padding: 0 4px; border: 0; border-radius: 6px; background: transparent;
+  color: var(--ink-2); font-size: 12.5px; cursor: pointer;
+}
+.editor-toolbar select:hover { background: var(--hover); }
+.editor-toolbar select option { background: var(--raised); color: var(--ink); }
+.toolbar-sep { flex: none; width: 1px; height: 16px; margin: 0 4px; background: var(--line); }
