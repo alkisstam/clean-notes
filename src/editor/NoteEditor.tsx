@@ -244,16 +244,52 @@ function Toolbar({ editor, items }: { editor: Editor; items: SlashItem[] }) {
   );
 }
 
-// "+" buttons under and beside the table holding the cursor, adding a row or column at its end.
+// Same per-cell colwidth update as the table extension's mouse resize.
+function setColumnWidth(editor: Editor, cellPos: number, width: number) {
+  const { state } = editor.view;
+  const $cell = state.doc.resolve(cellPos);
+  const table = $cell.node(-1);
+  const start = $cell.start(-1);
+  const map = TableMap.get(table);
+  const col = map.colCount(cellPos - start) + ($cell.nodeAfter?.attrs.colspan ?? 1) - 1;
+  const tr = state.tr;
+  for (let row = 0; row < map.height; row++) {
+    const i = row * map.width + col;
+    if (row && map.map[i] === map.map[i - map.width]) continue;
+    const pos = map.map[i];
+    const attrs = table.nodeAt(pos)!.attrs;
+    const index = attrs.colspan === 1 ? 0 : col - map.colCount(pos);
+    if (attrs.colwidth?.[index] === width) continue;
+    const colwidth = attrs.colwidth ? [...attrs.colwidth] : Array(attrs.colspan).fill(0);
+    colwidth[index] = width;
+    tr.setNodeMarkup(start + pos, null, { ...attrs, colwidth });
+  }
+  if (tr.docChanged) editor.view.dispatch(tr);
+}
+
+type Handle = { cellPos: number; x: number; y: number; width: number };
+
+// Controls around the table holding the cursor: "+" to add a row or column at its end,
+// and drag handles on the first row's column borders, since the extension's resize is mouse-only.
 function TableAdders({ editor }: { editor: Editor }) {
-  const [box, setBox] = useState<{ pos: number; rect: DOMRect } | null>(null);
+  const [box, setBox] = useState<{ pos: number; rect: DOMRect; handles: Handle[] } | null>(null);
+  const drag = useRef<{ cellPos: number; startX: number; startWidth: number } | null>(null);
   useEffect(() => {
     const update = () => {
       const { $from } = editor.state.selection;
       let pos = -1;
       for (let d = $from.depth; d > 0; d--) if ($from.node(d).type.name === 'table') pos = $from.before(d);
-      const dom = pos >= 0 && editor.isFocused ? (editor.view.nodeDOM(pos) as HTMLElement | null) : null;
-      setBox(dom ? { pos, rect: dom.getBoundingClientRect() } : null);
+      const dom = pos >= 0 && (editor.isFocused || drag.current) ? (editor.view.nodeDOM(pos) as HTMLElement | null) : null;
+      if (!dom) return setBox(null);
+      const rect = dom.getBoundingClientRect();
+      const handles: Handle[] = [];
+      for (const cell of dom.querySelectorAll<HTMLElement>('tr:first-child > th, tr:first-child > td')) {
+        const r = cell.getBoundingClientRect();
+        // Skip borders scrolled out of the table's box.
+        if (r.right < rect.left + 4 || r.right > rect.right + 1) continue;
+        handles.push({ cellPos: editor.view.posAtDOM(cell, 0) - 1, x: r.right, y: r.top + r.height / 2, width: cell.offsetWidth });
+      }
+      setBox({ pos, rect, handles });
     };
     editor.on('transaction', update);
     editor.on('blur', update);
@@ -289,9 +325,27 @@ function TableAdders({ editor }: { editor: Editor }) {
       ><Plus size={13} /></button>
       <button
         type="button" className="table-add" aria-label="Add column" title="Add column"
-        style={{ left: Math.min(rect.right + 2, window.innerWidth - 20), top: rect.top, height: rect.height }}
+        style={{ left: Math.min(rect.right + 10, window.innerWidth - 20), top: rect.top, height: rect.height }}
         onMouseDown={(e) => e.preventDefault()} onClick={() => add('col')}
       ><Plus size={13} /></button>
+      {box.handles.map((h, i) => (
+        <span
+          key={i} className="table-col-handle" aria-hidden="true"
+          style={{ left: h.x, top: h.y }}
+          onMouseDown={(e) => e.preventDefault()}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.currentTarget.setPointerCapture(e.pointerId);
+            drag.current = { cellPos: h.cellPos, startX: e.clientX, startWidth: h.width };
+          }}
+          onPointerMove={(e) => {
+            const d = drag.current;
+            if (d) setColumnWidth(editor, d.cellPos, Math.max(CELL_MIN_WIDTH, Math.round(d.startWidth + e.clientX - d.startX)));
+          }}
+          onPointerUp={() => (drag.current = null)}
+          onPointerCancel={() => (drag.current = null)}
+        />
+      ))}
     </>,
     document.body,
   );
@@ -589,76 +643,6 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
     editor.commands.setContent(note.content, { emitUpdate: false });
     lastDoc.current = editor.state.doc;
   }, [note.content, note.writer, editor, writer]);
-
-  // Touch: hold near a cell's right edge, then drag to resize its column.
-  // The mouse resize from the table extension does not listen to touch events.
-  useEffect(() => {
-    const dom = editor.view.dom;
-    let hold = 0;
-    let drag: { cellPos: number; startX: number; startWidth: number } | null = null;
-    let origin = { x: 0, y: 0 };
-    const cancel = () => {
-      window.clearTimeout(hold);
-      drag = null;
-    };
-    const onStart = (e: TouchEvent) => {
-      cancel();
-      const t = e.touches[0];
-      const cell = (e.target as HTMLElement).closest('td, th');
-      if (e.touches.length !== 1 || !cell || !editor.isEditable) return;
-      if (cell.getBoundingClientRect().right - t.clientX > 24) return;
-      origin = { x: t.clientX, y: t.clientY };
-      hold = window.setTimeout(() => {
-        drag = { cellPos: editor.view.posAtDOM(cell, 0) - 1, startX: origin.x, startWidth: (cell as HTMLElement).offsetWidth };
-        navigator.vibrate?.(15);
-      }, 300);
-    };
-    const onMove = (e: TouchEvent) => {
-      const t = e.touches[0];
-      if (!drag) {
-        if (Math.hypot(t.clientX - origin.x, t.clientY - origin.y) > 8) window.clearTimeout(hold);
-        return;
-      }
-      e.preventDefault();
-      const width = Math.max(CELL_MIN_WIDTH, Math.round(drag.startWidth + t.clientX - drag.startX));
-      const { state } = editor.view;
-      const $cell = state.doc.resolve(drag.cellPos);
-      const table = $cell.node(-1);
-      const start = $cell.start(-1);
-      const map = TableMap.get(table);
-      const col = map.colCount(drag.cellPos - start) + ($cell.nodeAfter?.attrs.colspan ?? 1) - 1;
-      const tr = state.tr;
-      // Same per-cell colwidth update as the extension's mouse resize.
-      for (let row = 0; row < map.height; row++) {
-        const i = row * map.width + col;
-        if (row && map.map[i] === map.map[i - map.width]) continue;
-        const pos = map.map[i];
-        const attrs = table.nodeAt(pos)!.attrs;
-        const index = attrs.colspan === 1 ? 0 : col - map.colCount(pos);
-        if (attrs.colwidth?.[index] === width) continue;
-        const colwidth = attrs.colwidth ? [...attrs.colwidth] : Array(attrs.colspan).fill(0);
-        colwidth[index] = width;
-        tr.setNodeMarkup(start + pos, null, { ...attrs, colwidth });
-      }
-      if (tr.docChanged) editor.view.dispatch(tr);
-    };
-    const onMenu = (e: Event) => {
-      if (drag) e.preventDefault();
-    };
-    dom.addEventListener('touchstart', onStart, { passive: true });
-    dom.addEventListener('touchmove', onMove, { passive: false });
-    dom.addEventListener('touchend', cancel);
-    dom.addEventListener('touchcancel', cancel);
-    dom.addEventListener('contextmenu', onMenu);
-    return () => {
-      cancel();
-      dom.removeEventListener('touchstart', onStart);
-      dom.removeEventListener('touchmove', onMove);
-      dom.removeEventListener('touchend', cancel);
-      dom.removeEventListener('touchcancel', cancel);
-      dom.removeEventListener('contextmenu', onMenu);
-    };
-  }, [editor]);
 
   useEffect(() => {
     if (editor.isEditable === readOnly) editor.setEditable(!readOnly, false);

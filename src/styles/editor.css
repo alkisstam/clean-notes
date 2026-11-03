@@ -51,6 +51,12 @@ li.task-flash { background: var(--accent-soft); box-shadow: 0 0 0 5px var(--acce
   position: fixed; z-index: 20; min-width: 18px; min-height: 18px; display: grid; place-items: center;
   border: 0; border-radius: 4px; background: var(--hover); color: var(--ink-3); opacity: 0.6; cursor: pointer;
 }
+.table-col-handle {
+  position: fixed; z-index: 21; width: 14px; height: 30px; transform: translate(-50%, -50%);
+  border-radius: 7px; background: var(--accent); opacity: 0.75; touch-action: none; cursor: col-resize;
+}
+/* A bigger invisible target for fingers. */
+.table-col-handle::before { content: ''; position: absolute; inset: -8px -10px; }
 .table-add:hover { opacity: 1; background: var(--accent-soft); color: var(--accent); }
 
 /* placeholder */
