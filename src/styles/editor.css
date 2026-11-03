@@ -182,7 +182,7 @@ li.task-flash { background: var(--accent-soft); box-shadow: 0 0 0 5px var(--acce
 /* editor toolbar */
 .editor-toolbar {
   position: sticky; top: 0; z-index: 5;
-  display: flex; align-items: center; gap: 1px; margin: 6px 0 14px; padding: 4px;
+  display: flex; align-items: center; gap: 1px; margin: 6px 0 10px; padding: 4px;
   background: var(--raised); border: 1px solid var(--line); border-radius: 10px;
   overflow-x: auto; scrollbar-width: none;
 }
@@ -198,3 +198,5 @@ li.task-flash { background: var(--accent-soft); box-shadow: 0 0 0 5px var(--acce
 .editor-toolbar select:hover { background: var(--hover); }
 .editor-toolbar select option { background: var(--raised); color: var(--ink); }
 .toolbar-sep { flex: none; width: 1px; height: 16px; margin: 0 4px; background: var(--line); }
+/* The note text starts below a line, so the sticky toolbar reads as separate from it. */
+.editor-toolbar + * { border-top: 1px solid var(--line); padding-top: 14px; }

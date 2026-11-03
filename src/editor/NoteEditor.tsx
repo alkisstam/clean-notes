@@ -265,7 +265,8 @@ function FormatMenu({ editor }: { editor: Editor }) {
   return (
     <BubbleMenu
       editor={editor}
-      options={{ placement: 'top', offset: 8 }}
+      // Flip below the selection before the sticky toolbar (about 40px tall) would cover it.
+      options={{ placement: 'top', offset: 8, flip: { padding: { top: 48 } } }}
       shouldShow={({ editor: e, state, from, to }) => {
         if (linking) return true;
         if (from === to || !e.isEditable || !e.isFocused) return false;
