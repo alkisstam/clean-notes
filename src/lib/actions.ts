@@ -69,6 +69,35 @@ export async function createSubNote(parentId: string) {
   s.openNote(note.id, { focusTitle: true });
 }
 
+/** Puts a note and its sub-notes under another note, in that note's notebook. */
+export async function nestNote(id: string, parentId: string) {
+  flushEditor();
+  const ok = await db.transaction('rw', db.notes, async () => {
+    const all = await db.notes.toArray();
+    const byId = new Map(all.map((n) => [n.id, n]));
+    const parent = byId.get(parentId);
+    if (!parent || id === parentId || !byId.has(id) || byId.get(id)!.parentId === parentId) return true;
+    for (let n: Note | undefined = parent, hops = 0; n && hops <= all.length; n = byId.get(n.parentId ?? ''), hops++) {
+      if (n.id === id) return false;
+    }
+    const subtree = [id];
+    for (let i = 0; i < subtree.length; i++) {
+      for (const n of all) if (n.parentId === subtree[i] && !subtree.includes(n.id)) subtree.push(n.id);
+    }
+    const now = Date.now();
+    await db.notes.update(id, { parentId, updatedAt: now });
+    await db.notes.where('id').anyOf(subtree).modify((n) => {
+      if (n.notebookId === parent.notebookId) return;
+      n.notebookId = parent.notebookId;
+      n.updatedAt = now;
+    });
+    return true;
+  });
+  const s = store.getState();
+  if (!ok) s.showToast({ message: 'A note cannot go inside its own sub-note' });
+  else if (s.collapsedNotes.includes(parentId)) s.toggleNote(parentId);
+}
+
 export async function patchNote(id: string, patch: Partial<Note>) {
   await db.notes.update(id, { ...patch, updatedAt: Date.now() });
 }

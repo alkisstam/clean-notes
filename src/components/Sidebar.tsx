@@ -18,7 +18,7 @@ function sameView(a: View, b: View) {
   return true;
 }
 
-function dropProps(onNote: (id: string) => void) {
+export function dropProps(onNote: (id: string) => void) {
   return {
     onDragOver: (e: DragEvent<HTMLElement>) => {
       if (!e.dataTransfer.types.includes(NOTE_DRAG)) return;
@@ -231,7 +231,7 @@ export function Sidebar({ notes, notebooks, searchRef }: { notes: Note[]; notebo
               icon={<BookOpen size={15} />}
               label={b.name}
               count={live.filter((n) => n.notebookId === b.id).length}
-              {...dropProps((id) => void patchNote(id, { notebookId: b.id }))}
+              {...dropProps((id) => void patchNote(id, { notebookId: b.id, parentId: null }))}
               extra={
                 <Menu
                   label={`Actions for ${b.name}`}

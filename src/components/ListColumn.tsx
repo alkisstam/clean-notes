@@ -3,7 +3,7 @@ import {
   ArrowDownUp, ChevronLeft, ChevronRight, FileText, Image as ImageIcon, Menu as MenuIcon, Pin, Plus, RotateCcw, SearchX, Trash2, ChevronDown,
 } from 'lucide-react';
 import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { createNote, deleteForever, flushEditor, openDaily, quickAddTask, restoreNote, setTaskAttrs } from '../lib/actions';
+import { createNote, deleteForever, nestNote, flushEditor, openDaily, quickAddTask, restoreNote, setTaskAttrs } from '../lib/actions';
 import { db } from '../lib/db';
 import { dateKey, dueLabel, firstDayOfWeek, longDate, monthGrid, parseKey, relativeTime, shortDate } from '../lib/dates';
 import { imageIdsIn, pdfIdsIn } from '../lib/doc';
@@ -14,7 +14,7 @@ import { nestNotes, noteHasTag } from '../lib/tags';
 import { extractTasks, groupTasks } from '../lib/tasks';
 import type { Note, Notebook, PdfFile, TaskRef, View } from '../lib/types';
 import { Menu } from './Overlay';
-import { NOTE_DRAG } from './Sidebar';
+import { dropProps, NOTE_DRAG } from './Sidebar';
 
 const Hit = ({ s }: { s: Snippet }) => (
   <>
@@ -26,7 +26,7 @@ const Hit = ({ s }: { s: Snippet }) => (
 
 const preview = (text: string) => text.replace(/\n/g, ' ').slice(0, 170);
 
-const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, actions, depth = 0, hasKids, collapsed }: {
+const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, actions, depth = 0, hasKids, collapsed, nestable }: {
   note: Note;
   active: boolean;
   notebook?: string;
@@ -36,6 +36,7 @@ const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, acti
   depth?: number;
   hasKids?: boolean;
   collapsed?: boolean;
+  nestable?: boolean;
 }) {
   const tasks = useMemo(() => extractTasks(note), [note]);
   const done = tasks.filter((t) => t.done).length;
@@ -51,6 +52,7 @@ const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, acti
         e.dataTransfer.setData(NOTE_DRAG, note.id);
         e.dataTransfer.effectAllowed = 'move';
       }}
+      {...(nestable ? dropProps((id) => void nestNote(id, note.id)) : {})}
     >
       {hasKids && (
         <button
@@ -465,6 +467,7 @@ export function ListColumn({ notes, notebooks }: { notes: Note[]; notebooks: Not
                 depth={depth}
                 hasKids={hasKids}
                 collapsed={collapsedNotes.includes(n.id)}
+                nestable={['all', 'notebook', 'tag'].includes(view.type)}
                 active={n.id === noteId}
                 notebook={view.type !== 'notebook' && n.notebookId ? nbName.get(n.notebookId) : undefined}
                 actions={

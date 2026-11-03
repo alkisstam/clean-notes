@@ -1,5 +1,5 @@
 import {
-  ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Copy, Feather, FilePlus, Maximize2, Minimize2, Pin, PinOff, RotateCcw, Trash2, X,
+  ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Copy, CornerLeftUp, Feather, FilePlus, Maximize2, Minimize2, Pin, PinOff, RotateCcw, Trash2, X,
 } from 'lucide-react';
 import { lazy, Component, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createNote, createSubNote, deleteForever, duplicateNote, editTags, journalEdit, openDaily, patchNote, restoreNote, trashNote } from '../lib/actions';
@@ -227,6 +227,11 @@ function Document({ note, notebooks, allTags }: { note: Note; notebooks: Noteboo
         ) : (
           <>
             {!isDaily && (
+              <button type="button" className="icon-btn" aria-label="New sub-note" title="New sub-note" onClick={() => void createSubNote(note.id)}>
+                <FilePlus size={15} />
+              </button>
+            )}
+            {!isDaily && (
               <button
                 type="button"
                 className="icon-btn"
@@ -251,7 +256,7 @@ function Document({ note, notebooks, allTags }: { note: Note; notebooks: Noteboo
             <Menu
               label="Note actions"
               items={[
-                ...(!isDaily ? [{ label: 'New sub-note', icon: <FilePlus size={14} />, run: () => void createSubNote(note.id) }] : []),
+                ...(note.parentId ? [{ label: 'Move to top level', icon: <CornerLeftUp size={14} />, run: () => void patchNote(note.id, { parentId: null }) }] : []),
                 ...(!isDaily ? [{ label: 'Duplicate', icon: <Copy size={14} />, run: () => void duplicateNote(note.id) }] : []),
                 { label: 'Move to Trash', icon: <Trash2 size={14} />, danger: true, run: () => void trashNote(note.id) },
               ]}

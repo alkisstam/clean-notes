@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { baseNote, deleteForever, deleteNotebook, getOrCreateDaily, renameNotebook, restoreNote, trashNote } from '../src/lib/actions';
+import { baseNote, deleteForever, deleteNotebook, getOrCreateDaily, nestNote, renameNotebook, restoreNote, trashNote } from '../src/lib/actions';
 import { importBackup, mergeSnapshot } from '../src/lib/backup';
 import { db } from '../src/lib/db';
 import type { Note } from '../src/lib/types';
@@ -90,5 +90,26 @@ describe('data', () => {
     await db.notebooks.put(renamed);
     await mergeSnapshot({ notes: [], tombstones });
     expect(await db.notebooks.get('nb')).toBeUndefined();
+  });
+});
+
+describe('nestNote', () => {
+  it('moves a note and its sub-notes under another note and its notebook', async () => {
+    const a = baseNote({ notebookId: 'x' });
+    const b = baseNote({ notebookId: 'y' });
+    const c = baseNote({ notebookId: 'y', parentId: b.id });
+    await db.notes.bulkAdd([a, b, c]);
+    await nestNote(b.id, a.id);
+    expect(await db.notes.get(b.id)).toMatchObject({ parentId: a.id, notebookId: 'x' });
+    expect(await db.notes.get(c.id)).toMatchObject({ parentId: b.id, notebookId: 'x' });
+  });
+  it('refuses to put a note inside its own sub-note', async () => {
+    const a = baseNote();
+    const b = baseNote({ parentId: a.id });
+    const c = baseNote({ parentId: b.id });
+    await db.notes.bulkAdd([a, b, c]);
+    await nestNote(a.id, c.id);
+    await nestNote(a.id, a.id);
+    expect((await db.notes.get(a.id))!.parentId).toBeUndefined();
   });
 });
