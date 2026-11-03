@@ -1,7 +1,7 @@
 // Clean Notes sync server. Node stdlib only, one user, behind nginx at /api/.
 // Env: SYNC_TOKEN (required), DATA_DIR (default /var/lib/clean-notes), PORT (default 8787).
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -18,7 +18,7 @@ export async function startServer({ token, dir, port = 0 }) {
   } catch (err) {
     if (err.code !== 'ENOENT') throw err;
   }
-  // shortcut: whole state rewritten per sync and deleted notes are kept forever; fine for one user's notes, move to SQLite if it gets slow.
+  // shortcut: whole state rewritten per sync; fine for one user's notes, move to SQLite if it gets slow.
   let saving = Promise.resolve();
   const save = () =>
     (saving = saving.then(async () => {
@@ -43,6 +43,43 @@ export async function startServer({ token, dir, port = 0 }) {
     return JSON.parse(s);
   };
   const TABLES = new Set(['notes', 'notebooks', 'tombstones', 'files', 'images']);
+  const DAY = 24 * 60 * 60 * 1000;
+
+  /** Forgets deleted notes and notebooks, and PDFs and images no note refers to. Saves before removing any bytes. */
+  async function cleanUp() {
+    for (const r of Object.values(state.records)) {
+      if (r.table !== 'tombstones' || !['notes', 'notebooks'].includes(r.data?.table)) continue;
+      // Only the tombstone stays, so deleted content does not linger here.
+      const deadKey = `${r.data.table}:${r.id}`;
+      if (state.records[deadKey]?.time <= r.time) delete state.records[deadKey];
+    }
+    const used = new Set();
+    const walk = (n) => {
+      if (n?.type === 'pdfAttachment' && n.attrs?.fileId) used.add(String(n.attrs.fileId));
+      if (n?.type === 'noteImage' && n.attrs?.imageId) used.add(String(n.attrs.imageId));
+      n?.content?.forEach(walk);
+    };
+    for (const r of Object.values(state.records)) if (r.table === 'notes') walk(r.data?.content);
+    const removed = [];
+    for (const [key, r] of Object.entries(state.records)) {
+      if ((r.table === 'files' || r.table === 'images') && !used.has(r.id)) {
+        delete state.records[key];
+        removed.push(r.id);
+      }
+    }
+    await save();
+    const owns = (id) => state.records[`files:${id}`] || state.records[`images:${id}`];
+    // Checked again here, in case another sync re-sent the record while this one was saving.
+    for (const id of removed) if (!owns(id)) await rm(join(blobDir, id), { force: true });
+    // Bytes without a record are kept a day: a device uploads them just before it sends the record.
+    for (const name of await readdir(blobDir)) {
+      if (owns(name)) continue;
+      const info = await stat(join(blobDir, name)).catch(() => null);
+      if (info && Date.now() - info.mtimeMs > DAY) await rm(join(blobDir, name), { force: true });
+    }
+  }
+
+  await cleanUp();
 
   const server = createServer(async (req, res) => {
     try {
@@ -57,10 +94,12 @@ export async function startServer({ token, dir, port = 0 }) {
           const key = `${r.table}:${r.id}`;
           const cur = state.records[key];
           if (cur && cur.time >= r.time) continue;
+          // A row deleted after this edit stays deleted.
+          if ((r.table === 'notes' || r.table === 'notebooks') && state.records[`tombstones:${r.id}`]?.time >= r.time) continue;
           state.records[key] = { table: r.table, id: r.id, time: r.time, data: r.data, seq: ++state.seq };
           accepted.add(key);
         }
-        if (accepted.size) await save();
+        if (accepted.size) await cleanUp();
         const out = Object.entries(state.records)
           .filter(([key, r]) => r.seq > since && !accepted.has(key))
           .map(([, r]) => r);

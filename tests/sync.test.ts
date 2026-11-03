@@ -30,7 +30,7 @@ const freshDevice = async () => {
 };
 
 it('moves notes, images and deletes between devices through the server', async () => {
-  const keep = baseNote({ title: 'Καλημέρα', content: { type: 'doc', content: [{ type: 'image', attrs: { id: 'img1' } }] } });
+  const keep = baseNote({ title: 'Καλημέρα', content: { type: 'doc', content: [{ type: 'noteImage', attrs: { imageId: 'img1' } }] } });
   const gone = baseNote({ title: 'gone' });
   await db.notes.bulkAdd([keep, gone]);
   await db.images.add({ id: 'img1', name: 'a.png', size: 3, width: 1, height: 1, createdAt: Date.now(), blob: new Blob(['png'], { type: 'image/png' }) });
@@ -58,6 +58,24 @@ it('passes on old edits that arrive through a backup file', async () => {
   await syncNow();
   await freshDevice();
   expect((await db.notes.get(old.id))?.title).toBe('from the file');
+});
+
+it('sends an image again if the server dropped it while another note still used it', async () => {
+  const first = baseNote({ content: { type: 'doc', content: [{ type: 'noteImage', attrs: { imageId: 'img2' } }] } });
+  await db.notes.add(first);
+  await db.images.add({ id: 'img2', name: 'b.png', size: 3, width: 1, height: 1, createdAt: Date.now(), blob: new Blob(['two'], { type: 'image/png' }) });
+  await syncNow();
+  // Another device deletes the only note the server knows uses the image, so the server drops it.
+  await fetch(`api/sync`, {
+    method: 'POST',
+    headers: { authorization: 'Bearer secret' },
+    body: JSON.stringify({ since: 0, records: [{ table: 'tombstones', id: first.id, time: Date.now() + 1, data: { id: first.id, table: 'notes', deletedAt: Date.now() + 1 } }] }),
+  });
+  // A copy made here before that delete arrived still uses it.
+  await db.notes.add(baseNote({ content: first.content, updatedAt: Date.now() + 2 }));
+  await syncNow();
+  await freshDevice();
+  expect(await (await db.images.get('img2'))?.blob.text()).toBe('two');
 });
 
 it('reports a wrong token without wiping anything', async () => {

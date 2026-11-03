@@ -1,4 +1,5 @@
 import { flushEditor } from './actions';
+import { imageIdsIn, pdfIdsIn } from './doc';
 import { mergeSnapshot, pullFromFile, pushToFile } from './backup';
 import { db, getMeta, setMeta, writeListeners } from './db';
 import { store } from './store';
@@ -46,6 +47,12 @@ async function serverSync(): Promise<boolean> {
     db.files.where('createdAt').above(pushFrom).toArray(),
     db.images.filter((i) => i.createdAt > pushFrom).toArray(),
   ]);
+  // The server drops PDFs and images no note uses, so send each pushed note's own along with it, in case they were dropped.
+  const has = new Set([...files, ...images].map((f) => f.id));
+  const fileIds = [...new Set(notes.flatMap((n) => pdfIdsIn(n.content)))].filter((id) => !has.has(id));
+  const imageIds = [...new Set(notes.flatMap((n) => imageIdsIn(n.content)))].filter((id) => !has.has(id));
+  files.push(...(await db.files.bulkGet(fileIds)).filter((f) => !!f));
+  images.push(...(await db.images.bulkGet(imageIds)).filter((i) => !!i));
   // Bytes go first, so no device ever sees a file record whose bytes are missing.
   for (const f of files) await uploadBlob(f.id, (await db.blobs.get(f.id))?.blob);
   for (const i of images) await uploadBlob(i.id, i.blob);
