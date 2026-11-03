@@ -50,6 +50,7 @@ interface State {
   theme: ThemePref;
   widths: { sidebar: number; list: number };
   collapsedTags: string[];
+  collapsedNotes: string[];
   focusTaskId: string | null;
   focusTitle: boolean;
   toast: Toast | null;
@@ -66,6 +67,7 @@ interface State {
   setTheme: (t: ThemePref) => void;
   setWidth: (key: 'sidebar' | 'list', px: number) => void;
   toggleTag: (path: string) => void;
+  toggleNote: (id: string) => void;
   clearFocusRequests: () => void;
   showToast: (t: Omit<Toast, 'id'>) => void;
   dismissToast: () => void;
@@ -92,6 +94,7 @@ export const useStore = create<State>((set, get) => ({
   })(),
   widths: read('cn.widths', { sidebar: 244, list: 320 }),
   collapsedTags: read<string[]>('cn.collapsedTags', []),
+  collapsedNotes: read<string[]>('cn.collapsedNotes', []),
   focusTaskId: null,
   focusTitle: false,
   toast: null,
@@ -133,6 +136,12 @@ export const useStore = create<State>((set, get) => ({
     const widths = { ...get().widths, [key]: px };
     write('cn.widths', widths);
     set({ widths });
+  },
+  toggleNote: (id) => {
+    const cur = get().collapsedNotes;
+    const next = cur.includes(id) ? cur.filter((p) => p !== id) : [...cur, id];
+    write('cn.collapsedNotes', next);
+    set({ collapsedNotes: next });
   },
   toggleTag: (path) => {
     const cur = get().collapsedTags;

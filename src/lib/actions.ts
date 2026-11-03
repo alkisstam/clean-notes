@@ -51,6 +51,24 @@ export async function createNote(view: View = store.getState().view) {
   return note;
 }
 
+export async function createSubNote(parentId: string) {
+  flushEditor();
+  const parent = await db.notes.get(parentId);
+  if (!parent) return;
+  const view = store.getState().view;
+  const note = baseNote({
+    parentId,
+    notebookId: parent.notebookId,
+    tags: view.type === 'tag' ? [view.path] : [],
+  });
+  await db.notes.add(note);
+  const s = store.getState();
+  if (!['all', 'notebook', 'tag'].includes(view.type)) s.setView({ type: 'all' });
+  s.setQuery('');
+  if (s.collapsedNotes.includes(parentId)) s.toggleNote(parentId);
+  s.openNote(note.id, { focusTitle: true });
+}
+
 export async function patchNote(id: string, patch: Partial<Note>) {
   await db.notes.update(id, { ...patch, updatedAt: Date.now() });
 }
@@ -188,6 +206,7 @@ export async function duplicateNote(id: string) {
     title: src.title ? `${src.title} copy` : '',
     content,
     notebookId: src.notebookId,
+    parentId: src.parentId,
     tags: [...src.tags],
   });
   await db.notes.add(copy);

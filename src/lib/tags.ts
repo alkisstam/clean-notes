@@ -49,6 +49,37 @@ export function buildTagTree(noteTags: string[][]): TagNode[] {
   return root.children;
 }
 
+/**
+ * Orders an already sorted list as a tree of sub-notes, keeping the sort within each sibling group.
+ * A note whose parent is not in the list (trashed, deleted, other notebook) shows at the top level.
+ */
+export function nestNotes<T extends { id: string; parentId?: string | null }>(sorted: T[], collapsed: string[]) {
+  const ids = new Set(sorted.map((n) => n.id));
+  const kids = new Map<string, T[]>();
+  const roots: T[] = [];
+  for (const n of sorted) {
+    if (n.parentId && n.parentId !== n.id && ids.has(n.parentId)) {
+      const list = kids.get(n.parentId) ?? [];
+      list.push(n);
+      kids.set(n.parentId, list);
+    } else roots.push(n);
+  }
+  const out: { note: T; depth: number; hasKids: boolean }[] = [];
+  const reached = new Set<string>();
+  const walk = (list: T[], depth: number, hidden: boolean) => {
+    for (const note of list) {
+      reached.add(note.id);
+      const children = kids.get(note.id);
+      if (!hidden) out.push({ note, depth, hasKids: Boolean(children) });
+      if (children) walk(children, depth + 1, hidden || collapsed.includes(note.id));
+    }
+  };
+  walk(roots, 0, false);
+  // A parent loop (only possible from bad synced or imported data) would otherwise hide those notes.
+  for (const n of sorted) if (!reached.has(n.id)) out.push({ note: n, depth: 0, hasKids: false });
+  return out;
+}
+
 /** Every tag and every ancestor, for autocomplete. */
 export function allTagPaths(noteTags: string[][]): string[] {
   const set = new Set<string>();

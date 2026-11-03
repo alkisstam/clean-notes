@@ -10,7 +10,7 @@ import { imageIdsIn, pdfIdsIn } from '../lib/doc';
 import { formatBytes } from '../lib/pdf';
 import { foldQuery, includesFolded, snippet, type Snippet } from '../lib/search';
 import { store, useStore, type SortKey } from '../lib/store';
-import { noteHasTag } from '../lib/tags';
+import { nestNotes, noteHasTag } from '../lib/tags';
 import { extractTasks, groupTasks } from '../lib/tasks';
 import type { Note, Notebook, PdfFile, TaskRef, View } from '../lib/types';
 import { Menu } from './Overlay';
@@ -26,13 +26,16 @@ const Hit = ({ s }: { s: Snippet }) => (
 
 const preview = (text: string) => text.replace(/\n/g, ' ').slice(0, 170);
 
-const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, actions }: {
+const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, actions, depth = 0, hasKids, collapsed }: {
   note: Note;
   active: boolean;
   notebook?: string;
   hit?: { snippet: Snippet | null; source?: string };
   index: number;
   actions?: ReactNode;
+  depth?: number;
+  hasKids?: boolean;
+  collapsed?: boolean;
 }) {
   const tasks = useMemo(() => extractTasks(note), [note]);
   const done = tasks.filter((t) => t.done).length;
@@ -42,13 +45,24 @@ const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, acti
     <div
       className="note-row"
       data-active={active}
-      style={{ '--i': Math.min(index, 12) } as React.CSSProperties}
+      style={{ '--i': Math.min(index, 12), '--depth': depth } as React.CSSProperties}
       draggable={!note.trashedAt}
       onDragStart={(e) => {
         e.dataTransfer.setData(NOTE_DRAG, note.id);
         e.dataTransfer.effectAllowed = 'move';
       }}
     >
+      {hasKids && (
+        <button
+          type="button"
+          className="note-row-toggle"
+          aria-expanded={!collapsed}
+          aria-label={`${collapsed ? 'Expand' : 'Collapse'} sub-notes of ${note.title || 'Untitled'}`}
+          onClick={() => store.getState().toggleNote(note.id)}
+        >
+          <ChevronDown size={12} data-open={!collapsed} />
+        </button>
+      )}
       <button type="button" className="note-row-main" aria-current={active ? 'true' : undefined} onClick={() => store.getState().openNote(note.id)}>
         <span className="note-row-title">
           {note.pinned && !note.trashedAt && <Pin size={11} aria-label="Pinned" />}
@@ -293,6 +307,7 @@ export function ListColumn({ notes, notebooks }: { notes: Note[]; notebooks: Not
   const setSort = useStore((s) => s.setSort);
   const dailyDate = useStore((s) => s.dailyDate);
   const activePdf = useStore((s) => s.pdf?.fileId);
+  const collapsedNotes = useStore((s) => s.collapsedNotes);
   const setPane = useStore((s) => s.setPane);
   const files = useLiveQuery(() => db.files.toArray(), [], [] as PdfFile[]);
 
@@ -321,6 +336,13 @@ export function ListColumn({ notes, notebooks }: { notes: Note[]; notebooks: Not
     };
     return [...out].sort((a, b) => Number(b.pinned) - Number(a.pinned) || cmp[sort](a, b));
   }, [view, live, notes, sort, dailyDate]);
+
+  const rows = useMemo(
+    () => (['all', 'notebook', 'tag'].includes(view.type)
+      ? nestNotes(listed, collapsedNotes)
+      : listed.map((note) => ({ note, depth: 0, hasKids: false }))),
+    [view.type, listed, collapsedNotes],
+  );
 
   const hits = useMemo<SearchHit[]>(() => {
     const q = foldQuery(query);
@@ -435,11 +457,14 @@ export function ListColumn({ notes, notebooks }: { notes: Note[]; notebooks: Not
         )}
         {listed.length ? (
           <div className="list-scroll">
-            {listed.map((n, i) => (
+            {rows.map(({ note: n, depth, hasKids }, i) => (
               <NoteRow
                 key={n.id}
                 note={n}
                 index={i}
+                depth={depth}
+                hasKids={hasKids}
+                collapsed={collapsedNotes.includes(n.id)}
                 active={n.id === noteId}
                 notebook={view.type !== 'notebook' && n.notebookId ? nbName.get(n.notebookId) : undefined}
                 actions={

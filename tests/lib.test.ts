@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { addDays, dateKey, monthGrid } from '../src/lib/dates';
 import { docText } from '../src/lib/doc';
 import { findRanges, includesFolded, snippet } from '../src/lib/search';
-import { buildTagTree, normalizeTag, noteHasTag, renameTagIn } from '../src/lib/tags';
+import { buildTagTree, nestNotes, normalizeTag, noteHasTag, renameTagIn } from '../src/lib/tags';
 import { appendTask, extractTasks, groupTasks, patchTask } from '../src/lib/tasks';
 
 describe('tags', () => {
@@ -116,5 +116,21 @@ describe('tasks', () => {
       { type: 'paragraph', content: [{ type: 'text', text: 'a' }] },
       { type: 'pdfAttachment', attrs: { name: 'x.pdf' } },
     ] })).toBe('a\nx.pdf');
+  });
+});
+
+describe('nestNotes', () => {
+  const n = (id: string, parentId?: string) => ({ id, parentId });
+  const shape = (rows: ReturnType<typeof nestNotes>) => rows.map((r) => `${r.note.id}:${r.depth}${r.hasKids ? '+' : ''}`);
+  const list = [n('c', 'a'), n('a'), n('b'), n('d', 'c'), n('e', 'a'), n('x', 'gone')];
+  it('nests under parents and keeps the sort order', () => {
+    expect(shape(nestNotes(list, []))).toEqual(['a:0+', 'c:1+', 'd:2', 'e:1', 'b:0', 'x:0']);
+  });
+  it('hides the whole subtree of a collapsed note', () => {
+    expect(shape(nestNotes(list, ['a']))).toEqual(['a:0+', 'b:0', 'x:0']);
+    expect(shape(nestNotes(list, ['c']))).toEqual(['a:0+', 'c:1+', 'e:1', 'b:0', 'x:0']);
+  });
+  it('shows notes caught in a parent loop', () => {
+    expect(shape(nestNotes([n('p', 'q'), n('q', 'p'), n('s', 's')], []))).toEqual(['s:0', 'p:0', 'q:0']);
   });
 });

@@ -7,6 +7,8 @@ export interface Note {
   /** Plain text of the content, kept for the list preview and search. */
   text: string;
   notebookId: string | null;
+  /** Note this one is nested under. Absent on top-level notes and ones made before sub-notes existed. */
+  parentId?: string | null;
   tags: string[];
   kind: 'note' | 'daily';
   /** YYYY-MM-DD, daily notes only. */

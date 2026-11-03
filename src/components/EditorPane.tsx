@@ -1,8 +1,8 @@
 import {
-  ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Copy, Feather, Maximize2, Minimize2, Pin, PinOff, RotateCcw, Trash2, X,
+  ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Copy, Feather, FilePlus, Maximize2, Minimize2, Pin, PinOff, RotateCcw, Trash2, X,
 } from 'lucide-react';
 import { lazy, Component, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { createNote, deleteForever, duplicateNote, editTags, journalEdit, openDaily, patchNote, restoreNote, trashNote } from '../lib/actions';
+import { createNote, createSubNote, deleteForever, duplicateNote, editTags, journalEdit, openDaily, patchNote, restoreNote, trashNote } from '../lib/actions';
 import { addDays, dateKey, relativeTime } from '../lib/dates';
 import { NoteEditor } from '../editor/NoteEditor';
 import { store, useStore } from '../lib/store';
@@ -251,6 +251,7 @@ function Document({ note, notebooks, allTags }: { note: Note; notebooks: Noteboo
             <Menu
               label="Note actions"
               items={[
+                ...(!isDaily ? [{ label: 'New sub-note', icon: <FilePlus size={14} />, run: () => void createSubNote(note.id) }] : []),
                 ...(!isDaily ? [{ label: 'Duplicate', icon: <Copy size={14} />, run: () => void duplicateNote(note.id) }] : []),
                 { label: 'Move to Trash', icon: <Trash2 size={14} />, danger: true, run: () => void trashNote(note.id) },
               ]}
