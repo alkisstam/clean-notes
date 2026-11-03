@@ -11,7 +11,7 @@ import { StarterKit } from '@tiptap/starter-kit';
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
 import {
   Bold, CalendarPlus, Check, Code, ExternalLink, FileText, Heading2, Highlighter, ImagePlus, Italic, Link2, List, ListOrdered, ListTodo,
-  Minus, Quote, SquareCode, Strikethrough, Table, Table2, Underline, X,
+  Minus, Plus, Quote, SquareCode, Strikethrough, Table, Table2, Underline, X,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
@@ -239,6 +239,59 @@ function Toolbar({ editor, items }: { editor: Editor; items: SlashItem[] }) {
         />
       )}
     </div>
+  );
+}
+
+// "+" buttons under and beside the table holding the cursor, adding a row or column at its end.
+function TableAdders({ editor }: { editor: Editor }) {
+  const [box, setBox] = useState<{ pos: number; rect: DOMRect } | null>(null);
+  useEffect(() => {
+    const update = () => {
+      const { $from } = editor.state.selection;
+      let pos = -1;
+      for (let d = $from.depth; d > 0; d--) if ($from.node(d).type.name === 'table') pos = $from.before(d);
+      const dom = pos >= 0 && editor.isFocused ? (editor.view.nodeDOM(pos) as HTMLElement | null) : null;
+      setBox(dom ? { pos, rect: dom.getBoundingClientRect() } : null);
+    };
+    editor.on('transaction', update);
+    editor.on('blur', update);
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      editor.off('transaction', update);
+      editor.off('blur', update);
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [editor]);
+  if (!box) return null;
+
+  const add = (where: 'row' | 'col') => {
+    const table = editor.state.doc.nodeAt(box.pos);
+    if (!table) return;
+    // Inside the last cell of the last row: just before its closing tokens.
+    const inLast = box.pos + table.nodeSize - 3;
+    const chain = editor.chain().focus().command(({ tr }) => {
+      tr.setSelection(Selection.near(tr.doc.resolve(inLast), -1));
+      return true;
+    });
+    (where === 'row' ? chain.addRowAfter() : chain.addColumnAfter()).run();
+  };
+  const { rect } = box;
+  return createPortal(
+    <>
+      <button
+        type="button" className="table-add" aria-label="Add row" title="Add row"
+        style={{ left: rect.left, top: rect.bottom + 2, width: rect.width }}
+        onMouseDown={(e) => e.preventDefault()} onClick={() => add('row')}
+      ><Plus size={13} /></button>
+      <button
+        type="button" className="table-add" aria-label="Add column" title="Add column"
+        style={{ left: Math.min(rect.right + 2, window.innerWidth - 20), top: rect.top, height: rect.height }}
+        onMouseDown={(e) => e.preventDefault()} onClick={() => add('col')}
+      ><Plus size={13} /></button>
+    </>,
+    document.body,
   );
 }
 
@@ -558,6 +611,7 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
       {!readOnly && showToolbar && <Toolbar editor={editor} items={items} />}
       <EditorContent editor={editor} />
       {!readOnly && <FormatMenu editor={editor} />}
+      {!readOnly && <TableAdders editor={editor} />}
       {slash && <SlashMenu state={slash} index={slashIndex} onHover={setSlashIndex} />}
     </>
   );

@@ -47,6 +47,11 @@ li.task-flash { background: var(--accent-soft); box-shadow: 0 0 0 5px var(--acce
 .prose .selectedCell::after { content: ''; position: absolute; inset: 0; background: var(--accent-soft); pointer-events: none; }
 .prose .column-resize-handle { position: absolute; right: -1px; top: 0; bottom: 0; width: 2px; background: var(--accent); pointer-events: none; }
 .prose.resize-cursor, .resize-cursor { cursor: col-resize; }
+.table-add {
+  position: fixed; z-index: 20; min-width: 18px; min-height: 18px; display: grid; place-items: center;
+  border: 0; border-radius: 4px; background: var(--hover); color: var(--ink-3); opacity: 0.6; cursor: pointer;
+}
+.table-add:hover { opacity: 1; background: var(--accent-soft); color: var(--accent); }
 
 /* placeholder */
 .prose .is-empty.is-editor-empty:first-child::before,
