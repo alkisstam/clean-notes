@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { baseNote, deleteForever, deleteNotebook, getOrCreateDaily, nestNote, renameNotebook, restoreNote, trashNote } from '../src/lib/actions';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { baseNote, deleteForever, deleteNotebook, getOrCreateDaily, journalEdit, nestNote, recoverJournal, renameNotebook, restoreNote, trashNote } from '../src/lib/actions';
 import { importBackup, mergeSnapshot } from '../src/lib/backup';
 import { db } from '../src/lib/db';
 import type { Note } from '../src/lib/types';
@@ -26,6 +26,33 @@ describe('data', () => {
     expect(await db.files.get('f1')).toBeDefined();
     await deleteForever([b.id]);
     expect(await db.files.get('f1')).toBeUndefined();
+  });
+
+  it('keeps a just-added PDF whose note has not saved yet', async () => {
+    const a = baseNote();
+    await db.notes.add(a);
+    await db.files.add({ ...pdfMeta('fresh'), createdAt: Date.now() });
+    await deleteForever([a.id]);
+    expect(await db.files.get('fresh')).toBeDefined();
+  });
+
+  it('recovers journaled edits on launch, unless the note was edited later', async () => {
+    const mem = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => mem.get(k) ?? null,
+      setItem: (k: string, v: string) => mem.set(k, v),
+      removeItem: (k: string) => mem.delete(k),
+    });
+    const stale = baseNote({ title: 'old', updatedAt: 100 });
+    const newer = baseNote({ title: 'kept', updatedAt: Date.now() + 60_000 });
+    await db.notes.bulkAdd([stale, newer]);
+    journalEdit(stale.id, { title: 'from journal' });
+    journalEdit(newer.id, { title: 'lost' });
+    await recoverJournal();
+    expect((await db.notes.get(stale.id))?.title).toBe('from journal');
+    expect((await db.notes.get(newer.id))?.title).toBe('kept');
+    expect(mem.size).toBe(0);
+    vi.unstubAllGlobals();
   });
 
   it('restores only copies newer than the local one, and keeps local notebook names', async () => {

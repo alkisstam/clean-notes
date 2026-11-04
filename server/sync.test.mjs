@@ -44,11 +44,19 @@ test('sync keeps the newest record, returns changes since a seq, and stores blob
     assert.equal((await fetch(`${base}/blob/p1`, { method: 'HEAD', headers })).status, 404, 'an unused PDF is dropped');
     assert.equal((await fetch(`${base}/blob/x1`, { method: 'HEAD', headers })).status, 200, 'fresh bytes without a record are kept');
 
+    const [older, newer] = await Promise.all([
+      sync(0, [{ table: 'notes', id: 'n9', time: 100, data: { v: 'older' } }]),
+      sync(0, [{ table: 'notes', id: 'n9', time: 200, data: { v: 'newer' } }]),
+    ]);
+    const seenByOlder = [...older.records, ...(await sync(older.seq, [])).records].find((r) => r.id === 'n9');
+    assert.equal(seenByOlder?.data.v, 'newer', 'overlapping syncs still hand the older sender the newer copy');
+    assert.equal(newer.records.find((r) => r.id === 'n9'), undefined);
+
     server.close();
     const again = await startServer({ token: 't', dir });
     const port = again.address().port;
     const d = await fetch(`http://127.0.0.1:${port}/api/sync`, { method: 'POST', headers, body: JSON.stringify({ since: 0, records: [] }) }).then((r) => r.json());
-    assert.deepEqual(d.records.map((r) => r.table).sort(), ['notes', 'tombstones'], 'state survives a restart, deleted note content does not');
+    assert.deepEqual(d.records.map((r) => r.table).sort(), ['notes', 'notes', 'tombstones'], 'state survives a restart, deleted note content does not');
     again.close();
   } finally {
     server.close();

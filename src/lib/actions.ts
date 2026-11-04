@@ -201,15 +201,16 @@ export async function restoreNote(id: string) {
 
 /** Removes stored PDFs and images that no remaining note refers to. Each device does this itself, so files need no tombstones. */
 export async function collectOrphanFiles() {
+  // A file just dropped into a note, in this tab or another, is saved before the note is; give the note time to catch up.
+  const before = Date.now() - 5 * 60_000;
   const notes = await db.notes.toArray();
   const used = new Set(notes.flatMap((n) => pdfIdsIn(n.content)));
-  const ids = (await db.files.toCollection().primaryKeys()) as string[];
+  const ids = (await db.files.where('createdAt').below(before).primaryKeys()) as string[];
   const orphans = ids.filter((id) => !used.has(id));
   await db.files.bulkDelete(orphans);
   await db.blobs.bulkDelete(orphans);
   const usedImages = new Set(notes.flatMap((n) => imageIdsIn(n.content)));
-  const imageIds = (await db.images.toCollection().primaryKeys()) as string[];
-  await db.images.bulkDelete(imageIds.filter((id) => !usedImages.has(id)));
+  await db.images.filter((i) => i.createdAt < before && !usedImages.has(i.id)).delete();
 }
 
 export async function deleteForever(ids: string[]) {

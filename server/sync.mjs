@@ -88,7 +88,8 @@ export async function startServer({ token, dir, port = 0 }) {
       if (req.method === 'POST' && url.pathname === '/api/sync') {
         const { since, records } = await readJson(req);
         if (typeof since !== 'number' || !Array.isArray(records)) return send(res, 400, { error: 'bad request' });
-        const accepted = new Set();
+        // Key to seq, so a newer copy another device sends while this request waits is still returned.
+        const accepted = new Map();
         for (const r of records) {
           if (!TABLES.has(r?.table) || typeof r.id !== 'string' || typeof r.time !== 'number') continue;
           const key = `${r.table}:${r.id}`;
@@ -97,11 +98,11 @@ export async function startServer({ token, dir, port = 0 }) {
           // A row deleted after this edit stays deleted.
           if ((r.table === 'notes' || r.table === 'notebooks') && state.records[`tombstones:${r.id}`]?.time >= r.time) continue;
           state.records[key] = { table: r.table, id: r.id, time: r.time, data: r.data, seq: ++state.seq };
-          accepted.add(key);
+          accepted.set(key, state.seq);
         }
         if (accepted.size) await cleanUp();
         const out = Object.entries(state.records)
-          .filter(([key, r]) => r.seq > since && !accepted.has(key))
+          .filter(([key, r]) => r.seq > since && accepted.get(key) !== r.seq)
           .map(([, r]) => r);
         return send(res, 200, { seq: state.seq, records: out });
       }

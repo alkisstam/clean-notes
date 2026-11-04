@@ -152,8 +152,8 @@ async function step(what: string, run: () => Promise<boolean>): Promise<boolean>
   } catch (err) {
     console.error(err);
     dirty = true;
-    // A plain network failure, as on a phone that is offline, is retried quietly on the next change or focus.
-    if (!(err instanceof TypeError)) {
+    // A failed fetch on a phone that is offline is retried quietly on the next change or focus. Code bugs also throw TypeError, so only offline counts.
+    if (!(err instanceof TypeError && !navigator.onLine)) {
       const detail = err instanceof SyncError ? ` ${err.message}` : '';
       store.getState().showToast({ message: `${what} failed.${detail} It will try again after the next change.` });
     }
