@@ -66,5 +66,6 @@
       "syncDesktopName": true
     }
   },
-  "desktopName": "clean-notes.desktop"
+  "desktopName": "clean-notes.desktop",
+  "license": "MIT"
 }
