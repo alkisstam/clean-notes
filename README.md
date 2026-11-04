@@ -15,10 +15,11 @@ npm run preview   # serve that build, with the service worker, at http://localho
 
 `dist/` is plain static files, and asset paths are relative, so it works at a domain root or in a sub-folder. Installing and offline use need HTTPS (`localhost` also counts). Serve `sw.js` with `Cache-Control: no-cache` so updates reach people promptly. Existing users then see a "new version" prompt.
 
-`./deploy.sh` builds and uploads the app over SSH with rsync, copies `server/sync.mjs` there and restarts the sync service. Point it at your own server with environment variables:
+`./deploy.sh` builds and uploads the app over SSH with rsync, copies `server/sync.mjs` there and restarts the sync service. It needs `DEPLOY_HOST` and `DEPLOY_URL`, set in the environment or in a git-ignored `deploy.local` next to the script:
 
 ```sh
-DEPLOY_HOST=myserver DEPLOY_URL=https://notes.example.com ./deploy.sh
+DEPLOY_HOST=myserver
+DEPLOY_URL=https://notes.example.com
 ```
 
 `DEPLOY_HOST` is an SSH host (an alias from `~/.ssh/config` or `user@host`). `DEPLOY_WEB_DIR` (default `/var/www/clean-notes`) is where nginx serves the app from, and `DEPLOY_SYNC_DIR` (default `/opt/clean-notes-sync`) is where the sync server lives. Set up the server once first, as described in [Server setup](#server-setup).
