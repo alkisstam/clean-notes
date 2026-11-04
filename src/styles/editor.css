@@ -113,6 +113,7 @@ li.task-flash { background: var(--accent-soft); box-shadow: 0 0 0 5px var(--acce
 .slash-empty { padding: 8px 9px; color: var(--ink-3); }
 
 /* format menu */
+body[data-edit-menu] .format-menu { visibility: hidden; }
 .format-menu {
   display: flex; align-items: center; gap: 1px; padding: 3px;
   background: var(--ink); color: var(--paper);

@@ -12,6 +12,15 @@ import { Dialogs, ToastHost } from './components/Dialogs';
 import { EditorPane, Boundary } from './components/EditorPane';
 import { ListColumn } from './components/ListColumn';
 import { Sidebar } from './components/Sidebar';
+import { MenuPopup, type MenuItem } from './components/Overlay';
+import { ClipboardPaste, Copy, Redo2, Scissors, TextSelect, Undo2 } from 'lucide-react';
+
+type EditFlags = { canCut: boolean; canCopy: boolean; canPaste: boolean; canSelectAll: boolean };
+declare global {
+  interface Window {
+    desktop?: { edit: (role: string) => void; onEditMenu: (cb: (p: { x: number; y: number; flags: EditFlags }) => void) => void };
+  }
+}
 
 const THEME_COLORS = { light: '#f5f2eb', dark: '#191816' };
 
@@ -219,6 +228,37 @@ export function App() {
       <Dialogs />
       <ToastHost />
       <UpdatePrompt />
+      {window.desktop && <EditMenu />}
     </div>
   );
+}
+
+/** Right-click menu for text fields in the desktop app. Electron tells us where and what is possible, then performs the edit. */
+function EditMenu() {
+  const [menu, setMenu] = useState<{ rect: DOMRect; flags: EditFlags } | null>(null);
+  useEffect(() => window.desktop!.onEditMenu(({ x, y, flags }) => setMenu({ rect: new DOMRect(x, y, 0, 0), flags })), []);
+  // The selection's format bar would sit under this menu, so it hides while the menu is open.
+  useEffect(() => void document.body.toggleAttribute('data-edit-menu', Boolean(menu)), [menu]);
+  const f = menu?.flags;
+  const item = (label: string, icon: React.ReactNode, role: string, enabled?: boolean): MenuItem => ({
+    label, icon, disabled: !enabled, run: () => window.desktop!.edit(role),
+  });
+  // Chromium's undo can't see the editor's own history, but the editor answers these events. Plain inputs fall back to Chromium.
+  const history = (label: string, icon: React.ReactNode, role: 'undo' | 'redo'): MenuItem => ({
+    label, icon, run: () => {
+      const e = new InputEvent('beforeinput', { inputType: role === 'undo' ? 'historyUndo' : 'historyRedo', bubbles: true, cancelable: true });
+      if (document.activeElement?.dispatchEvent(e) !== false) window.desktop!.edit(role);
+    },
+  });
+  const items = f
+    ? [
+        item('Cut', <Scissors size={14} />, 'cut', f.canCut),
+        item('Copy', <Copy size={14} />, 'copy', f.canCopy),
+        item('Paste', <ClipboardPaste size={14} />, 'paste', f.canPaste),
+        history('Undo', <Undo2 size={14} />, 'undo'),
+        history('Redo', <Redo2 size={14} />, 'redo'),
+        item('Select All', <TextSelect size={14} />, 'selectAll', f.canSelectAll),
+      ]
+    : [];
+  return <MenuPopup items={items} rect={menu?.rect ?? null} keepFocus onClose={() => setMenu(null)} />;
 }

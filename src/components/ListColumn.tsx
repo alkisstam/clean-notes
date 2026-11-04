@@ -1,9 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  ArrowDownUp, ChevronLeft, ChevronRight, FileText, Image as ImageIcon, Menu as MenuIcon, Pin, Plus, RotateCcw, SearchX, Trash2, ChevronDown,
+  Archive, ArchiveRestore, ArrowDownUp, ChevronLeft, Copy, FilePlus, PinOff, ChevronRight, FileText, Image as ImageIcon, Menu as MenuIcon, Pin, Plus, RotateCcw, SearchX, Trash2, ChevronDown,
 } from 'lucide-react';
 import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { createNote, deleteForever, nestNote, flushEditor, openDaily, quickAddTask, restoreNote, setTaskAttrs } from '../lib/actions';
+import { createNote, createSubNote, deleteForever, duplicateNote, nestNote, patchNote, trashNote, flushEditor, openDaily, quickAddTask, restoreNote, setTaskAttrs } from '../lib/actions';
 import { db } from '../lib/db';
 import { dateKey, dueLabel, firstDayOfWeek, longDate, monthGrid, parseKey, relativeTime, shortDate } from '../lib/dates';
 import { imageIdsIn, pdfIdsIn } from '../lib/doc';
@@ -13,7 +13,7 @@ import { store, useStore, type SortKey } from '../lib/store';
 import { nestNotes, noteHasTag } from '../lib/tags';
 import { extractTasks, groupTasks } from '../lib/tasks';
 import type { Note, Notebook, PdfFile, TaskRef, View } from '../lib/types';
-import { Menu } from './Overlay';
+import { Menu, MenuPopup, type MenuItem } from './Overlay';
 import { dropProps, NOTE_DRAG } from './Sidebar';
 
 const Hit = ({ s }: { s: Snippet }) => (
@@ -42,10 +42,39 @@ const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, acti
   const done = tasks.filter((t) => t.done).length;
   const hasPdf = useMemo(() => pdfIdsIn(note.content).length > 0, [note.content]);
   const hasImage = useMemo(() => imageIdsIn(note.content).length > 0, [note.content]);
+  const [ctx, setCtx] = useState<DOMRect | null>(null);
+  const isDaily = note.kind === 'daily';
+  const ctxItems: MenuItem[] = ctx
+    ? [
+        { label: 'New note', icon: <Plus size={14} />, run: () => void createNote() },
+        ...(!isDaily
+          ? [
+              { label: 'New sub-note', icon: <FilePlus size={14} />, run: () => void createSubNote(note.id) },
+              { label: 'Duplicate', icon: <Copy size={14} />, run: () => void duplicateNote(note.id) },
+              {
+                label: note.pinned ? 'Unpin' : 'Pin to top',
+                icon: note.pinned ? <PinOff size={14} /> : <Pin size={14} />,
+                run: () => void patchNote(note.id, { pinned: !note.pinned }),
+              },
+              {
+                label: note.archivedAt ? 'Unarchive' : 'Archive',
+                icon: note.archivedAt ? <ArchiveRestore size={14} /> : <Archive size={14} />,
+                run: () => void patchNote(note.id, { archivedAt: note.archivedAt ? null : Date.now() }),
+              },
+            ]
+          : []),
+        { label: 'Move to Trash', icon: <Trash2 size={14} />, danger: true, run: () => void trashNote(note.id) },
+      ]
+    : [];
   return (
     <div
       className="note-row"
       data-active={active}
+      onContextMenu={(e) => {
+        if (import.meta.env.MODE !== 'desktop' || note.trashedAt) return;
+        e.preventDefault();
+        setCtx(new DOMRect(e.clientX, e.clientY, 0, 0));
+      }}
       style={{ '--i': Math.min(index, 12), '--depth': depth } as React.CSSProperties}
       draggable={!note.trashedAt}
       onDragStart={(e) => {
@@ -89,6 +118,7 @@ const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, acti
         </span>
       </button>
       {actions && <div className="note-row-actions">{actions}</div>}
+      <MenuPopup items={ctxItems} rect={ctx} onClose={() => setCtx(null)} />
     </div>
   );
 });

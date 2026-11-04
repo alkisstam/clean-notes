@@ -145,6 +145,17 @@ const formatButtons = (editor: Editor) => [
 
 const FONT_SIZES = ['12px', '14px', '16px', '18px', '20px', '24px', '30px', '36px'];
 
+/** The screen area below the formatting toolbar, read fresh each time Floating UI positions a menu. */
+const toolbarEdge = (editor: Editor) => ({
+  x: 0,
+  get y() {
+    const bar = editor.view.dom.parentElement?.previousElementSibling;
+    return bar?.classList.contains('editor-toolbar') ? bar.getBoundingClientRect().bottom : 0;
+  },
+  get width() { return innerWidth; },
+  get height() { return innerHeight; },
+});
+
 function Toolbar({ editor, items }: { editor: Editor; items: SlashItem[] }) {
   const [, rerender] = useState(0);
   useEffect(() => {
@@ -414,8 +425,8 @@ function FormatMenu({ editor }: { editor: Editor }) {
   return (
     <BubbleMenu
       editor={editor}
-      // Flip below the selection before the sticky toolbar (about 40px tall) would cover it.
-      options={{ placement: 'top', offset: 8, flip: { padding: { top: 48 } } }}
+      // Flip below the selection before the toolbar would cover it, wherever the toolbar sits on screen.
+      options={{ placement: 'top', offset: 8, flip: { boundary: toolbarEdge(editor), padding: { top: 8 } } }}
       shouldShow={({ editor: e, state, from, to }) => {
         if (linking) return true;
         if (from === to || !e.isEditable || !e.isFocused) return false;

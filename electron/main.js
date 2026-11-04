@@ -1,4 +1,4 @@
-import { app, BrowserWindow, net, protocol, session, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, net, protocol, session, shell } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -24,12 +24,22 @@ app.whenReady().then(() => {
     height: 840,
     autoHideMenuBar: true,
     icon: path.join(dist, 'icons', 'icon-512.png'),
+    webPreferences: { preload: path.join(import.meta.dirname, 'preload.cjs') },
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
+  // The page draws the menu so it matches the app; it asks back here for the edit itself.
+  win.webContents.on('context-menu', (_e, p) => {
+    if (p.isEditable) win.webContents.send('edit-menu', { x: p.x, y: p.y, flags: p.editFlags });
+  });
   void win.loadURL('app://notes/index.html');
+});
+
+const roles = new Set(['cut', 'copy', 'paste', 'undo', 'redo', 'selectAll']);
+ipcMain.on('edit', (e, role) => {
+  if (roles.has(role)) e.sender[role]();
 });
 
 app.on('window-all-closed', () => app.quit());
