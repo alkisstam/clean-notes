@@ -2,12 +2,13 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   // Relative paths let the app be hosted at a domain root or in any sub-folder.
   base: './',
   plugins: [
     react(),
     VitePWA({
+      disable: mode === 'desktop',
       registerType: 'prompt',
       includeAssets: ['icons/icon.svg'],
       manifest: {
@@ -44,4 +45,4 @@ export default defineConfig({
   ],
   build: { target: 'es2022', chunkSizeWarningLimit: 2000 },
   test: { environment: 'node', include: ['tests/**/*.test.ts'] },
-});
+}));

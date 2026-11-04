@@ -17,6 +17,10 @@ npm run preview   # serve that build, with the service worker, at http://localho
 
 `./deploy.sh` builds and uploads the app to the Hetzner box (the `tkdraw` host in `~/.ssh/config`), copies `server/sync.mjs` there and restarts the sync service.
 
+## Desktop app (Linux AppImage)
+
+`npm run appimage` builds `release/Clean Notes-<version>.AppImage`, an Electron window around the bundled app (`electron/main.js`). Make it executable (`chmod +x`) and run it; Gear Lever or AppImageLauncher can add it to the app menu. It works fully offline and keeps its own data in `~/.config/Clean Notes`, separate from any browser copy. The desktop build has no server sync and no service worker; to share notes with other devices, use **Auto-backup to a file** in a cloud folder. To update, build and replace the AppImage.
+
 ## How it fits together
 
 | Area | Where | Notes |

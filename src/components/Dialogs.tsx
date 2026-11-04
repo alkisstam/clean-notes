@@ -230,7 +230,7 @@ function Settings({ close }: { close: () => void }) {
         )}
       </section>
 
-      <section className="settings-section">
+      {import.meta.env.MODE !== 'desktop' && <section className="settings-section">
         <h3>Sync</h3>
         <p>Keep your devices in step through the server this app is hosted on. Notes are sent to that server over HTTPS.</p>
         {sync?.on ? (
@@ -270,7 +270,7 @@ function Settings({ close }: { close: () => void }) {
           </form>
         )}
         <p className="dialog-hint">Changes sync about a minute after you make them, and when you come back to the app. If a note was edited on two devices, the newer edit wins.</p>
-      </section>
+      </section>}
 
       {installEvent && (
         <section className="settings-section">

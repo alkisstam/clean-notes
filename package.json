@@ -7,7 +7,8 @@
     "dev": "node scripts/copy-pdf-assets.mjs && vite",
     "build": "node scripts/copy-pdf-assets.mjs && tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "appimage": "npm run build -- --mode desktop && electron-builder --linux AppImage"
   },
   "dependencies": {
     "@floating-ui/dom": "^1.8.0",
@@ -36,6 +37,8 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.2.1",
+    "electron": "^45.2.2",
+    "electron-builder": "^26.18.0",
     "fake-indexeddb": "^6.2.7",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
@@ -43,5 +46,25 @@
     "vitest": "^5.1.0",
     "workbox-build": "^7.4.1",
     "workbox-window": "^7.4.1"
-  }
+  },
+  "main": "electron/main.js",
+  "build": {
+    "appId": "io.cleannotes.app",
+    "productName": "Clean Notes",
+    "files": [
+      "dist/**",
+      "electron/**",
+      "!node_modules/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "public/icons/icon-512.png",
+      "category": "Office",
+      "syncDesktopName": true
+    }
+  },
+  "desktopName": "clean-notes.desktop"
 }
