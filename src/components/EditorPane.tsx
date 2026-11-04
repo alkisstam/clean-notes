@@ -1,5 +1,5 @@
 import {
-  ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Copy, CornerLeftUp, PanelTop, Feather, FilePlus, Maximize2, Minimize2, Pin, PinOff, RotateCcw, Trash2, X,
+  Archive, ArchiveRestore, ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Copy, CornerLeftUp, PanelTop, Feather, FilePlus, Maximize2, Minimize2, Pin, PinOff, RotateCcw, Trash2, X,
 } from 'lucide-react';
 import { lazy, Component, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createNote, createSubNote, deleteForever, duplicateNote, editTags, journalEdit, openDaily, patchNote, restoreNote, trashNote } from '../lib/actions';
@@ -260,6 +260,13 @@ function Document({ note, notebooks, allTags }: { note: Note; notebooks: Noteboo
                 ...(note.parentId ? [{ label: 'Move to top level', icon: <CornerLeftUp size={14} />, run: () => void patchNote(note.id, { parentId: null }) }] : []),
                 ...(!isDaily ? [{ label: 'Duplicate', icon: <Copy size={14} />, run: () => void duplicateNote(note.id) }] : []),
                 { label: showToolbar ? 'Hide toolbar' : 'Show toolbar', icon: <PanelTop size={14} />, run: () => store.getState().toggleToolbar() },
+                ...(!isDaily
+                  ? [{
+                      label: note.archivedAt ? 'Unarchive' : 'Archive',
+                      icon: note.archivedAt ? <ArchiveRestore size={14} /> : <Archive size={14} />,
+                      run: () => void patchNote(note.id, { archivedAt: note.archivedAt ? null : Date.now() }),
+                    }]
+                  : []),
                 { label: 'Move to Trash', icon: <Trash2 size={14} />, danger: true, run: () => void trashNote(note.id) },
               ]}
             />

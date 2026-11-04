@@ -194,7 +194,7 @@ function TasksBody({ notes }: { notes: Note[] }) {
   const [showDone, setShowDone] = useState(false);
   const today = dateKey();
   const groups = useMemo(
-    () => groupTasks(notes.filter((n) => !n.trashedAt).flatMap(extractTasks), today),
+    () => groupTasks(notes.filter((n) => !n.trashedAt && !n.archivedAt).flatMap(extractTasks), today),
     [notes, today],
   );
   const sections: [string, TaskRef[]][] = [
@@ -280,6 +280,8 @@ function viewTitle(view: View, notebooks: Notebook[], selectedDate: string) {
     case 'daily': return selectedDate === dateKey() ? 'Today' : shortDate(selectedDate);
     case 'tasks': return 'Tasks';
     case 'pdfs': return 'PDFs';
+    case 'pinned': return 'Pinned';
+    case 'archive': return 'Archive';
     case 'trash': return 'Trash';
     case 'notebook': return notebooks.find((b) => b.id === view.id)?.name ?? 'Notebook';
     case 'tag': return `#${view.path}`;
@@ -323,9 +325,12 @@ export function ListColumn({ notes, notebooks }: { notes: Note[]; notebooks: Not
 
   const listed = useMemo(() => {
     let out: Note[] = [];
-    if (view.type === 'all') out = live.filter((n) => n.kind === 'note');
-    else if (view.type === 'notebook') out = live.filter((n) => n.notebookId === view.id);
-    else if (view.type === 'tag') out = live.filter((n) => noteHasTag(n.tags, view.path));
+    const shelved = live.filter((n) => !n.archivedAt);
+    if (view.type === 'all') out = shelved.filter((n) => n.kind === 'note');
+    else if (view.type === 'notebook') out = shelved.filter((n) => n.notebookId === view.id);
+    else if (view.type === 'tag') out = shelved.filter((n) => noteHasTag(n.tags, view.path));
+    else if (view.type === 'pinned') out = shelved.filter((n) => n.pinned);
+    else if (view.type === 'archive') out = live.filter((n) => n.archivedAt);
     else if (view.type === 'trash') out = notes.filter((n) => n.trashedAt);
     else if (view.type === 'daily') {
       out = live.filter((n) => n.kind === 'daily' && (n.text || n.date === dailyDate));
@@ -380,7 +385,7 @@ export function ListColumn({ notes, notebooks }: { notes: Note[]; notebooks: Not
 
   const title = searching ? 'Search' : viewTitle(view, notebooks, dailyDate);
   const canCreate = !searching && ['all', 'notebook', 'tag'].includes(view.type);
-  const canSort = !searching && ['all', 'notebook', 'tag', 'trash'].includes(view.type);
+  const canSort = !searching && ['all', 'notebook', 'tag', 'pinned', 'archive', 'trash'].includes(view.type);
   const trashEmpty = view.type === 'trash' && listed.length === 0;
   const pdfFiles = useMemo(() => [...files].sort((a, b) => b.createdAt - a.createdAt), [files]);
 
@@ -502,6 +507,10 @@ export function ListColumn({ notes, notebooks }: { notes: Note[]; notebooks: Not
           </div>
         ) : trashEmpty ? (
           <Empty title="Trash is empty" />
+        ) : view.type === 'pinned' ? (
+          <Empty title="No pinned notes" />
+        ) : view.type === 'archive' ? (
+          <Empty title="Archive is empty" />
         ) : view.type === 'daily' ? null : (
           <Empty
             title={view.type === 'tag' ? 'No notes with this tag' : 'No notes here yet'}

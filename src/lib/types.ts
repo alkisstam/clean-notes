@@ -17,6 +17,8 @@ export interface Note {
   createdAt: number;
   updatedAt: number;
   trashedAt: number | null;
+  /** Hidden from lists and Tasks, still searchable. Absent on notes made before archiving existed. */
+  archivedAt?: number | null;
   /** Which editor instance wrote last, so an editor ignores its own echoes. */
   writer?: string;
 }
@@ -67,6 +69,8 @@ export type View =
   | { type: 'daily' }
   | { type: 'tasks' }
   | { type: 'pdfs' }
+  | { type: 'pinned' }
+  | { type: 'archive' }
   | { type: 'trash' }
   | { type: 'notebook'; id: string }
   | { type: 'tag'; path: string };

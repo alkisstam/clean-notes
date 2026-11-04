@@ -1,5 +1,5 @@
 import {
-  BookOpen, CalendarDays, ChevronRight, CircleCheck, FileText, Hash, Layers, Library, Moon, Plus, Search, Settings2, Sun, Trash2, Laptop,
+  Archive, BookOpen, CalendarDays, ChevronRight, CircleCheck, FileText, Hash, Layers, Library, Moon, Pin, Plus, Search, Settings2, Sun, Trash2, Laptop,
 } from 'lucide-react';
 import { useMemo, useRef, type DragEvent, type ReactNode } from 'react';
 import { createNotebook, deleteNotebook, editTags, openDaily, patchNote, renameNotebook, retag } from '../lib/actions';
@@ -155,10 +155,13 @@ export function Sidebar({ notes, notebooks, searchRef }: { notes: Note[]; notebo
   const composing = useRef(false);
 
   const live = useMemo(() => notes.filter((n) => !n.trashedAt), [notes]);
-  const tree = useMemo(() => buildTagTree(live.map((n) => n.tags)), [live]);
-  const openTasks = useMemo(() => live.reduce((sum, n) => sum + extractTasks(n).filter((t) => !t.done).length, 0), [live]);
+  const shelved = useMemo(() => live.filter((n) => !n.archivedAt), [live]);
+  const tree = useMemo(() => buildTagTree(shelved.map((n) => n.tags)), [shelved]);
+  const openTasks = useMemo(() => shelved.reduce((sum, n) => sum + extractTasks(n).filter((t) => !t.done).length, 0), [shelved]);
   const trashCount = notes.length - live.length;
-  const allCount = live.filter((n) => n.kind === 'note').length;
+  const archiveCount = live.length - shelved.length;
+  const pinnedCount = shelved.filter((n) => n.pinned).length;
+  const allCount = shelved.filter((n) => n.kind === 'note').length;
   const ThemeIcon = THEME_ICON[theme];
 
   return (
@@ -193,6 +196,8 @@ export function Sidebar({ notes, notebooks, searchRef }: { notes: Note[]; notebo
           <NavRow view={{ type: 'daily' }} icon={<CalendarDays size={15} />} label="Today" onClick={() => void openDaily()} />
           <NavRow view={{ type: 'tasks' }} icon={<CircleCheck size={15} />} label="Tasks" count={openTasks} />
           <NavRow view={{ type: 'pdfs' }} icon={<FileText size={15} />} label="PDFs" />
+          <NavRow view={{ type: 'pinned' }} icon={<Pin size={15} />} label="Pinned" count={pinnedCount} />
+          <NavRow view={{ type: 'archive' }} icon={<Archive size={15} />} label="Archive" count={archiveCount} />
           <NavRow
             view={{ type: 'trash' }}
             icon={<Trash2 size={15} />}
