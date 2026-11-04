@@ -4,3 +4,4 @@ dev-dist
 public/pdfjs
 *.local
 release
+.remember
