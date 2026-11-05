@@ -55,6 +55,8 @@ dependencies {
     implementation(libs.androidx.webkit)
     implementation(libs.androidx.work)
     testImplementation(libs.junit)
+    // Android's own org.json is a stub in JVM tests.
+    testImplementation(libs.org.json)
 }
 
 // The note view is the web app's Tiptap editor, built from ../src into assets/editor.

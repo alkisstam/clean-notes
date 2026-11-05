@@ -10,6 +10,7 @@ import androidx.room.Upsert
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
+import org.json.JSONObject
 
 // Each row keeps the server's JSON in `raw`, so fields this app doesn't know yet survive a round-trip.
 @Entity(tableName = "notes")
@@ -27,7 +28,12 @@ data class NoteRow(
     val raw: String,
     /** When this device last wrote the row; 0 for rows that came from the server. Push picks rows by this. */
     val savedAt: Long = 0,
+    /** Copied out of `raw` so lists can filter without parsing it: tags joined by newlines, which tags never contain. */
+    val tags: String = "",
+    val parentId: String? = null,
 )
+
+val NoteRow.tagList get() = if (tags.isEmpty()) emptyList() else tags.split('\n')
 
 @Entity(tableName = "notebooks")
 data class NotebookRow(@PrimaryKey val id: String, val name: String, val time: Long, val raw: String)
@@ -41,7 +47,7 @@ data class AttachmentRow(@PrimaryKey val id: String, val tbl: String, val time: 
 
 @Dao
 interface NotesDao {
-    @Query("SELECT * FROM notes WHERE trashedAt IS NULL AND archivedAt IS NULL ORDER BY pinned DESC, updatedAt DESC")
+    @Query("SELECT * FROM notes WHERE trashedAt IS NULL ORDER BY pinned DESC, updatedAt DESC")
     fun liveNotes(): Flow<List<NoteRow>>
 
     @Query("SELECT * FROM notes WHERE id = :id")
@@ -113,7 +119,7 @@ interface NotesDao {
     suspend fun deleteNotebook(id: String, deletedAt: Long): Int
 }
 
-@Database(entities = [NoteRow::class, NotebookRow::class, TombstoneRow::class, AttachmentRow::class], version = 2)
+@Database(entities = [NoteRow::class, NotebookRow::class, TombstoneRow::class, AttachmentRow::class], version = 3)
 abstract class AppDb : RoomDatabase() {
     abstract fun dao(): NotesDao
 }
@@ -122,5 +128,19 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE notes ADD COLUMN savedAt INTEGER NOT NULL DEFAULT 0")
         db.execSQL("ALTER TABLE attachments ADD COLUMN savedAt INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE notes ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE notes ADD COLUMN parentId TEXT")
+        // Filled from the stored JSON; SQLite's JSON functions are not on every Android version this app supports.
+        db.query("SELECT id, raw FROM notes").use { c ->
+            while (c.moveToNext()) {
+                val row = noteRow(JSONObject(c.getString(1)))
+                db.execSQL("UPDATE notes SET tags = ?, parentId = ? WHERE id = ?", arrayOf(row.tags, row.parentId, c.getString(0)))
+            }
+        }
     }
 }

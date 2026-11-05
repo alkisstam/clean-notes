@@ -35,6 +35,8 @@ fun noteRow(n: JSONObject) = NoteRow(
     trashedAt = n.long("trashedAt"),
     archivedAt = n.long("archivedAt"),
     raw = n.toString(),
+    tags = n.optJSONArray("tags")?.let { a -> List(a.length()) { a.getString(it) } }.orEmpty().joinToString("\n"),
+    parentId = n.str("parentId"),
 )
 
 /** Client for server/sync.mjs. Mirrors serverSync() in src/lib/sync.ts. */

@@ -15,7 +15,7 @@ import java.io.File
 import java.util.UUID
 
 class App : Application() {
-    val db by lazy { Room.databaseBuilder(this, AppDb::class.java, "clean-notes").addMigrations(MIGRATION_1_2).build() }
+    val db by lazy { Room.databaseBuilder(this, AppDb::class.java, "clean-notes").addMigrations(MIGRATION_1_2, MIGRATION_2_3).build() }
     val sync by lazy { Sync(this, db) }
     /** Outlives screens, so a save started as a note closes still finishes. */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -75,13 +75,23 @@ class App : Application() {
         return id
     }
 
-    suspend fun trashNote(id: String) {
+    /**
+     * Changes one note's JSON and stores it as this device's edit. A content change gets a new writer stamp,
+     * so an open editor adopts it, as the web editor does for its Tasks view.
+     */
+    suspend fun updateNote(id: String, contentChanged: Boolean = false, change: (JSONObject, Long) -> Unit) {
         stamped { now ->
             val row = db.dao().noteOnce(id) ?: return@stamped
-            db.dao().put(noteRow(JSONObject(row.raw).put("trashedAt", now).put("updatedAt", now)).copy(savedAt = now))
+            val note = JSONObject(row.raw)
+            change(note, now)
+            note.put("updatedAt", now)
+            if (contentChanged) note.put("writer", "tasks:${UUID.randomUUID()}")
+            db.dao().put(noteRow(note).copy(savedAt = now))
         }
         sync.schedule()
     }
+
+    suspend fun trashNote(id: String) = updateNote(id) { n, now -> n.put("trashedAt", now) }
 
     /** Same as restoreNote() in src/lib/actions.ts, including merging a daily note into a newer one for its date. */
     suspend fun restoreNote(id: String) {
@@ -108,13 +118,7 @@ class App : Application() {
         sync.schedule()
     }
 
-    suspend fun moveNote(id: String, notebookId: String?) {
-        stamped { now ->
-            val row = db.dao().noteOnce(id) ?: return@stamped
-            db.dao().put(noteRow(JSONObject(row.raw).put("notebookId", notebookId ?: JSONObject.NULL).put("updatedAt", now)).copy(savedAt = now))
-        }
-        sync.schedule()
-    }
+    suspend fun moveNote(id: String, notebookId: String?) = updateNote(id) { n, _ -> n.put("notebookId", notebookId ?: JSONObject.NULL) }
 
     // Notebooks are pushed by their edit time, which is stamped inside the write, like tombstones.
     suspend fun createNotebook(name: String): String {
