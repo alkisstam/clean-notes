@@ -23,6 +23,8 @@ interface Payload {
   images: (Omit<NoteImage, 'blob'> & { type: string })[];
   files: PdfFile[];
   dark: boolean;
+  /** The phone's own fonts instead of the web fonts, from the app's Settings. */
+  deviceFonts?: boolean;
   /** A PDF to show as the note opens, from the app's PDFs list or a search hit. */
   pdf?: PdfTarget | null;
 }
@@ -166,8 +168,13 @@ const w = window as unknown as {
 w.cnClosePdf = () => store.getState().setPdf(null);
 
 // Called by the app on open and whenever its copy changes. The page's own database is only a cache for this note.
-w.cnLoad = async ({ note, images, files, dark, pdf }) => {
+w.cnLoad = async ({ note, images, files, dark, deviceFonts, pdf }) => {
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  const fonts: [string, string][] = [['--font-ui', 'sans-serif'], ['--font-text', 'serif'], ['--font-mono', 'monospace']];
+  for (const [name, value] of fonts) {
+    if (deviceFonts) document.documentElement.style.setProperty(name, value);
+    else document.documentElement.style.removeProperty(name);
+  }
   const opening = note.id !== noteId;
   if (opening) {
     noteId = note.id;

@@ -1,5 +1,7 @@
 package io.cleannotes.app
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import androidx.core.content.edit
 import android.app.Application
 import androidx.room.Room
 import androidx.room.withTransaction
@@ -17,6 +19,22 @@ import java.util.UUID
 class App : Application() {
     val db by lazy { Room.databaseBuilder(this, AppDb::class.java, "clean-notes").addMigrations(MIGRATION_1_2, MIGRATION_2_3).build() }
     val sync by lazy { Sync(this, db) }
+    val backup by lazy { Backup(this, db, sync) }
+
+    // Settings, kept on this device only, as the web keeps its theme.
+    val ui by lazy { getSharedPreferences("ui", MODE_PRIVATE) }
+    val theme by lazy { MutableStateFlow(ui.getString("theme", "system")!!) }
+    val webFonts by lazy { MutableStateFlow(ui.getBoolean("webFonts", true)) }
+
+    fun setTheme(value: String) {
+        ui.edit { putString("theme", value) }
+        theme.value = value
+    }
+
+    fun setWebFonts(value: Boolean) {
+        ui.edit { putBoolean("webFonts", value) }
+        webFonts.value = value
+    }
     /** Outlives screens, so a save started as a note closes still finishes. */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val inbox = Channel<suspend () -> Unit>(Channel.UNLIMITED)

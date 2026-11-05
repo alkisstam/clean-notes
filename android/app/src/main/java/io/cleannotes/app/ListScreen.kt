@@ -86,7 +86,6 @@ fun NoteList(
     onOpen: (String) -> Unit,
     onOpenPdf: (note: String, target: String) -> Unit,
     onNew: (notebook: String?, tag: String?) -> Unit,
-    onConnect: () -> Unit,
     onToday: () -> Unit,
 ) {
     val all by app.db.dao().liveNotes().collectAsStateWithLifecycle(emptyList())
@@ -190,6 +189,7 @@ fun NoteList(
                     }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     NavigationDrawerItem(label = { Text("Trash") }, selected = false, onClick = { pick("trash") })
+                    NavigationDrawerItem(label = { Text("Settings") }, selected = false, onClick = { pick("settings") })
                 }
             }
         },
@@ -255,8 +255,7 @@ fun NoteList(
                                 DropdownMenuItem(text = { Text("Rename notebook") }, onClick = { menu = false; naming = current })
                                 DropdownMenuItem(text = { Text("Delete notebook") }, onClick = { menu = false; deleting = current })
                             }
-                            if (paired) DropdownMenuItem(text = { Text("Disconnect from server") }, onClick = { menu = false; app.sync.unpair() })
-                            else DropdownMenuItem(text = { Text("Connect to server") }, onClick = { menu = false; onConnect() })
+                            DropdownMenuItem(text = { Text("Settings") }, onClick = { menu = false; onView("settings") })
                         }
                     },
                 )

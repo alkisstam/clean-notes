@@ -78,6 +78,12 @@ interface NotesDao {
     @Query("SELECT * FROM notes")
     suspend fun allNotes(): List<NoteRow>
 
+    @Query("SELECT * FROM notebooks")
+    suspend fun allNotebooks(): List<NotebookRow>
+
+    @Query("SELECT * FROM tombstones")
+    suspend fun allTombstones(): List<TombstoneRow>
+
     @Query("SELECT raw FROM notes")
     suspend fun allRaw(): List<String>
 

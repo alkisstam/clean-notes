@@ -19,7 +19,6 @@ import android.os.Looper
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -78,7 +77,8 @@ class NoteViewState {
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifier: Modifier = Modifier) {
-    val dark = isSystemInDarkTheme()
+    val dark = LocalDark.current
+    val deviceFonts = !LocalWebFonts.current
     var payload by remember { mutableStateOf<String?>(null) }
     var ready by remember { mutableStateOf(false) }
     // The editor's "/image" and "/pdf" commands open a file input; Android answers it with the document picker.
@@ -88,7 +88,7 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
         chooser = null
     }
 
-    LaunchedEffect(note.raw, dark) {
+    LaunchedEffect(note.raw, dark, deviceFonts) {
         // Ids are UUIDs, so a substring match finds exactly the attachments this note uses.
         val used = app.db.dao().attachments().filter { note.raw.contains(it.id) }
         payload = JSONObject()
@@ -96,6 +96,7 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
             .put("images", JSONArray(used.filter { it.tbl == "images" }.map { JSONObject(it.raw) }))
             .put("files", JSONArray(used.filter { it.tbl == "files" }.map { JSONObject(it.raw) }))
             .put("dark", dark)
+            .put("deviceFonts", deviceFonts)
             .put("pdf", pdf?.let(::JSONObject) ?: JSONObject.NULL)
             .toString()
     }

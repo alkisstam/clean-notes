@@ -64,6 +64,8 @@ class Sync(private val context: Context, private val db: AppDb) {
         SyncWorker.schedule(context)
     }
 
+    fun address() = prefs.getString("url", null)
+
     fun unpair() {
         SyncWorker.cancel(context)
         prefs.edit { clear() }
@@ -127,35 +129,73 @@ class Sync(private val context: Context, private val db: AppDb) {
                     AttachmentRow(id, r.getString("table"), r.getLong("time"), r.getJSONObject("data").toString())
                 }
 
-            db.withTransaction {
-                attachments.forEach { dao.put(it) }
-                val tombstones = records.filter { it.getString("table") == "tombstones" }.map { it.getJSONObject("data") }
-                    .filter { t -> t.getLong("deletedAt") > (dao.diedAt(t.getString("id")) ?: -1) }
-                tombstones.forEach { dao.put(TombstoneRow(it.getString("id"), it.getString("table"), it.getLong("deletedAt"))) }
-
-                for (r in records.filter { it.getString("table") == "notebooks" }) {
-                    val nb = r.getJSONObject("data")
-                    val id = nb.getString("id")
-                    val time = nb.long("updatedAt") ?: nb.getLong("createdAt")
-                    if (accepts(time, dao.notebookTime(id), dao.diedAt(id))) dao.put(NotebookRow(id, nb.optString("name"), time, nb.toString()))
-                }
-                for (r in records.filter { it.getString("table") == "notes" }) {
-                    val n = r.getJSONObject("data")
-                    val id = n.getString("id")
-                    val time = n.getLong("updatedAt")
-                    if (accepts(time, dao.noteTime(id), dao.diedAt(id))) dao.put(noteRow(n))
-                }
-                for (t in tombstones) {
-                    val id = t.getString("id")
-                    val at = t.getLong("deletedAt")
-                    if (t.getString("table") == "notes") dao.deleteNote(id, at) else dao.deleteNotebook(id, at)
-                }
-            }
+            merge(
+                records.filter { it.getString("table") == "notes" }.map { it.getJSONObject("data") },
+                records.filter { it.getString("table") == "notebooks" }.map { it.getJSONObject("data") },
+                records.filter { it.getString("table") == "tombstones" }.map { it.getJSONObject("data") },
+                attachments,
+            )
             collectOrphans()
             val now = System.currentTimeMillis()
             prefs.edit { putLong("seq", res.getLong("seq")); putLong("lastPushAt", startedAt); putLong("syncedAt", now) }
             syncedAt.value = now
         }
+    }
+
+    class MergeResult(val added: Int, val updated: Int, val deleted: Int, val oldest: Long)
+
+    /**
+     * Port of mergeSnapshot() in src/lib/backup.ts, for sync and backup import alike: per row the newer edit wins,
+     * and a delete counts as an edit. `savedAt` marks rows as this device's to push (a backup's rows may be news to the server).
+     */
+    suspend fun merge(
+        notes: List<JSONObject>,
+        notebooks: List<JSONObject>,
+        tombstones: List<JSONObject>,
+        attachments: List<AttachmentRow>,
+        savedAt: Long = 0,
+    ): MergeResult = db.withTransaction {
+        var added = 0
+        var updated = 0
+        var deleted = 0
+        var oldest = Long.MAX_VALUE
+        attachments.forEach {
+            if (dao.attachmentIds().contains(it.id)) return@forEach
+            dao.put(it.copy(savedAt = savedAt))
+            oldest = minOf(oldest, it.time)
+        }
+        val incoming = tombstones.filter { t -> t.getLong("deletedAt") > (dao.diedAt(t.getString("id")) ?: -1) }
+        incoming.forEach {
+            dao.put(TombstoneRow(it.getString("id"), it.getString("table"), it.getLong("deletedAt")))
+            oldest = minOf(oldest, it.getLong("deletedAt"))
+        }
+        for (nb in notebooks) {
+            val id = nb.getString("id")
+            val time = nb.long("updatedAt") ?: nb.getLong("createdAt")
+            if (!accepts(time, dao.notebookTime(id), dao.diedAt(id))) continue
+            dao.put(NotebookRow(id, nb.optString("name"), time, nb.toString()))
+            oldest = minOf(oldest, time)
+        }
+        for (n in notes) {
+            val id = n.getString("id")
+            val time = n.getLong("updatedAt")
+            val current = dao.noteTime(id)
+            if (!accepts(time, current, dao.diedAt(id))) continue
+            if (current == null) added++ else updated++
+            dao.put(noteRow(n).copy(savedAt = savedAt))
+            oldest = minOf(oldest, time)
+        }
+        for (t in incoming) {
+            val id = t.getString("id")
+            val at = t.getLong("deletedAt")
+            deleted += if (t.getString("table") == "notes") dao.deleteNote(id, at) else dao.deleteNotebook(id, at)
+        }
+        MergeResult(added, updated, deleted, oldest)
+    }
+
+    /** After an import: rows keep their old edit times, so notebooks and deletes (pushed by time) need the marker moved back. */
+    fun pushAgainFrom(oldest: Long) {
+        if (oldest <= prefs.getLong("lastPushAt", 0)) prefs.edit { putLong("lastPushAt", oldest - 1) }
     }
 
     /** Same as collectOrphanFiles() in src/lib/actions.ts: drops PDFs and images no note refers to, trashed ones included. */

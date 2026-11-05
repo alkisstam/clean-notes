@@ -1,5 +1,7 @@
 package io.cleannotes.app
 
+import androidx.activity.SystemBarStyle
+import android.graphics.Color
 import androidx.compose.runtime.key
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
@@ -31,7 +33,15 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val app = application as App
         setContent {
-            CleanTheme { NotesApp(app) }
+            CleanTheme(app) {
+                // Status bar icons follow the app's theme, which Settings can set apart from the system's.
+                val dark = LocalDark.current
+                LaunchedEffect(dark) {
+                    val bars = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) { dark }
+                    enableEdgeToEdge(bars, bars)
+                }
+                NotesApp(app)
+            }
         }
     }
 }
@@ -71,7 +81,10 @@ fun NotesApp(app: App) {
     }
 
     val id = openId
-    if (view == "trash") {
+    if (view == "settings" && !connecting) {
+        BackHandler { view = "all" }
+        SettingsScreen(app, onBack = { view = "all" }, onConnect = { connecting = true })
+    } else if (view == "trash") {
         BackHandler { view = "all" }
         TrashScreen(app, onBack = { view = "all" })
     } else if (connecting) {
@@ -95,7 +108,6 @@ fun NotesApp(app: App) {
             onOpen = { openId = it },
             onOpenPdf = { note, target -> openPdf = target; openId = note },
             onNew = { nb, tag -> scope.launch { openId = app.newNote(nb, tag) } },
-            onConnect = { connecting = true },
             onToday = { view = "daily"; scope.launch { openId = app.dailyNote(dateKey()) } },
         )
     }

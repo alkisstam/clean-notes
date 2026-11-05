@@ -1,5 +1,15 @@
 package io.cleannotes.app
 
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.material3.Typography
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -50,6 +60,37 @@ private val Night = darkColorScheme(
     outlineVariant = Color(0xFF2B2A27),
 )
 
+/** The resolved Settings choices, for the note page as well as the native screens. */
+val LocalDark = staticCompositionLocalOf { false }
+val LocalWebFonts = staticCompositionLocalOf { true }
+
+// Commissioner is the web's UI font; one variable file covers every weight.
+@OptIn(ExperimentalTextApi::class)
+private fun commissioner(weight: Int) = Font(R.font.commissioner, FontWeight(weight), variationSettings = FontVariation.Settings(FontVariation.weight(weight)))
+private val Commissioner = FontFamily(commissioner(400), commissioner(500), commissioner(600), commissioner(700))
+
+private fun Typography.withFamily(f: FontFamily) = Typography(
+    displayLarge = displayLarge.copy(fontFamily = f), displayMedium = displayMedium.copy(fontFamily = f), displaySmall = displaySmall.copy(fontFamily = f),
+    headlineLarge = headlineLarge.copy(fontFamily = f), headlineMedium = headlineMedium.copy(fontFamily = f), headlineSmall = headlineSmall.copy(fontFamily = f),
+    titleLarge = titleLarge.copy(fontFamily = f), titleMedium = titleMedium.copy(fontFamily = f), titleSmall = titleSmall.copy(fontFamily = f),
+    bodyLarge = bodyLarge.copy(fontFamily = f), bodyMedium = bodyMedium.copy(fontFamily = f), bodySmall = bodySmall.copy(fontFamily = f),
+    labelLarge = labelLarge.copy(fontFamily = f), labelMedium = labelMedium.copy(fontFamily = f), labelSmall = labelSmall.copy(fontFamily = f),
+)
+
 @Composable
-fun CleanTheme(content: @Composable () -> Unit) =
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Night else Day, content = content)
+fun CleanTheme(app: App, content: @Composable () -> Unit) {
+    val theme by app.theme.collectAsState()
+    val webFonts by app.webFonts.collectAsState()
+    val dark = when (theme) {
+        "dark" -> true
+        "light" -> false
+        else -> isSystemInDarkTheme()
+    }
+    CompositionLocalProvider(LocalDark provides dark, LocalWebFonts provides webFonts) {
+        MaterialTheme(
+            colorScheme = if (dark) Night else Day,
+            typography = if (webFonts) Typography().withFamily(Commissioner) else Typography(),
+            content = content,
+        )
+    }
+}
