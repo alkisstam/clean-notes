@@ -36,6 +36,12 @@ private const val PAGE = "$ORIGIN/assets/editor/android.html"
 /** Lets the screen save the page's pending edits before it closes the note. */
 class NoteViewState {
     internal var web: WebView? = null
+    var pdfOpen by mutableStateOf(false)
+        internal set
+
+    fun closePdf() {
+        web?.evaluateJavascript("cnClosePdf()", null)
+    }
     private var after: (() -> Unit)? = null
     private val main = Handler(Looper.getMainLooper())
 
@@ -103,6 +109,7 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, modifier: Modifier =
                             app.saveAttachment(msg.getString("table"), msg.getJSONObject("meta"), msg.getString("data"))
                         }
                         "save" -> app.enqueue { app.saveNote(msg.getJSONObject("note")) }
+                        "pdf" -> state.pdfOpen = msg.getBoolean("open")
                         // Queued too, so a note is only closed once its last save is stored.
                         "flushed" -> app.enqueue { Handler(Looper.getMainLooper()).post { state.flushed() } }
                     }

@@ -7,12 +7,14 @@ import './styles/app.css';
 import './styles/editor.css';
 import './styles/pdf.css';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushEditor, patchNote } from './lib/actions';
 import { db, writeListeners } from './lib/db';
 import { imageIdsIn, pdfIdsIn } from './lib/doc';
 import { NoteEditor } from './editor/NoteEditor';
+import { Boundary } from './components/EditorPane';
+import { store, useStore } from './lib/store';
 import type { Note, NoteImage, PdfFile } from './lib/types';
 
 interface Payload {
@@ -24,6 +26,8 @@ interface Payload {
 
 /** Added by the Android app, and only for this page's origin. */
 declare const CleanNotes: { postMessage(message: string): void };
+
+const PdfViewer = lazy(() => import('./components/PdfViewer').then((m) => ({ default: m.PdfViewer })));
 
 const root = createRoot(document.getElementById('root')!);
 let noteId = '';
@@ -76,6 +80,37 @@ const flushTitle = () => {
   pendingTitle = null;
 };
 
+/** The web viewer, full screen. Its bytes come from the app's storage the first time it opens. */
+function PdfLayer() {
+  const pdf = useStore((s) => s.pdf);
+  const [ready, setReady] = useState<string | null>(null);
+  useEffect(() => {
+    CleanNotes.postMessage(JSON.stringify({ type: 'pdf', open: !!pdf }));
+    if (!pdf) return;
+    let gone = false;
+    void (async () => {
+      if (!(await db.blobs.get(pdf.fileId))) {
+        const res = await fetch(`/blobs/${pdf.fileId}`);
+        if (res.ok) await db.blobs.put({ id: pdf.fileId, blob: new Blob([await res.blob()], { type: 'application/pdf' }) });
+      }
+      if (!gone) setReady(pdf.fileId);
+    })();
+    return () => {
+      gone = true;
+    };
+  }, [pdf?.fileId]);
+  if (!pdf) return null;
+  return (
+    <div className="pdf-pane" style={{ position: 'fixed', inset: 0, zIndex: 20 }}>
+      <Boundary message="This PDF could not be displayed." resetKey={pdf.fileId}>
+        <Suspense fallback={<div className="pdf-loading">Opening…</div>}>
+          {ready === pdf.fileId ? <PdfViewer key={pdf.fileId} target={pdf} /> : <div className="pdf-loading">Opening…</div>}
+        </Suspense>
+      </Boundary>
+    </div>
+  );
+}
+
 function Page({ id }: { id: string }) {
   const note = useLiveQuery(() => db.notes.get(id), [id]);
   const [title, setTitle] = useState<string | null>(null);
@@ -110,6 +145,7 @@ function Page({ id }: { id: string }) {
         />
         <NoteEditor note={note} />
       </article>
+      <PdfLayer />
     </div>
   );
 }
@@ -117,7 +153,10 @@ function Page({ id }: { id: string }) {
 const w = window as unknown as {
   cnLoad: (p: Payload) => Promise<void>;
   cnFlush: () => Promise<void>;
+  cnClosePdf: () => void;
 };
+
+w.cnClosePdf = () => store.getState().setPdf(null);
 
 // Called by the app on open and whenever its copy changes. The page's own database is only a cache for this note.
 w.cnLoad = async ({ note, images, files, dark }) => {
@@ -149,6 +188,7 @@ w.cnLoad = async ({ note, images, files, dark }) => {
       await db.notes.put(note);
     }
   });
+  if (opening) store.getState().setPdf(null);
   if (opening) root.render(<Page key={note.id} id={note.id} />);
 };
 

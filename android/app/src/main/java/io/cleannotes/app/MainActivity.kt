@@ -234,7 +234,7 @@ private fun NoteScreen(app: App, id: String, onClose: () -> Unit) {
     val note by app.db.dao().note(id).collectAsStateWithLifecycle(null)
     val view = remember(id) { NoteViewState() }
     var menu by remember { mutableStateOf(false) }
-    val back = { view.flush(onClose) }
+    val back = { if (view.pdfOpen) view.closePdf() else view.flush(onClose) }
     BackHandler { back() }
     // Pending keystrokes are saved and sent when the app goes to the background.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { view.flush { app.sync.runInBackground() } }

@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Clean Notes</title>
+    <!-- shortcut: WebView ignores blob downloads, so these buttons are hidden; add an "Open with" handoff if wanted. -->
+    <style>[aria-label='Download PDF'], [aria-label='Download image'] { display: none !important; }</style>
   </head>
   <body>
     <div id="root"></div>
