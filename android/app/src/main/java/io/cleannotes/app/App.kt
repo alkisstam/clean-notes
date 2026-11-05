@@ -55,7 +55,7 @@ class App : Application() {
     }
 
     /** Same shape as baseNote() in src/lib/actions.ts. */
-    suspend fun newNote(notebookId: String? = null): String {
+    suspend fun newNote(notebookId: String? = null, tag: String? = null): String {
         val now = System.currentTimeMillis()
         val id = UUID.randomUUID().toString()
         saveNote(
@@ -65,7 +65,7 @@ class App : Application() {
                 .put("content", JSONObject().put("type", "doc").put("content", JSONArray().put(JSONObject().put("type", "paragraph"))))
                 .put("text", "")
                 .put("notebookId", notebookId ?: JSONObject.NULL)
-                .put("tags", JSONArray())
+                .put("tags", JSONArray(listOfNotNull(tag)))
                 .put("kind", "note")
                 .put("pinned", false)
                 .put("createdAt", now)
@@ -87,6 +87,22 @@ class App : Application() {
             note.put("updatedAt", now)
             if (contentChanged) note.put("writer", "tasks:${UUID.randomUUID()}")
             db.dao().put(noteRow(note).copy(savedAt = now))
+        }
+        sync.schedule()
+    }
+
+    suspend fun editTags(id: String, change: (List<String>) -> List<String>) =
+        updateNote(id) { n, _ -> n.put("tags", JSONArray(change(noteRow(n).tagList))) }
+
+    /** Port of retag() in src/lib/actions.ts: renames or (with an empty `to`) removes a tag and its subtree on every note. */
+    suspend fun retag(from: String, to: String) {
+        stamped { now ->
+            for (row in db.dao().allNotes()) {
+                val tags = renameTagIn(row.tagList, from, to)
+                if (tags == row.tagList) continue
+                val note = JSONObject(row.raw).put("tags", JSONArray(tags)).put("updatedAt", now)
+                db.dao().put(noteRow(note).copy(savedAt = now))
+            }
         }
         sync.schedule()
     }

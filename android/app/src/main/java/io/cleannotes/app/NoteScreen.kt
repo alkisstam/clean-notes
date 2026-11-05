@@ -1,5 +1,21 @@
 package io.cleannotes.app
 
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.InputChip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.window.PopupProperties
 import org.json.JSONObject
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
@@ -41,7 +57,9 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NoteScreen(app: App, id: String, onClose: () -> Unit) {
+fun NoteScreen(app: App, id: String, onClose: () -> Unit, onOpenTag: (String) -> Unit) {
+    val live by app.db.dao().liveNotes().collectAsStateWithLifecycle(emptyList())
+    val allTags = remember(live) { allTagPaths(live.map { it.tagList }) }
     val note by app.db.dao().note(id).collectAsStateWithLifecycle(null)
     val view = remember(id) { NoteViewState() }
     var menu by remember { mutableStateOf(false) }
@@ -81,7 +99,19 @@ fun NoteScreen(app: App, id: String, onClose: () -> Unit) {
             )
         },
     ) { pad ->
-        note?.let { NoteView(app, it, view, Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize().imePadding()) }
+        note?.let { n ->
+            Column(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize().imePadding()) {
+                // Saving pending keystrokes first keeps the editor from adopting a copy older than what it shows.
+                val tags = { change: (List<String>) -> List<String> -> view.flush { app.scope.launch { app.editTags(id, change) } } }
+                TagRow(
+                    n.tagList, allTags,
+                    onAdd = { t -> tags { if (t in it) it else it + t } },
+                    onRemove = { t -> tags { it - t } },
+                    onOpen = { t -> view.flush { onOpenTag(t) } },
+                )
+                NoteView(app, n, view, Modifier.weight(1f).fillMaxWidth())
+            }
+        }
     }
     if (moving) {
         val pick = { target: String? -> moving = false; view.flush { app.scope.launch { app.moveNote(id, target) } } }
@@ -100,5 +130,62 @@ fun NoteScreen(app: App, id: String, onClose: () -> Unit) {
             },
             confirmButton = { TextButton(onClick = { moving = false }) { Text("Cancel") } },
         )
+    }
+}
+
+/** Port of TagInput in EditorPane.tsx: chips that open the tag, and a field that suggests existing tags. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TagRow(tags: List<String>, allTags: List<String>, onAdd: (String) -> Unit, onRemove: (String) -> Unit, onOpen: (String) -> Unit) {
+    var value by remember { mutableStateOf("") }
+    var focused by remember { mutableStateOf(false) }
+    val norm = normalizeTag(value)
+    val options = if (value.isBlank()) emptyList() else allTags.filter { norm in it && it !in tags }.take(7)
+    val add = { raw: String ->
+        normalizeTag(raw).takeIf { it.isNotEmpty() }?.let(onAdd)
+        value = ""
+    }
+    FlowRow(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        tags.forEach { t ->
+            InputChip(
+                selected = false,
+                onClick = { onOpen(t) },
+                label = { Text(t) },
+                trailingIcon = { Icon(Icons.Default.Close, "Remove tag $t", Modifier.size(16.dp).clickable { onRemove(t) }) },
+            )
+        }
+        Box(Modifier.align(Alignment.CenterVertically)) {
+            BasicTextField(
+                value,
+                { v -> if (v.endsWith(",")) add(v.dropLast(1)) else value = v },
+                Modifier.widthIn(min = 140.dp).padding(vertical = 12.dp).onFocusChanged {
+                    focused = it.isFocused
+                    if (!it.isFocused && value.isNotBlank()) add(value)
+                },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { add(value) }),
+                decorationBox = { inner ->
+                    if (value.isEmpty()) {
+                        Text(
+                            if (tags.isEmpty()) "Add a tag, like work/ideas" else "Add tag",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    inner()
+                },
+            )
+            // Not focusable, so the keyboard stays up while suggestions show.
+            DropdownMenu(focused && options.isNotEmpty(), onDismissRequest = {}, properties = PopupProperties(focusable = false)) {
+                options.forEach { o -> DropdownMenuItem(text = { Text(o) }, onClick = { add(o) }) }
+            }
+        }
     }
 }

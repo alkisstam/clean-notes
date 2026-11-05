@@ -74,6 +74,9 @@ interface NotesDao {
     @Query("SELECT * FROM notes WHERE kind = 'daily' AND date = :date AND trashedAt IS NULL AND id != :id LIMIT 1")
     suspend fun liveDaily(date: String, id: String): NoteRow?
 
+    @Query("SELECT * FROM notes")
+    suspend fun allNotes(): List<NoteRow>
+
     @Query("SELECT raw FROM notes")
     suspend fun allRaw(): List<String>
 

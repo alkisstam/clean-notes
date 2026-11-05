@@ -75,14 +75,14 @@ fun NotesApp(app: App) {
         BackHandler { connecting = false }
         PairScreen(app.sync, onBack = { connecting = false })
     } else if (id != null) {
-        NoteScreen(app, id, onClose = { openId = null })
+        NoteScreen(app, id, onClose = { openId = null }, onOpenTag = { openId = null; view = "tag:$it" })
     } else {
         NoteList(
             app, syncing, snackbar, view,
             onView = { view = it },
             onSync = { runSync() },
             onOpen = { openId = it },
-            onNew = { nb -> scope.launch { openId = app.newNote(nb) } },
+            onNew = { nb, tag -> scope.launch { openId = app.newNote(nb, tag) } },
             onConnect = { connecting = true },
         )
     }

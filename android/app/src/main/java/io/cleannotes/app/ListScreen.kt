@@ -1,5 +1,15 @@
 package io.cleannotes.app
 
+import android.content.Context
+import androidx.core.content.edit
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.activity.compose.BackHandler
@@ -64,7 +74,7 @@ fun NoteList(
     onView: (String) -> Unit,
     onSync: () -> Unit,
     onOpen: (String) -> Unit,
-    onNew: (String?) -> Unit,
+    onNew: (notebook: String?, tag: String?) -> Unit,
     onConnect: () -> Unit,
 ) {
     val all by app.db.dao().liveNotes().collectAsStateWithLifecycle(emptyList())
@@ -77,6 +87,14 @@ fun NoteList(
     var naming by remember { mutableStateOf<NotebookRow?>(null) }
     var creating by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<NotebookRow?>(null) }
+    var renamingTag by remember { mutableStateOf(false) }
+    var deletingTag by remember { mutableStateOf(false) }
+    // Collapsed tag paths, newline-joined so the state survives rotation.
+    var collapsed by rememberSaveable { mutableStateOf("") }
+    val ui = remember { app.getSharedPreferences("ui", Context.MODE_PRIVATE) }
+    var tagsOpen by remember { mutableStateOf(ui.getBoolean("tagsOpen", true)) }
+    val tag = view.removePrefix("tag:").takeIf { view.startsWith("tag:") }
+    val tree = remember(all) { buildTagTree(all.filter { it.archivedAt == null }.map { it.tagList }) }
     val current = notebooks.find { "nb:${it.id}" == view }
     // A notebook deleted on another device shows all notes, and new notes go outside any notebook.
     val notes = listFor(if (view.startsWith("nb:") && current == null) "all" else view, all)
@@ -101,6 +119,46 @@ fun NoteList(
                         )
                     }
                     NavigationDrawerItem(label = { Text("New notebook") }, selected = false, onClick = { creating = true; scope.launch { drawer.close() } })
+                    if (tree.isNotEmpty()) {
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                tagsOpen = !tagsOpen
+                                ui.edit { putBoolean("tagsOpen", tagsOpen) }
+                            }.padding(16.dp, 12.dp, 16.dp, 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("Tags", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+                            Icon(
+                                if (tagsOpen) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                if (tagsOpen) "Collapse tags" else "Expand tags",
+                                Modifier.size(20.dp),
+                            )
+                        }
+                        val shut = collapsed.split('\n').toSet()
+                        fun rows(nodes: List<TagNode>, depth: Int): List<Pair<TagNode, Int>> =
+                            nodes.flatMap { n -> listOf(n to depth) + if (n.path in shut) emptyList() else rows(n.children, depth + 1) }
+                        if (tagsOpen) rows(tree, 0).forEach { (n, depth) ->
+                            NavigationDrawerItem(
+                                label = { Text(n.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                icon = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Spacer(Modifier.width((depth * 16).dp))
+                                        if (n.children.isEmpty()) Text("#", Modifier.width(24.dp), textAlign = TextAlign.Center)
+                                        else Icon(
+                                            if (n.path in shut) Icons.AutoMirrored.Filled.KeyboardArrowRight else Icons.Default.KeyboardArrowDown,
+                                            if (n.path in shut) "Expand ${n.path}" else "Collapse ${n.path}",
+                                            Modifier.size(24.dp).clickable {
+                                                collapsed = (if (n.path in shut) shut - n.path else shut + n.path).filter { it.isNotEmpty() }.joinToString("\n")
+                                            },
+                                        )
+                                    }
+                                },
+                                badge = { Text(n.count.toString()) },
+                                selected = view == "tag:${n.path}",
+                                onClick = { pick("tag:${n.path}") },
+                            )
+                        }
+                    }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     NavigationDrawerItem(label = { Text("Trash") }, selected = false, onClick = { pick("trash") })
                 }
@@ -116,7 +174,7 @@ fun NoteList(
                                 current?.name?.ifBlank { "Untitled" } ?: when (view) {
                                     "pinned" -> "Pinned"
                                     "archive" -> "Archive"
-                                    else -> "Notes"
+                                    else -> tag?.let { "#$it" } ?: "Notes"
                                 },
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -135,6 +193,10 @@ fun NoteList(
                     actions = {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
                         DropdownMenu(menu, { menu = false }) {
+                            if (tag != null) {
+                                DropdownMenuItem(text = { Text("Rename tag") }, onClick = { menu = false; renamingTag = true })
+                                DropdownMenuItem(text = { Text("Delete tag") }, onClick = { menu = false; deletingTag = true })
+                            }
                             if (current != null) {
                                 DropdownMenuItem(text = { Text("Rename notebook") }, onClick = { menu = false; naming = current })
                                 DropdownMenuItem(text = { Text("Delete notebook") }, onClick = { menu = false; deleting = current })
@@ -148,8 +210,8 @@ fun NoteList(
             snackbarHost = { SnackbarHost(snackbar) },
             floatingActionButton = {
                 // New notes only where they would show up, as on the web.
-                if (view == "all" || current != null) {
-                    FloatingActionButton(onClick = { onNew(current?.id) }) { Icon(Icons.Default.Add, "New note") }
+                if (view == "all" || current != null || tag != null) {
+                    FloatingActionButton(onClick = { onNew(current?.id, tag) }) { Icon(Icons.Default.Add, "New note") }
                 }
             },
         ) { pad ->
@@ -186,6 +248,29 @@ fun NoteList(
             if (name != null) app.scope.launch { app.renameNotebook(nb.id, name) }
         }
     }
+    if (tag != null && renamingTag) NameDialog("Rename tag", tag, "Rename") { name ->
+        renamingTag = false
+        // Same as the web: a slash nests, and everything below the tag moves with it.
+        val to = name?.let(::normalizeTag).orEmpty()
+        if (to.isNotEmpty() && to != tag) {
+            onView("tag:$to")
+            app.scope.launch { app.retag(tag, to) }
+        }
+    }
+    if (tag != null && deletingTag) {
+        val count = notes.size
+        AlertDialog(
+            onDismissRequest = { deletingTag = false },
+            title = { Text("Delete #$tag?") },
+            text = { Text("The tag and anything nested under it come off $count ${if (count == 1) "note" else "notes"}. The notes stay.") },
+            confirmButton = {
+                TextButton(onClick = { deletingTag = false; onView("all"); app.scope.launch { app.retag(tag, "") } }) {
+                    Text("Delete tag", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { deletingTag = false }) { Text("Cancel") } },
+        )
+    }
     deleting?.let { nb ->
         val count = all.count { it.notebookId == nb.id }
         AlertDialog(
@@ -221,6 +306,7 @@ fun listFor(view: String, notes: List<NoteRow>): List<NoteRow> {
         view == "pinned" -> shelved.filter { it.pinned }
         view == "archive" -> notes.filter { it.archivedAt != null }
         view.startsWith("nb:") -> shelved.filter { it.notebookId == view.removePrefix("nb:") }
+        view.startsWith("tag:") -> shelved.filter { noteHasTag(it.tagList, view.removePrefix("tag:")) }
         else -> shelved.filter { it.kind == "note" }
     }
 }
