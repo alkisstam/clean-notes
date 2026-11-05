@@ -71,6 +71,7 @@ interface NotesDao {
     @Query("SELECT * FROM notes WHERE trashedAt IS NOT NULL ORDER BY trashedAt DESC")
     fun liveTrash(): Flow<List<NoteRow>>
 
+    // An empty id finds any daily note for the date.
     @Query("SELECT * FROM notes WHERE kind = 'daily' AND date = :date AND trashedAt IS NULL AND id != :id LIMIT 1")
     suspend fun liveDaily(date: String, id: String): NoteRow?
 

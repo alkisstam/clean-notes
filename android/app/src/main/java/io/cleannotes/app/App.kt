@@ -76,6 +76,30 @@ class App : Application() {
         return id
     }
 
+    /** Port of getOrCreateDaily(): one daily note per date. */
+    suspend fun dailyNote(date: String): String {
+        val id = stamped { now ->
+            db.dao().liveDaily(date, "")?.id ?: UUID.randomUUID().toString().also { id ->
+                val note = JSONObject()
+                    .put("id", id)
+                    .put("title", longDate(date))
+                    .put("content", JSONObject().put("type", "doc").put("content", JSONArray().put(JSONObject().put("type", "paragraph"))))
+                    .put("text", "")
+                    .put("notebookId", JSONObject.NULL)
+                    .put("tags", JSONArray())
+                    .put("kind", "daily")
+                    .put("date", date)
+                    .put("pinned", false)
+                    .put("createdAt", now)
+                    .put("updatedAt", now)
+                    .put("trashedAt", JSONObject.NULL)
+                db.dao().put(noteRow(note).copy(savedAt = now))
+            }
+        }
+        sync.schedule()
+        return id
+    }
+
     /** Port of createSubNote(): the new note goes in its parent's notebook. */
     suspend fun newSubNote(parentId: String, tag: String?): String? {
         val parent = db.dao().noteOnce(parentId) ?: return null

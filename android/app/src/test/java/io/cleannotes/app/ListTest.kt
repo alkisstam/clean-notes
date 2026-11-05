@@ -49,4 +49,20 @@ class ListTest {
         val notes = listOf(note("a", ""","archivedAt":5"""), note("b"), note("c", ""","kind":"daily","archivedAt":5"""))
         assertEquals(listOf("a", "c"), listFor("archive", notes).map { it.id })
     }
+
+    @Test fun dailyListsFilledDaysAndTodayNewestFirst() {
+        val notes = listOf(
+            note("old", ""","kind":"daily","date":"2026-11-01","text":"x""""),
+            note("empty", ""","kind":"daily","date":"2026-11-02","text":"""""),
+            note("today", ""","kind":"daily","date":"2026-11-05","text":"""""),
+            note("archived", ""","kind":"daily","date":"2026-11-03","text":"y","archivedAt":5"""),
+            note("plain", ""","text":"z""""),
+        )
+        assertEquals(listOf("today", "archived", "old"), listFor("daily", notes, today = "2026-11-05").map { it.id })
+    }
+
+    @Test fun datesCrossMonthAndYear() {
+        assertEquals("2026-12-01", addDays("2026-11-30", 1))
+        assertEquals("2025-12-31", addDays("2026-01-01", -1))
+    }
 }

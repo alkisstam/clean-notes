@@ -93,6 +93,7 @@ fun NotesApp(app: App) {
             onOpen = { openId = it },
             onNew = { nb, tag -> scope.launch { openId = app.newNote(nb, tag) } },
             onConnect = { connecting = true },
+            onToday = { view = "daily"; scope.launch { openId = app.dailyNote(dateKey()) } },
         )
     }
 }

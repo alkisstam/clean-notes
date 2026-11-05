@@ -1,5 +1,7 @@
 package io.cleannotes.app
 
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
@@ -79,7 +81,19 @@ fun NoteScreen(app: App, id: String, tag: String?, onClose: () -> Unit, onOpenTa
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {},
+                title = {
+                    // Daily notes step to the day before or after, creating it if needed, as on the web.
+                    val date = note?.date?.takeIf { note?.kind == "daily" }
+                    if (date != null) {
+                        val go = { days: Long ->
+                            view.flush { app.scope.launch { app.dailyNote(addDays(date, days)).let { withContext(Dispatchers.Main) { onOpenNote(it) } } } }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { go(-1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous day") }
+                            IconButton(onClick = { go(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next day") }
+                        }
+                    }
+                },
                 navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }

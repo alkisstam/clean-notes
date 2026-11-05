@@ -76,6 +76,7 @@ fun NoteList(
     onOpen: (String) -> Unit,
     onNew: (notebook: String?, tag: String?) -> Unit,
     onConnect: () -> Unit,
+    onToday: () -> Unit,
 ) {
     val all by app.db.dao().liveNotes().collectAsStateWithLifecycle(emptyList())
     val notebooks by app.db.dao().liveNotebooks().collectAsStateWithLifecycle(emptyList())
@@ -107,6 +108,7 @@ fun NoteList(
             ModalDrawerSheet {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) {
                     val pick = { key: String -> onView(key); scope.launch { drawer.close() } }
+                    NavigationDrawerItem(label = { Text("Today") }, selected = view == "daily", onClick = { onToday(); scope.launch { drawer.close() } })
                     NavigationDrawerItem(label = { Text("All notes") }, selected = view == "all", onClick = { pick("all") })
                     NavigationDrawerItem(label = { Text("Pinned") }, selected = view == "pinned", onClick = { pick("pinned") })
                     NavigationDrawerItem(label = { Text("Archive") }, selected = view == "archive", onClick = { pick("archive") })
@@ -175,6 +177,7 @@ fun NoteList(
                                 current?.name?.ifBlank { "Untitled" } ?: when (view) {
                                     "pinned" -> "Pinned"
                                     "archive" -> "Archive"
+                                    "daily" -> "Daily notes"
                                     else -> tag?.let { "#$it" } ?: "Notes"
                                 },
                                 maxLines = 1,
@@ -315,9 +318,11 @@ fun NameDialog(title: String, initial: String, confirm: String, onDone: (String?
 }
 
 /** Which notes a view lists, by the same rules as ListColumn.tsx: archived notes and daily notes stay out of All. */
-fun listFor(view: String, notes: List<NoteRow>): List<NoteRow> {
+fun listFor(view: String, notes: List<NoteRow>, today: String = dateKey()): List<NoteRow> {
     val shelved = notes.filter { it.archivedAt == null }
     return when {
+        // Daily notes with something in them, plus today's; archived ones too, as on the web.
+        view == "daily" -> notes.filter { it.kind == "daily" && (it.text.isNotBlank() || it.date == today) }.sortedByDescending { it.date }
         view == "pinned" -> shelved.filter { it.pinned }
         view == "archive" -> notes.filter { it.archivedAt != null }
         view.startsWith("nb:") -> shelved.filter { it.notebookId == view.removePrefix("nb:") }
