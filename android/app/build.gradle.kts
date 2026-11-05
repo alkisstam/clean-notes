@@ -51,5 +51,17 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     implementation(libs.code.scanner)
+    implementation(libs.androidx.webkit)
     testImplementation(libs.junit)
 }
+
+// The note view is the web app's Tiptap editor, built from ../src into assets/editor.
+val buildEditor by tasks.registering(Exec::class) {
+    val web = rootDir.parentFile
+    workingDir = web
+    commandLine("npm", "run", "build:android")
+    inputs.dir(web.resolve("src"))
+    inputs.files(web.resolve("android.html"), web.resolve("vite.config.ts"), web.resolve("package-lock.json"))
+    outputs.dir(layout.projectDirectory.dir("src/main/assets/editor"))
+}
+tasks.named("preBuild") { dependsOn(buildEditor) }

@@ -8,6 +8,7 @@
     "build": "node scripts/copy-pdf-assets.mjs && tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "build:android": "node scripts/copy-pdf-assets.mjs && tsc --noEmit && vite build --mode android",
     "appimage": "npm run build -- --mode desktop && electron-builder --linux AppImage"
   },
   "dependencies": {

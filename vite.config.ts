@@ -5,10 +5,11 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig(({ mode }) => ({
   // Relative paths let the app be hosted at a domain root or in any sub-folder.
   base: './',
+  publicDir: mode === 'android' ? false : 'public',
   plugins: [
     react(),
     VitePWA({
-      disable: mode === 'desktop',
+      disable: mode === 'desktop' || mode === 'android',
       registerType: 'prompt',
       includeAssets: ['icons/icon.svg'],
       manifest: {
@@ -43,6 +44,15 @@ export default defineConfig(({ mode }) => ({
       },
     }),
   ],
-  build: { target: 'es2022', chunkSizeWarningLimit: 2000 },
+  build: {
+    target: 'es2022',
+    chunkSizeWarningLimit: 2000,
+    // The Android app bundles only the note view, served from its assets.
+    ...(mode === 'android' && {
+      outDir: 'android/app/src/main/assets/editor',
+      emptyOutDir: true,
+      rollupOptions: { input: 'android.html' },
+    }),
+  },
   test: { environment: 'node', include: ['tests/**/*.test.ts'] },
 }));

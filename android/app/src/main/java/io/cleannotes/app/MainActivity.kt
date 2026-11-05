@@ -203,10 +203,6 @@ private fun NoteScreen(app: App, id: String, onBack: () -> Unit) {
             )
         },
     ) { pad ->
-        // shortcut: plain text only; the Tiptap WebView viewer replaces this next.
-        Text(
-            note?.text ?: "",
-            Modifier.padding(pad).padding(16.dp).verticalScroll(rememberScrollState()),
-        )
+        note?.let { NoteView(app, it, Modifier.padding(pad).fillMaxSize()) }
     }
 }
