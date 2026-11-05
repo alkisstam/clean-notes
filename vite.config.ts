@@ -47,11 +47,16 @@ export default defineConfig(({ mode }) => ({
     target: 'es2022',
     chunkSizeWarningLimit: 2000,
     // The Android app bundles only the note view, served from its assets.
-    ...(mode === 'android' && {
-      outDir: 'android/app/src/main/assets/editor',
-      emptyOutDir: true,
-      rollupOptions: { input: 'android.html' },
-    }),
+    ...(mode === 'android' && { outDir: 'android/app/src/main/assets/editor', emptyOutDir: true }),
+    rollupOptions: {
+      ...(mode === 'android' && { input: 'android.html' }),
+      output: {
+        // pdf.js runs its worker as a module, and browsers refuse a module served as anything but JavaScript.
+        // Many servers (nginx included) send .mjs as application/octet-stream, so the worker ships as .js.
+        assetFileNames: (asset) =>
+          (asset.names?.[0] ?? '').endsWith('.mjs') ? 'assets/[name]-[hash].js' : 'assets/[name]-[hash][extname]',
+      },
+    },
   },
   test: { environment: 'node', include: ['tests/**/*.test.ts'] },
 }));
