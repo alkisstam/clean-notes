@@ -47,6 +47,24 @@ interface NotesDao {
     @Query("SELECT * FROM notes WHERE id = :id")
     fun note(id: String): Flow<NoteRow?>
 
+    @Query("SELECT * FROM notes WHERE trashedAt IS NOT NULL ORDER BY trashedAt DESC")
+    fun liveTrash(): Flow<List<NoteRow>>
+
+    @Query("SELECT * FROM notes WHERE kind = 'daily' AND date = :date AND trashedAt IS NULL AND id != :id LIMIT 1")
+    suspend fun liveDaily(date: String, id: String): NoteRow?
+
+    @Query("SELECT raw FROM notes")
+    suspend fun allRaw(): List<String>
+
+    @Query("SELECT * FROM tombstones WHERE deletedAt > :since")
+    suspend fun tombstonesSince(since: Long): List<TombstoneRow>
+
+    @Query("DELETE FROM notes WHERE id = :id")
+    suspend fun deleteNoteNow(id: String)
+
+    @Query("DELETE FROM attachments WHERE id IN (:ids)")
+    suspend fun deleteAttachments(ids: List<String>)
+
     @Query("SELECT updatedAt FROM notes WHERE id = :id")
     suspend fun noteTime(id: String): Long?
 

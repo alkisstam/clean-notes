@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -39,6 +40,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -63,6 +65,10 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import kotlinx.coroutines.launch
+
+private fun ago(time: Long): CharSequence =
+    if (System.currentTimeMillis() - time < 60_000) "just now"
+    else DateUtils.getRelativeTimeSpanString(time, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -127,6 +133,7 @@ private fun NotesApp(app: App) {
     var syncing by remember { mutableStateOf(false) }
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
     var connecting by rememberSaveable { mutableStateOf(false) }
+    var trash by rememberSaveable { mutableStateOf(false) }
     val paired by app.sync.paired.collectAsState()
     val runSync = {
         if (!syncing && paired) scope.launch {
@@ -151,7 +158,10 @@ private fun NotesApp(app: App) {
     }
 
     val id = openId
-    if (connecting) {
+    if (trash) {
+        BackHandler { trash = false }
+        TrashScreen(app, onBack = { trash = false })
+    } else if (connecting) {
         BackHandler { connecting = false }
         PairScreen(app.sync, onBack = { connecting = false })
     } else if (id != null) {
@@ -163,13 +173,14 @@ private fun NotesApp(app: App) {
             onOpen = { openId = it },
             onNew = { scope.launch { openId = app.newNote() } },
             onConnect = { connecting = true },
+            onTrash = { trash = true },
         )
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NoteList(app: App, syncing: Boolean, snackbar: SnackbarHostState, onSync: () -> Unit, onOpen: (String) -> Unit, onNew: () -> Unit, onConnect: () -> Unit) {
+private fun NoteList(app: App, syncing: Boolean, snackbar: SnackbarHostState, onSync: () -> Unit, onOpen: (String) -> Unit, onNew: () -> Unit, onConnect: () -> Unit, onTrash: () -> Unit) {
     val notes by app.db.dao().liveNotes().collectAsStateWithLifecycle(emptyList())
     val syncedAt by app.sync.syncedAt.collectAsState()
     val paired by app.sync.paired.collectAsState()
@@ -184,8 +195,7 @@ private fun NoteList(app: App, syncing: Boolean, snackbar: SnackbarHostState, on
                             when {
                                 !paired -> "On this device only"
                                 syncedAt == 0L -> "Not synced yet"
-                                System.currentTimeMillis() - syncedAt < 60_000 -> "Synced just now"
-                                else -> "Synced ${DateUtils.getRelativeTimeSpanString(syncedAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)}"
+                                else -> "Synced ${ago(syncedAt)}"
                             },
                             style = MaterialTheme.typography.labelSmall,
                         )
@@ -196,6 +206,7 @@ private fun NoteList(app: App, syncing: Boolean, snackbar: SnackbarHostState, on
                     DropdownMenu(menu, { menu = false }) {
                         if (paired) DropdownMenuItem(text = { Text("Disconnect from server") }, onClick = { menu = false; app.sync.unpair() })
                         else DropdownMenuItem(text = { Text("Connect to server") }, onClick = { menu = false; onConnect() })
+                        DropdownMenuItem(text = { Text("Trash") }, onClick = { menu = false; onTrash() })
                     }
                 },
             )
@@ -256,5 +267,65 @@ private fun NoteScreen(app: App, id: String, onClose: () -> Unit) {
         },
     ) { pad ->
         note?.let { NoteView(app, it, view, Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize().imePadding()) }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TrashScreen(app: App, onBack: () -> Unit) {
+    val notes by app.db.dao().liveTrash().collectAsStateWithLifecycle(emptyList())
+    var picked by remember { mutableStateOf<NoteRow?>(null) }
+    var confirmEmpty by remember { mutableStateOf(false) }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Trash") },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                actions = { if (notes.isNotEmpty()) TextButton(onClick = { confirmEmpty = true }) { Text("Empty Trash") } },
+            )
+        },
+    ) { pad ->
+        if (notes.isEmpty()) {
+            Text("Trash is empty", Modifier.padding(pad).padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        LazyColumn(Modifier.padding(pad).fillMaxSize()) {
+            items(notes, key = { it.id }) { note ->
+                Column(Modifier.fillMaxWidth().clickable { picked = note }.padding(16.dp, 12.dp)) {
+                    Text(note.title.ifBlank { "Untitled" }, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        "Trashed ${ago(note.trashedAt ?: 0)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                HorizontalDivider()
+            }
+        }
+    }
+    picked?.let { note ->
+        AlertDialog(
+            onDismissRequest = { picked = null },
+            title = { Text(note.title.ifBlank { "Untitled" }) },
+            text = { Text("Restore it to your notes, or delete it for good. Deleting cannot be undone, and removes it from your other devices too.") },
+            confirmButton = { TextButton(onClick = { picked = null; app.scope.launch { app.restoreNote(note.id) } }) { Text("Restore") } },
+            dismissButton = {
+                TextButton(onClick = { picked = null; app.scope.launch { app.deleteForever(listOf(note.id)) } }) {
+                    Text("Delete forever", color = MaterialTheme.colorScheme.error)
+                }
+            },
+        )
+    }
+    if (confirmEmpty) {
+        AlertDialog(
+            onDismissRequest = { confirmEmpty = false },
+            title = { Text("Empty Trash?") },
+            text = { Text("${notes.size} ${if (notes.size == 1) "note" else "notes"} will be deleted for good, here and on your other devices.") },
+            confirmButton = {
+                TextButton(onClick = { confirmEmpty = false; val ids = notes.map { it.id }; app.scope.launch { app.deleteForever(ids) } }) {
+                    Text("Empty Trash", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmEmpty = false }) { Text("Cancel") } },
+        )
     }
 }

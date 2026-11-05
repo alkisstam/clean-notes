@@ -2,6 +2,7 @@ package io.cleannotes.app
 
 import android.app.Application
 import androidx.room.Room
+import androidx.room.withTransaction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -33,11 +34,17 @@ class App : Application() {
         require(Regex("[\\w-]{1,100}").matches(id)) { "Bad attachment id" }
         val dir = File(filesDir, "blobs")
         File(dir, "$id.tmp").apply { writeBytes(Base64.decode(base64, Base64.DEFAULT)); renameTo(File(dir, id)) }
-        db.dao().put(AttachmentRow(id, table, meta.getLong("createdAt"), meta.toString(), System.currentTimeMillis()))
+        stamped { now -> db.dao().put(AttachmentRow(id, table, meta.getLong("createdAt"), meta.toString(), now)) }
     }
 
+    /**
+     * Runs a write with the time taken inside its transaction. Sync reads its start time inside one too,
+     * so every row stamped before that time is already stored when sync looks for it.
+     */
+    private suspend fun <T> stamped(block: suspend (Long) -> T) = db.withTransaction { block(System.currentTimeMillis()) }
+
     suspend fun saveNote(note: JSONObject) {
-        db.dao().put(noteRow(note).copy(savedAt = System.currentTimeMillis()))
+        stamped { now -> db.dao().put(noteRow(note).copy(savedAt = now)) }
         sync.schedule()
     }
 
@@ -63,8 +70,47 @@ class App : Application() {
     }
 
     suspend fun trashNote(id: String) {
-        val row = db.dao().noteOnce(id) ?: return
-        val now = System.currentTimeMillis()
-        saveNote(JSONObject(row.raw).put("trashedAt", now).put("updatedAt", now))
+        stamped { now ->
+            val row = db.dao().noteOnce(id) ?: return@stamped
+            db.dao().put(noteRow(JSONObject(row.raw).put("trashedAt", now).put("updatedAt", now)).copy(savedAt = now))
+        }
+        sync.schedule()
+    }
+
+    /** Same as restoreNote() in src/lib/actions.ts, including merging a daily note into a newer one for its date. */
+    suspend fun restoreNote(id: String) {
+        stamped { now ->
+            val dao = db.dao()
+            val row = dao.noteOnce(id) ?: return@stamped
+            val note = JSONObject(row.raw)
+            val twin = row.date?.takeIf { row.kind == "daily" }?.let { dao.liveDaily(it, id) }
+            if (twin == null) {
+                dao.put(noteRow(note.put("trashedAt", JSONObject.NULL).put("updatedAt", now)).copy(savedAt = now))
+                return@stamped
+            }
+            val merged = JSONObject(twin.raw)
+            val blocks = merged.getJSONObject("content").optJSONArray("content") ?: JSONArray()
+            note.getJSONObject("content").optJSONArray("content")?.let { a -> for (i in 0 until a.length()) blocks.put(a.get(i)) }
+            merged.getJSONObject("content").put("content", blocks)
+            merged.put("text", listOf(twin.text, row.text).filter { it.isNotBlank() }.joinToString("\n"))
+                .put("writer", "restore:${UUID.randomUUID()}")
+                .put("updatedAt", now)
+            dao.put(noteRow(merged).copy(savedAt = now))
+            dao.deleteNoteNow(id)
+            dao.put(TombstoneRow(id, "notes", now))
+        }
+        sync.schedule()
+    }
+
+    /** The tombstone makes other devices delete the note too. */
+    suspend fun deleteForever(ids: List<String>) {
+        stamped { now ->
+            ids.forEach {
+                db.dao().deleteNoteNow(it)
+                db.dao().put(TombstoneRow(it, "notes", now))
+            }
+        }
+        sync.collectOrphans()
+        sync.schedule()
     }
 }

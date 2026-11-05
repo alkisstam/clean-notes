@@ -91,11 +91,19 @@ class Sync(context: Context, private val db: AppDb) {
         withContext(Dispatchers.IO) {
             val since = prefs.getLong("seq", 0)
             val pushFrom = prefs.getLong("lastPushAt", 0)
-            val startedAt = System.currentTimeMillis()
-            // shortcut: pushes notes, PDFs and images; notebooks and deletes come when the app can make them.
-            val notes = dao.notesSince(pushFrom)
-            // The server drops files no note uses, so each pushed note's own go along, in case they were dropped.
-            val files = dao.attachments().filter { a -> a.savedAt > pushFrom || notes.any { it.raw.contains(a.id) } }
+            // Read in one transaction with the start time, so no local write stamped before it can land after these reads.
+            // shortcut: notebooks are not pushed; the app cannot change them yet.
+            var startedAt = 0L
+            var notes = emptyList<NoteRow>()
+            var tombstones = emptyList<TombstoneRow>()
+            var files = emptyList<AttachmentRow>()
+            db.withTransaction {
+                startedAt = System.currentTimeMillis()
+                notes = dao.notesSince(pushFrom)
+                tombstones = dao.tombstonesSince(pushFrom)
+                // The server drops files no note uses, so each pushed note's own go along, in case they were dropped.
+                files = dao.attachments().filter { a -> a.savedAt > pushFrom || notes.any { it.raw.contains(a.id) } }
+            }
             // Bytes go first, so no device ever sees a file record whose bytes are missing.
             for (f in files) {
                 if (request("HEAD", "api/blob/${f.id}") != null) continue
@@ -105,6 +113,9 @@ class Sync(context: Context, private val db: AppDb) {
                 JSONObject().put("table", "notes").put("id", it.id).put("time", it.updatedAt).put("data", JSONObject(it.raw))
             } + files.map {
                 JSONObject().put("table", it.tbl).put("id", it.id).put("time", it.time).put("data", JSONObject(it.raw))
+            } + tombstones.map {
+                JSONObject().put("table", "tombstones").put("id", it.id).put("time", it.deletedAt)
+                    .put("data", JSONObject().put("id", it.id).put("table", it.tbl).put("deletedAt", it.deletedAt))
             }
             val body = JSONObject().put("since", since).put("records", JSONArray(out)).toString()
             val res = JSONObject(String(request("POST", "api/sync", body.toByteArray(), "application/json") ?: throw SyncError("The sync server was not found.")))
@@ -144,11 +155,22 @@ class Sync(context: Context, private val db: AppDb) {
                     if (t.getString("table") == "notes") dao.deleteNote(id, at) else dao.deleteNotebook(id, at)
                 }
             }
-            // shortcut: bytes of PDFs/images no note uses any more stay on disk; add orphan cleanup with the editor.
+            collectOrphans()
             val now = System.currentTimeMillis()
             prefs.edit { putLong("seq", res.getLong("seq")); putLong("lastPushAt", startedAt); putLong("syncedAt", now) }
             syncedAt.value = now
         }
+    }
+
+    /** Same as collectOrphanFiles() in src/lib/actions.ts: drops PDFs and images no note refers to, trashed ones included. */
+    suspend fun collectOrphans() {
+        // A file just added to a note is stored before the note is; give the note time to catch up.
+        val before = System.currentTimeMillis() - 5 * 60_000
+        val raws = dao.allRaw()
+        val orphans = dao.attachments().filter { a -> a.time < before && raws.none { it.contains(a.id) } }.map { it.id }
+        if (orphans.isEmpty()) return
+        dao.deleteAttachments(orphans)
+        orphans.forEach { File(blobDir, it).delete() }
     }
 
     /** Returns the body, or null on 404. */
