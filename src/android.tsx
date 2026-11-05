@@ -12,6 +12,7 @@ import { createRoot } from 'react-dom/client';
 import { flushEditor, patchNote } from './lib/actions';
 import { db, writeListeners } from './lib/db';
 import { imageIdsIn, pdfIdsIn } from './lib/doc';
+import { blobSaver } from './lib/pdf';
 import { NoteEditor } from './editor/NoteEditor';
 import { Boundary } from './components/EditorPane';
 import { store, useStore } from './lib/store';
@@ -43,6 +44,9 @@ const toBase64 = (blob: Blob) =>
     r.onerror = () => reject(r.error);
     r.readAsDataURL(blob);
   });
+
+blobSaver.save = (blob, name) =>
+  void toBase64(blob).then((data) => CleanNotes.postMessage(JSON.stringify({ type: 'open', name, mime: blob.type, data })));
 
 async function send() {
   const note = await db.notes.get(noteId);

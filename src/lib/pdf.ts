@@ -98,7 +98,11 @@ export function formatBytes(n: number) {
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
+/** Set by the Android app, whose WebView ignores download links; it hands the file to other apps instead. */
+export const blobSaver: { save: ((blob: Blob, name: string) => void) | null } = { save: null };
+
 export function saveBlob(blob: Blob, name: string) {
+  if (blobSaver.save) return blobSaver.save(blob, name);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

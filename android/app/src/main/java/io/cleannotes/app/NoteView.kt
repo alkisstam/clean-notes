@@ -1,7 +1,13 @@
 package io.cleannotes.app
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
+import android.util.Base64
+import androidx.core.content.FileProvider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import android.net.Uri
 import android.view.ViewGroup
 import android.webkit.ValueCallback
@@ -32,6 +38,14 @@ import java.io.File
 
 private const val ORIGIN = "https://appassets.androidplatform.net"
 private const val PAGE = "$ORIGIN/assets/editor/android.html"
+
+/** Writes a file other apps may read, replacing the last one, and returns its content URI. */
+private fun shareable(context: Context, name: String, base64: String): Uri {
+    val dir = File(context.cacheDir, "open").apply { deleteRecursively(); mkdirs() }
+    val file = File(dir, name.replace(Regex("[/\\\\]"), "_").ifBlank { "file" })
+    file.writeBytes(Base64.decode(base64, Base64.DEFAULT))
+    return FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+}
 
 /** Lets the screen save the page's pending edits before it closes the note. */
 class NoteViewState {
@@ -110,6 +124,14 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, modifier: Modifier =
                         }
                         "save" -> app.enqueue { app.saveNote(msg.getJSONObject("note")) }
                         "pdf" -> state.pdfOpen = msg.getBoolean("open")
+                        "open" -> app.scope.launch {
+                            val uri = shareable(ctx, msg.getString("name"), msg.getString("data"))
+                            val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, msg.optString("mime").ifBlank { "*/*" })
+                                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            withContext(Dispatchers.Main) {
+                                runCatching { ctx.startActivity(Intent.createChooser(view, "Open with")) }
+                            }
+                        }
                         // Queued too, so a note is only closed once its last save is stored.
                         "flushed" -> app.enqueue { Handler(Looper.getMainLooper()).post { state.flushed() } }
                     }
