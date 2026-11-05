@@ -62,3 +62,33 @@ fun renameTagIn(tags: List<String>, from: String, to: String): List<String> =
             else -> listOf(to + t.substring(from.length))
         }
     }.distinct()
+
+data class Nested<T>(val note: T, val depth: Int, val hasKids: Boolean)
+
+/**
+ * Port of nestNotes(): orders an already sorted list as a tree of sub-notes, keeping the sort within each sibling group.
+ * A note whose parent is not in the list (trashed, deleted, other notebook) shows at the top level.
+ */
+fun <T> nestNotes(sorted: List<T>, collapsed: Set<String>, id: (T) -> String, parent: (T) -> String?): List<Nested<T>> {
+    val ids = sorted.map(id).toSet()
+    val kids = mutableMapOf<String, MutableList<T>>()
+    val roots = mutableListOf<T>()
+    for (n in sorted) {
+        val p = parent(n)
+        if (p != null && p != id(n) && p in ids) kids.getOrPut(p) { mutableListOf() } += n else roots += n
+    }
+    val out = mutableListOf<Nested<T>>()
+    val reached = mutableSetOf<String>()
+    fun walk(list: List<T>, depth: Int, hidden: Boolean) {
+        for (n in list) {
+            reached += id(n)
+            val children = kids[id(n)]
+            if (!hidden) out += Nested(n, depth, children != null)
+            if (children != null) walk(children, depth + 1, hidden || id(n) in collapsed)
+        }
+    }
+    walk(roots, 0, false)
+    // A parent loop (only possible from bad synced or imported data) would otherwise hide those notes.
+    for (n in sorted) if (id(n) !in reached) out += Nested(n, 0, false)
+    return out
+}

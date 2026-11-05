@@ -1,5 +1,6 @@
 package io.cleannotes.app
 
+import androidx.compose.runtime.key
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import android.os.Bundle
@@ -75,7 +76,15 @@ fun NotesApp(app: App) {
         BackHandler { connecting = false }
         PairScreen(app.sync, onBack = { connecting = false })
     } else if (id != null) {
-        NoteScreen(app, id, onClose = { openId = null }, onOpenTag = { openId = null; view = "tag:$it" })
+        // Keyed, so switching to another note (a new sub-note) builds a fresh editor for it.
+        key(id) {
+            NoteScreen(
+                app, id, view.removePrefix("tag:").takeIf { view.startsWith("tag:") },
+                onClose = { openId = null },
+                onOpenTag = { openId = null; view = "tag:$it" },
+                onOpenNote = { openId = it },
+            )
+        }
     } else {
         NoteList(
             app, syncing, snackbar, view,

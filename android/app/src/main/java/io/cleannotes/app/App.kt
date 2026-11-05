@@ -55,7 +55,7 @@ class App : Application() {
     }
 
     /** Same shape as baseNote() in src/lib/actions.ts. */
-    suspend fun newNote(notebookId: String? = null, tag: String? = null): String {
+    suspend fun newNote(notebookId: String? = null, tag: String? = null, parentId: String? = null): String {
         val now = System.currentTimeMillis()
         val id = UUID.randomUUID().toString()
         saveNote(
@@ -71,8 +71,53 @@ class App : Application() {
                 .put("createdAt", now)
                 .put("updatedAt", now)
                 .put("trashedAt", JSONObject.NULL)
+                .apply { if (parentId != null) put("parentId", parentId) }
         )
         return id
+    }
+
+    /** Port of createSubNote(): the new note goes in its parent's notebook. */
+    suspend fun newSubNote(parentId: String, tag: String?): String? {
+        val parent = db.dao().noteOnce(parentId) ?: return null
+        return newNote(parent.notebookId, tag, parentId)
+    }
+
+    /**
+     * Port of nestNote(): puts a note and its sub-notes under another note, in that note's notebook.
+     * Returns false when the target is inside the note itself.
+     */
+    suspend fun nestNote(id: String, parentId: String): Boolean {
+        val ok = stamped { now ->
+            val all = db.dao().allNotes()
+            val byId = all.associateBy { it.id }
+            val parent = byId[parentId] ?: return@stamped true
+            val note = byId[id] ?: return@stamped true
+            if (id == parentId || note.parentId == parentId) return@stamped true
+            var n: NoteRow? = parent
+            var hops = 0
+            while (n != null && hops <= all.size) {
+                if (n.id == id) return@stamped false
+                n = n.parentId?.let(byId::get)
+                hops++
+            }
+            val subtree = mutableListOf(id)
+            var i = 0
+            while (i < subtree.size) {
+                for (c in all) if (c.parentId == subtree[i] && c.id !in subtree) subtree += c.id
+                i++
+            }
+            for (sid in subtree) {
+                val row = byId.getValue(sid)
+                val j = JSONObject(row.raw)
+                if (sid == id) j.put("parentId", parentId)
+                else if (row.notebookId == parent.notebookId) continue
+                j.put("notebookId", parent.notebookId ?: JSONObject.NULL).put("updatedAt", now)
+                db.dao().put(noteRow(j).copy(savedAt = now))
+            }
+            true
+        }
+        sync.schedule()
+        return ok
     }
 
     /**

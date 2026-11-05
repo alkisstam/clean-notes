@@ -93,6 +93,7 @@ fun NoteList(
     var collapsed by rememberSaveable { mutableStateOf("") }
     val ui = remember { app.getSharedPreferences("ui", Context.MODE_PRIVATE) }
     var tagsOpen by remember { mutableStateOf(ui.getBoolean("tagsOpen", true)) }
+    var shutNotes by remember { mutableStateOf(ui.getStringSet("collapsedNotes", emptySet())!!.toSet()) }
     val tag = view.removePrefix("tag:").takeIf { view.startsWith("tag:") }
     val tree = remember(all) { buildTagTree(all.filter { it.archivedAt == null }.map { it.tagList }) }
     val current = notebooks.find { "nb:${it.id}" == view }
@@ -217,9 +218,23 @@ fun NoteList(
         ) { pad ->
             PullToRefreshBox(syncing, onSync, Modifier.padding(pad).fillMaxSize()) {
                 LazyColumn(Modifier.fillMaxSize()) {
-                    items(notes, key = { it.id }) { note ->
-                        Column(Modifier.fillMaxWidth().clickable { onOpen(note.id) }.padding(16.dp, 12.dp)) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Sub-notes nest where the web nests them: All, notebooks and tags.
+                    val rows = if (view == "all" || view.startsWith("nb:") || tag != null) nestNotes(notes, shutNotes, { it.id }, { it.parentId })
+                    else notes.map { Nested(it, 0, false) }
+                    items(rows, key = { it.note.id }) { (note, depth, hasKids) ->
+                        Column(Modifier.fillMaxWidth().clickable { onOpen(note.id) }.padding(start = (16 + depth * 20).dp, top = 12.dp, end = 16.dp, bottom = 12.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                if (hasKids) {
+                                    val open = note.id !in shutNotes
+                                    Icon(
+                                        if (open) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                        if (open) "Hide sub-notes" else "Show sub-notes",
+                                        Modifier.size(22.dp).clickable {
+                                            shutNotes = if (open) shutNotes + note.id else shutNotes - note.id
+                                            ui.edit { putStringSet("collapsedNotes", shutNotes) }
+                                        },
+                                    )
+                                }
                                 if (note.pinned) Text("Pinned", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 Text(note.title.ifBlank { "Untitled" }, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }

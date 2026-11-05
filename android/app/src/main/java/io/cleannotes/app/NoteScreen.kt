@@ -1,5 +1,10 @@
 package io.cleannotes.app
 
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -57,7 +62,9 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NoteScreen(app: App, id: String, onClose: () -> Unit, onOpenTag: (String) -> Unit) {
+fun NoteScreen(app: App, id: String, tag: String?, onClose: () -> Unit, onOpenTag: (String) -> Unit, onOpenNote: (String) -> Unit) {
+    val context = LocalContext.current
+    var nesting by remember { mutableStateOf(false) }
     val live by app.db.dao().liveNotes().collectAsStateWithLifecycle(emptyList())
     val allTags = remember(live) { allTagPaths(live.map { it.tagList }) }
     val note by app.db.dao().note(id).collectAsStateWithLifecycle(null)
@@ -89,6 +96,17 @@ fun NoteScreen(app: App, id: String, onClose: () -> Unit, onOpenTag: (String) ->
                                 view.flush { app.scope.launch { app.updateNote(id) { j, now -> j.put("archivedAt", if (n.archivedAt != null) JSONObject.NULL else now) } } }
                             })
                         }
+                        DropdownMenuItem(text = { Text("New sub-note") }, onClick = {
+                            menu = false
+                            view.flush { app.scope.launch { app.newSubNote(id, tag)?.let { withContext(Dispatchers.Main) { onOpenNote(it) } } } }
+                        })
+                        DropdownMenuItem(text = { Text("Move into note…") }, onClick = { menu = false; nesting = true })
+                        if (note?.parentId != null) {
+                            DropdownMenuItem(text = { Text("Move to top level") }, onClick = {
+                                menu = false
+                                view.flush { app.scope.launch { app.updateNote(id) { j, _ -> j.put("parentId", JSONObject.NULL) } } }
+                            })
+                        }
                         DropdownMenuItem(text = { Text("Move to notebook") }, onClick = { menu = false; moving = true })
                         DropdownMenuItem(text = { Text("Move to Trash") }, onClick = {
                             menu = false
@@ -112,6 +130,41 @@ fun NoteScreen(app: App, id: String, onClose: () -> Unit, onOpenTag: (String) ->
                 NoteView(app, n, view, Modifier.weight(1f).fillMaxWidth())
             }
         }
+    }
+    if (nesting) {
+        // The note itself and its own sub-notes cannot hold it; nestNote() also refuses them.
+        val inside = mutableSetOf(id)
+        var grew = true
+        while (grew) grew = live.filter { it.parentId in inside }.map { it.id }.any { inside.add(it) }
+        val targets = live.filter { it.archivedAt == null && it.id !in inside }.sortedBy { it.title.ifBlank { "Untitled" }.lowercase() }
+        val pick = { target: String ->
+            nesting = false
+            view.flush {
+                app.scope.launch {
+                    if (!app.nestNote(id, target)) withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "A note cannot go inside its own sub-note", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+        AlertDialog(
+            onDismissRequest = { nesting = false },
+            title = { Text("Move into note") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    if (targets.isEmpty()) Text("There is no other note to move it into.")
+                    targets.forEach { t ->
+                        Text(
+                            t.title.ifBlank { "Untitled" },
+                            Modifier.fillMaxWidth().clickable { pick(t.id) }.padding(vertical = 12.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { nesting = false }) { Text("Cancel") } },
+        )
     }
     if (moving) {
         val pick = { target: String? -> moving = false; view.flush { app.scope.launch { app.moveNote(id, target) } } }
