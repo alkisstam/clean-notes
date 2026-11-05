@@ -1,5 +1,6 @@
 package io.cleannotes.app
 
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -86,10 +87,10 @@ fun NoteList(
     onOpen: (String) -> Unit,
     onOpenPdf: (note: String, target: String) -> Unit,
     onNew: (notebook: String?, tag: String?) -> Unit,
-    onToday: () -> Unit,
 ) {
     val all by app.db.dao().liveNotes().collectAsStateWithLifecycle(emptyList())
     val notebooks by app.db.dao().liveNotebooks().collectAsStateWithLifecycle(emptyList())
+    val trashed by app.db.dao().liveTrash().collectAsStateWithLifecycle(emptyList())
     val syncedAt by app.sync.syncedAt.collectAsState()
     val paired by app.sync.paired.collectAsState()
     val scope = rememberCoroutineScope()
@@ -124,29 +125,31 @@ fun NoteList(
         drawerState = drawer,
         drawerContent = {
             ModalDrawerSheet {
+                // Same order, icons (Lucide) and counts as the web's sidebar.
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) {
                     val pick = { key: String -> onView(key); scope.launch { drawer.close() } }
-                    NavigationDrawerItem(label = { Text("Today") }, selected = view == "daily", onClick = { onToday(); scope.launch { drawer.close() } })
-                    NavigationDrawerItem(
-                        label = { Text("Tasks") },
-                        badge = { (tasks.overdue.size + tasks.today.size + tasks.upcoming.size + tasks.someday.size).takeIf { it > 0 }?.let { Text("$it") } },
-                        selected = view == "tasks",
-                        onClick = { pick("tasks") },
+                    @Composable
+                    fun Item(label: String, icon: Int, key: String, count: Int? = null) = NavigationDrawerItem(
+                        label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        icon = { Icon(painterResource(icon), null, Modifier.size(20.dp)) },
+                        badge = { count?.takeIf { it > 0 }?.let { Text("$it") } },
+                        selected = view == key,
+                        onClick = { pick(key) },
                     )
-                    NavigationDrawerItem(label = { Text("All notes") }, selected = view == "all", onClick = { pick("all") })
-                    NavigationDrawerItem(label = { Text("PDFs") }, selected = view == "pdfs", onClick = { pick("pdfs") })
-                    NavigationDrawerItem(label = { Text("Pinned") }, selected = view == "pinned", onClick = { pick("pinned") })
-                    NavigationDrawerItem(label = { Text("Archive") }, selected = view == "archive", onClick = { pick("archive") })
-                    Text("Notebooks", Modifier.padding(16.dp, 16.dp, 16.dp, 8.dp), style = MaterialTheme.typography.labelMedium)
-                    notebooks.forEach { nb ->
-                        NavigationDrawerItem(
-                            label = { Text(nb.name.ifBlank { "Untitled" }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            badge = { Text(listFor("nb:${nb.id}", all).size.toString()) },
-                            selected = current?.id == nb.id,
-                            onClick = { pick("nb:${nb.id}") },
-                        )
+                    Item("All notes", R.drawable.ic_library, "all", listFor("all", all).size)
+                    Item("Today", R.drawable.ic_calendar_days, "daily")
+                    Item("Tasks", R.drawable.ic_circle_check, "tasks", tasks.overdue.size + tasks.today.size + tasks.upcoming.size + tasks.someday.size)
+                    Item("PDFs", R.drawable.ic_file_text, "pdfs")
+                    Item("Pinned", R.drawable.ic_pin, "pinned", listFor("pinned", all).size)
+                    Item("Archive", R.drawable.ic_archive, "archive", listFor("archive", all).size)
+                    Item("Trash", R.drawable.ic_trash, "trash", trashed.size)
+                    Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Notebooks", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+                        IconButton(onClick = { creating = true; scope.launch { drawer.close() } }) {
+                            Icon(painterResource(R.drawable.ic_plus), "New notebook", Modifier.size(18.dp))
+                        }
                     }
-                    NavigationDrawerItem(label = { Text("New notebook") }, selected = false, onClick = { creating = true; scope.launch { drawer.close() } })
+                    notebooks.forEach { nb -> Item(nb.name.ifBlank { "Untitled" }, R.drawable.ic_book_open, "nb:${nb.id}", listFor("nb:${nb.id}", all).size) }
                     if (tree.isNotEmpty()) {
                         Row(
                             Modifier.fillMaxWidth().clickable {
@@ -157,9 +160,9 @@ fun NoteList(
                         ) {
                             Text("Tags", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
                             Icon(
-                                if (tagsOpen) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                painterResource(if (tagsOpen) R.drawable.ic_chevron_down else R.drawable.ic_chevron_right),
                                 if (tagsOpen) "Collapse tags" else "Expand tags",
-                                Modifier.size(20.dp),
+                                Modifier.size(18.dp),
                             )
                         }
                         val shut = collapsed.split('\n').toSet()
@@ -171,11 +174,11 @@ fun NoteList(
                                 icon = {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Spacer(Modifier.width((depth * 16).dp))
-                                        if (n.children.isEmpty()) Text("#", Modifier.width(24.dp), textAlign = TextAlign.Center)
+                                        if (n.children.isEmpty()) Icon(painterResource(R.drawable.ic_hash), null, Modifier.size(18.dp))
                                         else Icon(
-                                            if (n.path in shut) Icons.AutoMirrored.Filled.KeyboardArrowRight else Icons.Default.KeyboardArrowDown,
+                                            painterResource(if (n.path in shut) R.drawable.ic_chevron_right else R.drawable.ic_chevron_down),
                                             if (n.path in shut) "Expand ${n.path}" else "Collapse ${n.path}",
-                                            Modifier.size(24.dp).clickable {
+                                            Modifier.size(18.dp).clickable {
                                                 collapsed = (if (n.path in shut) shut - n.path else shut + n.path).filter { it.isNotEmpty() }.joinToString("\n")
                                             },
                                         )
@@ -188,8 +191,7 @@ fun NoteList(
                         }
                     }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                    NavigationDrawerItem(label = { Text("Trash") }, selected = false, onClick = { pick("trash") })
-                    NavigationDrawerItem(label = { Text("Settings") }, selected = false, onClick = { pick("settings") })
+                    Item("Settings", R.drawable.ic_settings_2, "settings")
                 }
             }
         },
@@ -271,6 +273,7 @@ fun NoteList(
             PullToRefreshBox(syncing, onSync, Modifier.padding(pad).fillMaxSize()) {
                 // Searching covers every view, as on the web.
                 if (query.isNotBlank()) SearchBody(app, all, query, onOpen, onOpenPdf)
+                else if (view == "daily") DailyBody(app, all, onOpen)
                 else if (view == "tasks") TasksBody(app, tasks, onOpen)
                 else if (view == "pdfs") PdfsBody(app, all, onOpenPdf)
                 else LazyColumn(Modifier.fillMaxSize()) {

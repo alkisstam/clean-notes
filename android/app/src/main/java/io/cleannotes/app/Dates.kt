@@ -6,6 +6,7 @@ import java.time.ZoneOffset
 import java.util.Locale
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import java.time.temporal.WeekFields
 
 // Port of the parts of src/lib/dates.ts the app needs. Keys are local calendar dates as YYYY-MM-DD.
 
@@ -33,3 +34,14 @@ fun dueLabel(key: String, today: String = dateKey()) = when (key) {
 fun keyToMillis(key: String) = LocalDate.parse(key).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
 
 fun millisToKey(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC).toLocalDate().toString()
+
+/** Port of firstDayOfWeek(): 0 is Sunday, as in JavaScript. */
+fun firstDayOfWeek(): Int = WeekFields.of(Locale.getDefault()).firstDayOfWeek.value % 7
+
+/** Port of monthGrid(): date keys for a month (1-12), padded to whole weeks. */
+fun monthGrid(year: Int, month: Int, weekStart: Int): List<String> {
+    val first = LocalDate.of(year, month, 1)
+    val offset = (first.dayOfWeek.value % 7 - weekStart + 7) % 7
+    val cells = (offset + first.lengthOfMonth() + 6) / 7 * 7
+    return List(cells) { first.plusDays((it - offset).toLong()).toString() }
+}

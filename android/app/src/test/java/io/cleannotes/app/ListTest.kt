@@ -3,6 +3,7 @@ package io.cleannotes.app
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ListTest {
@@ -64,5 +65,14 @@ class ListTest {
     @Test fun datesCrossMonthAndYear() {
         assertEquals("2026-12-01", addDays("2026-11-30", 1))
         assertEquals("2025-12-31", addDays("2026-01-01", -1))
+    }
+
+    // Same case as "builds whole-week month grids" in tests/lib.test.ts (there months count from 0).
+    @Test fun buildsWholeWeekMonthGrids() {
+        val g = monthGrid(2026, 11, 1) // November 2026 starts on a Sunday
+        assertEquals("2026-10-26", g[0])
+        assertEquals("2026-11-01", g[6])
+        assertEquals(0, g.size % 7)
+        assertTrue("2026-11-30" in g)
     }
 }

@@ -108,7 +108,6 @@ fun NotesApp(app: App) {
             onOpen = { openId = it },
             onOpenPdf = { note, target -> openPdf = target; openId = note },
             onNew = { nb, tag -> scope.launch { openId = app.newNote(nb, tag) } },
-            onToday = { view = "daily"; scope.launch { openId = app.dailyNote(dateKey()) } },
         )
     }
 }
