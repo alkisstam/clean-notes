@@ -93,7 +93,7 @@ fun NotesApp(app: App) {
             onView = { view = it },
             onSync = { runSync() },
             onOpen = { openId = it },
-            onOpenPdf = { note, file -> openPdf = file; openId = note },
+            onOpenPdf = { note, target -> openPdf = target; openId = note },
             onNew = { nb, tag -> scope.launch { openId = app.newNote(nb, tag) } },
             onConnect = { connecting = true },
             onToday = { view = "daily"; scope.launch { openId = app.dailyNote(dateKey()) } },

@@ -1,5 +1,14 @@
 package io.cleannotes.app
 
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.runtime.LaunchedEffect
 import org.json.JSONObject
 import android.content.Context
 import androidx.core.content.edit
@@ -75,7 +84,7 @@ fun NoteList(
     onView: (String) -> Unit,
     onSync: () -> Unit,
     onOpen: (String) -> Unit,
-    onOpenPdf: (note: String, file: String) -> Unit,
+    onOpenPdf: (note: String, target: String) -> Unit,
     onNew: (notebook: String?, tag: String?) -> Unit,
     onConnect: () -> Unit,
     onToday: () -> Unit,
@@ -98,6 +107,9 @@ fun NoteList(
     var tagsOpen by remember { mutableStateOf(ui.getBoolean("tagsOpen", true)) }
     var shutNotes by remember { mutableStateOf(ui.getStringSet("collapsedNotes", emptySet())!!.toSet()) }
     val tag = view.removePrefix("tag:").takeIf { view.startsWith("tag:") }
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    val closeSearch = { searching = false; query = "" }
     // Parsed once per change to the notes; the drawer shows the open count, the Tasks view the groups.
     val tasks = remember(all) {
         groupTasks(all.filter { it.archivedAt == null }.flatMap { extractTasks(it.id, it.title, JSONObject(it.raw).getJSONObject("content")) }, dateKey())
@@ -108,6 +120,7 @@ fun NoteList(
     val notes = listFor(if (view.startsWith("nb:") && current == null) "all" else view, all)
 
     BackHandler(drawer.isOpen) { scope.launch { drawer.close() } }
+    BackHandler(searching && !drawer.isOpen) { closeSearch() }
     ModalNavigationDrawer(
         drawerState = drawer,
         drawerContent = {
@@ -185,7 +198,21 @@ fun NoteList(
             topBar = {
                 TopAppBar(
                     title = {
-                        Column {
+                        if (searching) {
+                            val focus = remember { FocusRequester() }
+                            LaunchedEffect(Unit) { focus.requestFocus() }
+                            TextField(
+                                query, { query = it }, Modifier.fillMaxWidth().focusRequester(focus),
+                                placeholder = { Text("Search notes and PDFs") },
+                                singleLine = true,
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                ),
+                            )
+                        } else Column {
                             Text(
                                 current?.name?.ifBlank { "Untitled" } ?: when (view) {
                                     "pinned" -> "Pinned"
@@ -208,8 +235,16 @@ fun NoteList(
                             )
                         }
                     },
-                    navigationIcon = { IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(Icons.Default.Menu, "Notebooks") } },
+                    navigationIcon = {
+                        if (searching) IconButton(onClick = closeSearch) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Close search") }
+                        else IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(Icons.Default.Menu, "Notebooks") }
+                    },
                     actions = {
+                        if (searching) {
+                            if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, "Clear search") }
+                            return@TopAppBar
+                        }
+                        IconButton(onClick = { searching = true }) { Icon(Icons.Default.Search, "Search") }
                         IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
                         DropdownMenu(menu, { menu = false }) {
                             if (tag != null) {
@@ -229,13 +264,15 @@ fun NoteList(
             snackbarHost = { SnackbarHost(snackbar) },
             floatingActionButton = {
                 // New notes only where they would show up, as on the web.
-                if (view == "all" || current != null || tag != null) {
+                if (!searching && (view == "all" || current != null || tag != null)) {
                     FloatingActionButton(onClick = { onNew(current?.id, tag) }) { Icon(Icons.Default.Add, "New note") }
                 }
             },
         ) { pad ->
             PullToRefreshBox(syncing, onSync, Modifier.padding(pad).fillMaxSize()) {
-                if (view == "tasks") TasksBody(app, tasks, onOpen)
+                // Searching covers every view, as on the web.
+                if (query.isNotBlank()) SearchBody(app, all, query, onOpen, onOpenPdf)
+                else if (view == "tasks") TasksBody(app, tasks, onOpen)
                 else if (view == "pdfs") PdfsBody(app, all, onOpenPdf)
                 else LazyColumn(Modifier.fillMaxSize()) {
                     // Sub-notes nest where the web nests them: All, notebooks and tags.

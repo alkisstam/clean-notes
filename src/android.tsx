@@ -15,7 +15,7 @@ import { imageIdsIn, pdfIdsIn } from './lib/doc';
 import { blobSaver } from './lib/pdf';
 import { NoteEditor } from './editor/NoteEditor';
 import { Boundary } from './components/EditorPane';
-import { store, useStore } from './lib/store';
+import { store, useStore, type PdfTarget } from './lib/store';
 import type { Note, NoteImage, PdfFile } from './lib/types';
 
 interface Payload {
@@ -23,8 +23,8 @@ interface Payload {
   images: (Omit<NoteImage, 'blob'> & { type: string })[];
   files: PdfFile[];
   dark: boolean;
-  /** A PDF to show as the note opens, from the app's PDFs list. */
-  pdf?: string | null;
+  /** A PDF to show as the note opens, from the app's PDFs list or a search hit. */
+  pdf?: PdfTarget | null;
 }
 
 /** Added by the Android app, and only for this page's origin. */
@@ -195,7 +195,7 @@ w.cnLoad = async ({ note, images, files, dark, pdf }) => {
       await db.notes.put(note);
     }
   });
-  if (opening) store.getState().setPdf(pdf ? { fileId: pdf } : null);
+  if (opening) store.getState().setPdf(pdf ?? null);
   if (opening) root.render(<Page key={note.id} id={note.id} />);
 };
 

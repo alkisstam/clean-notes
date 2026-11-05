@@ -64,6 +64,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+/** `pdf` is the web's PdfTarget as JSON text: {fileId, page?, query?}. */
 fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> Unit, onOpenTag: (String) -> Unit, onOpenNote: (String) -> Unit) {
     val context = LocalContext.current
     var nesting by remember { mutableStateOf(false) }

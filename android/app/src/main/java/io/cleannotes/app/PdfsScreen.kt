@@ -44,7 +44,7 @@ fun formatBytes(n: Long): String = when {
 
 /** Port of the web's PDFs view: every PDF, newest first, opening in the note it belongs to. */
 @Composable
-fun PdfsBody(app: App, notes: List<NoteRow>, onOpen: (note: String, file: String) -> Unit) {
+fun PdfsBody(app: App, notes: List<NoteRow>, onOpen: (note: String, target: String) -> Unit) {
     val files by app.db.dao().livePdfs().collectAsStateWithLifecycle(emptyList())
     if (files.isEmpty()) {
         Text("No PDFs yet. Type /pdf in a note to add one.", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -62,7 +62,7 @@ fun PdfsBody(app: App, notes: List<NoteRow>, onOpen: (note: String, file: String
             }
             val pages = meta.optInt("pageCount")
             Row(
-                Modifier.fillMaxWidth().clickable(enabled = owner != null) { owner?.let { onOpen(it.id, f.id) } }.padding(16.dp, 10.dp),
+                Modifier.fillMaxWidth().clickable(enabled = owner != null) { owner?.let { onOpen(it.id, JSONObject().put("fileId", f.id).toString()) } }.padding(16.dp, 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

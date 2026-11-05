@@ -96,7 +96,7 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
             .put("images", JSONArray(used.filter { it.tbl == "images" }.map { JSONObject(it.raw) }))
             .put("files", JSONArray(used.filter { it.tbl == "files" }.map { JSONObject(it.raw) }))
             .put("dark", dark)
-            .put("pdf", pdf ?: JSONObject.NULL)
+            .put("pdf", pdf?.let(::JSONObject) ?: JSONObject.NULL)
             .toString()
     }
 
