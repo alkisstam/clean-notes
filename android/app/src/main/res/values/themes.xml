@@ -1,0 +1,6 @@
+<resources>
+    <!-- Matches the list background token in src/styles/tokens.css, so launch shows the app background. -->
+    <style name="Theme.CleanNotes" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#F4F1EA</item>
+    </style>
+</resources>
