@@ -52,6 +52,12 @@ interface NotesDao {
     @Query("SELECT deletedAt FROM tombstones WHERE id = :id")
     suspend fun diedAt(id: String): Long?
 
+    @Query("SELECT * FROM notes WHERE updatedAt > :since")
+    suspend fun notesSince(since: Long): List<NoteRow>
+
+    @Query("SELECT * FROM notes WHERE id = :id")
+    suspend fun noteOnce(id: String): NoteRow?
+
     @Query("SELECT * FROM attachments")
     suspend fun attachments(): List<AttachmentRow>
 

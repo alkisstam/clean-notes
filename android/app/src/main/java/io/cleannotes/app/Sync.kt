@@ -3,7 +3,12 @@ package io.cleannotes.app
 import android.content.Context
 import androidx.core.content.edit
 import androidx.room.withTransaction
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -22,6 +27,20 @@ fun accepts(incoming: Long, current: Long?, diedAt: Long?) =
 
 private fun JSONObject.str(key: String) = if (isNull(key)) null else optString(key)
 private fun JSONObject.long(key: String) = if (isNull(key)) null else optLong(key)
+
+fun noteRow(n: JSONObject) = NoteRow(
+    id = n.getString("id"),
+    title = n.optString("title"),
+    text = n.optString("text"),
+    notebookId = n.str("notebookId"),
+    kind = n.optString("kind", "note"),
+    date = n.str("date"),
+    pinned = n.optBoolean("pinned"),
+    updatedAt = n.getLong("updatedAt"),
+    trashedAt = n.long("trashedAt"),
+    archivedAt = n.long("archivedAt"),
+    raw = n.toString(),
+)
 
 /** Client for server/sync.mjs. Mirrors serverSync() in src/lib/sync.ts. */
 class Sync(context: Context, private val db: AppDb) {
@@ -43,7 +62,7 @@ class Sync(context: Context, private val db: AppDb) {
         val base = url.trim().trimEnd('/') + "/"
         require(base.startsWith("https://")) { "The server address must start with https://" }
         require(token.isNotBlank()) { "The token is empty" }
-        prefs.edit { putString("url", base); putString("token", token.trim()); putLong("seq", 0) }
+        prefs.edit { putString("url", base); putString("token", token.trim()); putLong("seq", 0); putLong("lastPushAt", 0) }
         paired.value = true
     }
 
@@ -53,11 +72,31 @@ class Sync(context: Context, private val db: AppDb) {
         syncedAt.value = 0
     }
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var scheduled: Job? = null
+
+    /** Errors are left for the next sync, which the list shows when it runs it. */
+    fun runInBackground() = scope.launch { if (paired.value) runCatching { run() } }
+
+    /** Counted from the first change, so steady typing cannot put the sync off forever. */
+    fun schedule() {
+        if (scheduled?.isActive == true) return
+        scheduled = scope.launch {
+            delay(60_000)
+            runInBackground()
+        }
+    }
+
     suspend fun run() = lock.withLock {
         withContext(Dispatchers.IO) {
             val since = prefs.getLong("seq", 0)
-            // shortcut: read-only client, so it pushes nothing; sending local edits comes with the editor.
-            val body = JSONObject().put("since", since).put("records", JSONArray()).toString()
+            val pushFrom = prefs.getLong("lastPushAt", 0)
+            val startedAt = System.currentTimeMillis()
+            // shortcut: pushes notes only; notebooks, deletes and new PDFs/images come when the app can make them.
+            val out = dao.notesSince(pushFrom).map {
+                JSONObject().put("table", "notes").put("id", it.id).put("time", it.updatedAt).put("data", JSONObject(it.raw))
+            }
+            val body = JSONObject().put("since", since).put("records", JSONArray(out)).toString()
             val res = JSONObject(String(request("POST", "api/sync", body) ?: throw SyncError("The sync server was not found.")))
             val records = res.getJSONArray("records").let { a -> List(a.length()) { a.getJSONObject(it) } }
 
@@ -87,22 +126,7 @@ class Sync(context: Context, private val db: AppDb) {
                     val n = r.getJSONObject("data")
                     val id = n.getString("id")
                     val time = n.getLong("updatedAt")
-                    if (!accepts(time, dao.noteTime(id), dao.diedAt(id))) continue
-                    dao.put(
-                        NoteRow(
-                            id = id,
-                            title = n.optString("title"),
-                            text = n.optString("text"),
-                            notebookId = n.str("notebookId"),
-                            kind = n.optString("kind", "note"),
-                            date = n.str("date"),
-                            pinned = n.optBoolean("pinned"),
-                            updatedAt = time,
-                            trashedAt = n.long("trashedAt"),
-                            archivedAt = n.long("archivedAt"),
-                            raw = n.toString(),
-                        )
-                    )
+                    if (accepts(time, dao.noteTime(id), dao.diedAt(id))) dao.put(noteRow(n))
                 }
                 for (t in tombstones) {
                     val id = t.getString("id")
@@ -112,7 +136,7 @@ class Sync(context: Context, private val db: AppDb) {
             }
             // shortcut: bytes of PDFs/images no note uses any more stay on disk; add orphan cleanup with the editor.
             val now = System.currentTimeMillis()
-            prefs.edit { putLong("seq", res.getLong("seq")); putLong("syncedAt", now) }
+            prefs.edit { putLong("seq", res.getLong("seq")); putLong("lastPushAt", startedAt); putLong("syncedAt", now) }
             syncedAt.value = now
         }
     }
