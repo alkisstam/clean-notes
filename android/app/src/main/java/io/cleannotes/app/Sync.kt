@@ -92,15 +92,16 @@ class Sync(context: Context, private val db: AppDb) {
             val since = prefs.getLong("seq", 0)
             val pushFrom = prefs.getLong("lastPushAt", 0)
             // Read in one transaction with the start time, so no local write stamped before it can land after these reads.
-            // shortcut: notebooks are not pushed; the app cannot change them yet.
             var startedAt = 0L
             var notes = emptyList<NoteRow>()
             var tombstones = emptyList<TombstoneRow>()
+            var notebooks = emptyList<NotebookRow>()
             var files = emptyList<AttachmentRow>()
             db.withTransaction {
                 startedAt = System.currentTimeMillis()
                 notes = dao.notesSince(pushFrom)
                 tombstones = dao.tombstonesSince(pushFrom)
+                notebooks = dao.notebooksSince(pushFrom)
                 // The server drops files no note uses, so each pushed note's own go along, in case they were dropped.
                 files = dao.attachments().filter { a -> a.savedAt > pushFrom || notes.any { it.raw.contains(a.id) } }
             }
@@ -113,6 +114,8 @@ class Sync(context: Context, private val db: AppDb) {
                 JSONObject().put("table", "notes").put("id", it.id).put("time", it.updatedAt).put("data", JSONObject(it.raw))
             } + files.map {
                 JSONObject().put("table", it.tbl).put("id", it.id).put("time", it.time).put("data", JSONObject(it.raw))
+            } + notebooks.map {
+                JSONObject().put("table", "notebooks").put("id", it.id).put("time", it.time).put("data", JSONObject(it.raw))
             } + tombstones.map {
                 JSONObject().put("table", "tombstones").put("id", it.id).put("time", it.deletedAt)
                     .put("data", JSONObject().put("id", it.id).put("table", it.tbl).put("deletedAt", it.deletedAt))

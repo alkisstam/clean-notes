@@ -49,7 +49,7 @@ class App : Application() {
     }
 
     /** Same shape as baseNote() in src/lib/actions.ts. */
-    suspend fun newNote(): String {
+    suspend fun newNote(notebookId: String? = null): String {
         val now = System.currentTimeMillis()
         val id = UUID.randomUUID().toString()
         saveNote(
@@ -58,7 +58,7 @@ class App : Application() {
                 .put("title", "")
                 .put("content", JSONObject().put("type", "doc").put("content", JSONArray().put(JSONObject().put("type", "paragraph"))))
                 .put("text", "")
-                .put("notebookId", JSONObject.NULL)
+                .put("notebookId", notebookId ?: JSONObject.NULL)
                 .put("tags", JSONArray())
                 .put("kind", "note")
                 .put("pinned", false)
@@ -98,6 +98,46 @@ class App : Application() {
             dao.put(noteRow(merged).copy(savedAt = now))
             dao.deleteNoteNow(id)
             dao.put(TombstoneRow(id, "notes", now))
+        }
+        sync.schedule()
+    }
+
+    suspend fun moveNote(id: String, notebookId: String?) {
+        stamped { now ->
+            val row = db.dao().noteOnce(id) ?: return@stamped
+            db.dao().put(noteRow(JSONObject(row.raw).put("notebookId", notebookId ?: JSONObject.NULL).put("updatedAt", now)).copy(savedAt = now))
+        }
+        sync.schedule()
+    }
+
+    // Notebooks are pushed by their edit time, which is stamped inside the write, like tombstones.
+    suspend fun createNotebook(name: String): String {
+        val id = UUID.randomUUID().toString()
+        stamped { now ->
+            val raw = JSONObject().put("id", id).put("name", name.trim()).put("createdAt", now).put("updatedAt", now)
+            db.dao().put(NotebookRow(id, name.trim(), now, raw.toString()))
+        }
+        sync.schedule()
+        return id
+    }
+
+    suspend fun renameNotebook(id: String, name: String) {
+        stamped { now ->
+            val row = db.dao().notebookOnce(id) ?: return@stamped
+            db.dao().put(NotebookRow(id, name.trim(), now, JSONObject(row.raw).put("name", name.trim()).put("updatedAt", now).toString()))
+        }
+        sync.schedule()
+    }
+
+    /** Same as deleteNotebook() in src/lib/actions.ts: its notes stay, outside any notebook. */
+    suspend fun deleteNotebook(id: String) {
+        stamped { now ->
+            val dao = db.dao()
+            for (n in dao.notesIn(id)) {
+                dao.put(noteRow(JSONObject(n.raw).put("notebookId", JSONObject.NULL).put("updatedAt", now)).copy(savedAt = now))
+            }
+            dao.deleteNotebookNow(id)
+            dao.put(TombstoneRow(id, "notebooks", now))
         }
         sync.schedule()
     }

@@ -55,6 +55,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -134,6 +144,7 @@ private fun NotesApp(app: App) {
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
     var connecting by rememberSaveable { mutableStateOf(false) }
     var trash by rememberSaveable { mutableStateOf(false) }
+    var notebook by rememberSaveable { mutableStateOf<String?>(null) }
     val paired by app.sync.paired.collectAsState()
     val runSync = {
         if (!syncing && paired) scope.launch {
@@ -168,10 +179,11 @@ private fun NotesApp(app: App) {
         NoteScreen(app, id, onClose = { openId = null })
     } else {
         NoteList(
-            app, syncing, snackbar,
+            app, syncing, snackbar, notebook,
+            onNotebook = { notebook = it },
             onSync = { runSync() },
             onOpen = { openId = it },
-            onNew = { scope.launch { openId = app.newNote() } },
+            onNew = { nb -> scope.launch { openId = app.newNote(nb) } },
             onConnect = { connecting = true },
             onTrash = { trash = true },
         )
@@ -180,63 +192,150 @@ private fun NotesApp(app: App) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NoteList(app: App, syncing: Boolean, snackbar: SnackbarHostState, onSync: () -> Unit, onOpen: (String) -> Unit, onNew: () -> Unit, onConnect: () -> Unit, onTrash: () -> Unit) {
-    val notes by app.db.dao().liveNotes().collectAsStateWithLifecycle(emptyList())
+private fun NoteList(
+    app: App,
+    syncing: Boolean,
+    snackbar: SnackbarHostState,
+    notebook: String?,
+    onNotebook: (String?) -> Unit,
+    onSync: () -> Unit,
+    onOpen: (String) -> Unit,
+    onNew: (String?) -> Unit,
+    onConnect: () -> Unit,
+    onTrash: () -> Unit,
+) {
+    val all by app.db.dao().liveNotes().collectAsStateWithLifecycle(emptyList())
+    val notebooks by app.db.dao().liveNotebooks().collectAsStateWithLifecycle(emptyList())
     val syncedAt by app.sync.syncedAt.collectAsState()
     val paired by app.sync.paired.collectAsState()
+    val scope = rememberCoroutineScope()
+    val drawer = rememberDrawerState(DrawerValue.Closed)
     var menu by remember { mutableStateOf(false) }
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("Notes")
-                        Text(
-                            when {
-                                !paired -> "On this device only"
-                                syncedAt == 0L -> "Not synced yet"
-                                else -> "Synced ${ago(syncedAt)}"
-                            },
-                            style = MaterialTheme.typography.labelSmall,
+    var naming by remember { mutableStateOf<NotebookRow?>(null) }
+    var creating by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf<NotebookRow?>(null) }
+    val current = notebooks.find { it.id == notebook }
+    // An id with no notebook (deleted on another device) shows all notes, and new notes go outside any notebook.
+    val notes = if (current == null) all else all.filter { it.notebookId == current.id }
+
+    BackHandler(drawer.isOpen) { scope.launch { drawer.close() } }
+    ModalNavigationDrawer(
+        drawerState = drawer,
+        drawerContent = {
+            ModalDrawerSheet {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) {
+                    val pick = { id: String? -> onNotebook(id); scope.launch { drawer.close() } }
+                    NavigationDrawerItem(label = { Text("All notes") }, selected = current == null, onClick = { pick(null) })
+                    Text("Notebooks", Modifier.padding(16.dp, 16.dp, 16.dp, 8.dp), style = MaterialTheme.typography.labelMedium)
+                    notebooks.forEach { nb ->
+                        NavigationDrawerItem(
+                            label = { Text(nb.name.ifBlank { "Untitled" }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            badge = { Text(all.count { it.notebookId == nb.id }.toString()) },
+                            selected = current?.id == nb.id,
+                            onClick = { pick(nb.id) },
                         )
                     }
-                },
-                actions = {
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
-                    DropdownMenu(menu, { menu = false }) {
-                        if (paired) DropdownMenuItem(text = { Text("Disconnect from server") }, onClick = { menu = false; app.sync.unpair() })
-                        else DropdownMenuItem(text = { Text("Connect to server") }, onClick = { menu = false; onConnect() })
-                        DropdownMenuItem(text = { Text("Trash") }, onClick = { menu = false; onTrash() })
-                    }
-                },
-            )
+                    NavigationDrawerItem(label = { Text("New notebook") }, selected = false, onClick = { creating = true; scope.launch { drawer.close() } })
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    NavigationDrawerItem(label = { Text("Trash") }, selected = false, onClick = { onTrash(); scope.launch { drawer.close() } })
+                }
+            }
         },
-        snackbarHost = { SnackbarHost(snackbar) },
-        floatingActionButton = {
-            FloatingActionButton(onClick = onNew) { Icon(Icons.Default.Add, "New note") }
-        },
-    ) { pad ->
-        PullToRefreshBox(syncing, onSync, Modifier.padding(pad).fillMaxSize()) {
-            LazyColumn(Modifier.fillMaxSize()) {
-                items(notes, key = { it.id }) { note ->
-                    Column(Modifier.fillMaxWidth().clickable { onOpen(note.id) }.padding(16.dp, 12.dp)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            if (note.pinned) Text("Pinned", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                            Text(note.title.ifBlank { "Untitled" }, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    ) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(current?.name?.ifBlank { "Untitled" } ?: "Notes", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                when {
+                                    !paired -> "On this device only"
+                                    syncedAt == 0L -> "Not synced yet"
+                                    else -> "Synced ${ago(syncedAt)}"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                            )
                         }
-                        Text(
-                            note.text.replace('\n', ' ').take(170).ifBlank { "No content yet" },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                    },
+                    navigationIcon = { IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(Icons.Default.Menu, "Notebooks") } },
+                    actions = {
+                        IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
+                        DropdownMenu(menu, { menu = false }) {
+                            if (current != null) {
+                                DropdownMenuItem(text = { Text("Rename notebook") }, onClick = { menu = false; naming = current })
+                                DropdownMenuItem(text = { Text("Delete notebook") }, onClick = { menu = false; deleting = current })
+                            }
+                            if (paired) DropdownMenuItem(text = { Text("Disconnect from server") }, onClick = { menu = false; app.sync.unpair() })
+                            else DropdownMenuItem(text = { Text("Connect to server") }, onClick = { menu = false; onConnect() })
+                        }
+                    },
+                )
+            },
+            snackbarHost = { SnackbarHost(snackbar) },
+            floatingActionButton = {
+                FloatingActionButton(onClick = { onNew(current?.id) }) { Icon(Icons.Default.Add, "New note") }
+            },
+        ) { pad ->
+            PullToRefreshBox(syncing, onSync, Modifier.padding(pad).fillMaxSize()) {
+                LazyColumn(Modifier.fillMaxSize()) {
+                    items(notes, key = { it.id }) { note ->
+                        Column(Modifier.fillMaxWidth().clickable { onOpen(note.id) }.padding(16.dp, 12.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (note.pinned) Text("Pinned", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                Text(note.title.ifBlank { "Untitled" }, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            Text(
+                                note.text.replace('\n', ' ').take(170).ifBlank { "No content yet" },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        HorizontalDivider()
                     }
-                    HorizontalDivider()
                 }
             }
         }
     }
+
+    if (creating) NameDialog("New notebook", "", "Create") { name ->
+        creating = false
+        if (name != null) scope.launch { onNotebook(app.createNotebook(name)) }
+    }
+    naming?.let { nb ->
+        NameDialog("Rename notebook", nb.name, "Rename") { name ->
+            naming = null
+            if (name != null) app.scope.launch { app.renameNotebook(nb.id, name) }
+        }
+    }
+    deleting?.let { nb ->
+        val count = all.count { it.notebookId == nb.id }
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Delete \"${nb.name.ifBlank { "Untitled" }}\"?") },
+            text = { Text(if (count == 0) "The notebook is empty." else "Its $count ${if (count == 1) "note stays" else "notes stay"}, outside any notebook.") },
+            confirmButton = {
+                TextButton(onClick = { deleting = null; onNotebook(null); app.scope.launch { app.deleteNotebook(nb.id) } }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
+        )
+    }
+}
+
+@Composable
+private fun NameDialog(title: String, initial: String, confirm: String, onDone: (String?) -> Unit) {
+    var name by remember { mutableStateOf(TextFieldValue(initial, TextRange(initial.length))) }
+    AlertDialog(
+        onDismissRequest = { onDone(null) },
+        title = { Text(title) },
+        text = { OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Name") }) },
+        confirmButton = { TextButton(enabled = name.text.isNotBlank(), onClick = { onDone(name.text) }) { Text(confirm) } },
+        dismissButton = { TextButton(onClick = { onDone(null) }) { Text("Cancel") } },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -245,6 +344,8 @@ private fun NoteScreen(app: App, id: String, onClose: () -> Unit) {
     val note by app.db.dao().note(id).collectAsStateWithLifecycle(null)
     val view = remember(id) { NoteViewState() }
     var menu by remember { mutableStateOf(false) }
+    var moving by remember { mutableStateOf(false) }
+    val notebooks by app.db.dao().liveNotebooks().collectAsStateWithLifecycle(emptyList())
     val back = { if (view.pdfOpen) view.closePdf() else view.flush(onClose) }
     BackHandler { back() }
     // Pending keystrokes are saved and sent when the app goes to the background.
@@ -257,6 +358,7 @@ private fun NoteScreen(app: App, id: String, onClose: () -> Unit) {
                 actions = {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
                     DropdownMenu(menu, { menu = false }) {
+                        DropdownMenuItem(text = { Text("Move to notebook") }, onClick = { menu = false; moving = true })
                         DropdownMenuItem(text = { Text("Move to Trash") }, onClick = {
                             menu = false
                             view.flush { app.scope.launch { app.trashNote(id) }; onClose() }
@@ -267,6 +369,24 @@ private fun NoteScreen(app: App, id: String, onClose: () -> Unit) {
         },
     ) { pad ->
         note?.let { NoteView(app, it, view, Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize().imePadding()) }
+    }
+    if (moving) {
+        val pick = { target: String? -> moving = false; view.flush { app.scope.launch { app.moveNote(id, target) } } }
+        AlertDialog(
+            onDismissRequest = { moving = false },
+            title = { Text("Move to notebook") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    (listOf<NotebookRow?>(null) + notebooks).forEach { nb ->
+                        Row(Modifier.fillMaxWidth().clickable { pick(nb?.id) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = note?.notebookId == nb?.id, onClick = { pick(nb?.id) })
+                            Text(nb?.name?.ifBlank { "Untitled" } ?: "No notebook")
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { moving = false }) { Text("Cancel") } },
+        )
     }
 }
 

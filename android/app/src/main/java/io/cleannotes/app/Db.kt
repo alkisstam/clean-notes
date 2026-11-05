@@ -47,6 +47,21 @@ interface NotesDao {
     @Query("SELECT * FROM notes WHERE id = :id")
     fun note(id: String): Flow<NoteRow?>
 
+    @Query("SELECT * FROM notebooks ORDER BY name COLLATE NOCASE")
+    fun liveNotebooks(): Flow<List<NotebookRow>>
+
+    @Query("SELECT * FROM notebooks WHERE id = :id")
+    suspend fun notebookOnce(id: String): NotebookRow?
+
+    @Query("SELECT * FROM notebooks WHERE time > :since")
+    suspend fun notebooksSince(since: Long): List<NotebookRow>
+
+    @Query("SELECT * FROM notes WHERE notebookId = :id")
+    suspend fun notesIn(id: String): List<NoteRow>
+
+    @Query("DELETE FROM notebooks WHERE id = :id")
+    suspend fun deleteNotebookNow(id: String)
+
     @Query("SELECT * FROM notes WHERE trashedAt IS NOT NULL ORDER BY trashedAt DESC")
     fun liveTrash(): Flow<List<NoteRow>>
 
