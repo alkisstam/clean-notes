@@ -123,7 +123,8 @@ function Page({ id }: { id: string }) {
   }, [note?.title]);
   if (!note) return null;
   return (
-    <div className="doc-scroll">
+    // The body never scrolls (the web app scrolls inside its panes), so this needs the full height to scroll itself.
+    <div className="doc-scroll" style={{ height: '100%' }}>
       <article className="doc">
         <textarea
           className="doc-title"
