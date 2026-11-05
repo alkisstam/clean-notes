@@ -3,12 +3,7 @@ package io.cleannotes.app
 import android.content.Context
 import androidx.core.content.edit
 import androidx.room.withTransaction
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -43,7 +38,7 @@ fun noteRow(n: JSONObject) = NoteRow(
 )
 
 /** Client for server/sync.mjs. Mirrors serverSync() in src/lib/sync.ts. */
-class Sync(context: Context, private val db: AppDb) {
+class Sync(private val context: Context, private val db: AppDb) {
     private val prefs = context.getSharedPreferences("sync", Context.MODE_PRIVATE)
     private val blobDir = File(context.filesDir, "blobs").apply { mkdirs() }
     private val dao = db.dao()
@@ -64,27 +59,23 @@ class Sync(context: Context, private val db: AppDb) {
         require(token.isNotBlank()) { "The token is empty" }
         prefs.edit { putString("url", base); putString("token", token.trim()); putLong("seq", 0); putLong("lastPushAt", 0) }
         paired.value = true
+        SyncWorker.schedule(context)
     }
 
     fun unpair() {
+        SyncWorker.cancel(context)
         prefs.edit { clear() }
         paired.value = false
         syncedAt.value = 0
     }
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var scheduled: Job? = null
+    /** Hands the sync to WorkManager, so it finishes after the app closes and waits for a network if there is none. */
+    fun runInBackground() {
+        if (paired.value) SyncWorker.now(context)
+    }
 
-    /** Errors are left for the next sync, which the list shows when it runs it. */
-    fun runInBackground() = scope.launch { if (paired.value) runCatching { run() } }
-
-    /** Counted from the first change, so steady typing cannot put the sync off forever. */
     fun schedule() {
-        if (scheduled?.isActive == true) return
-        scheduled = scope.launch {
-            delay(60_000)
-            runInBackground()
-        }
+        if (paired.value) SyncWorker.soon(context)
     }
 
     suspend fun run() = lock.withLock {

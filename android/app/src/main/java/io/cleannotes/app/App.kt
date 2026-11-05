@@ -25,6 +25,12 @@ class App : Application() {
         scope.launch { for (job in inbox) runCatching { job() } }
     }
 
+    override fun onCreate() {
+        super.onCreate()
+        // Also schedules it for installs paired before background sync existed.
+        if (sync.paired.value) SyncWorker.schedule(this)
+    }
+
     /** Runs writes from the editor one at a time, in the order they arrived. */
     fun enqueue(job: suspend () -> Unit) = inbox.trySend(job)
 

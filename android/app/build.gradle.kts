@@ -53,6 +53,7 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.code.scanner)
     implementation(libs.androidx.webkit)
+    implementation(libs.androidx.work)
     testImplementation(libs.junit)
 }
 
