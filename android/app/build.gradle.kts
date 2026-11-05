@@ -17,8 +17,21 @@ android {
         versionName = "1.0.0"
     }
 
+    // The release key never enters the repo: its path and passwords come from ~/.gradle/gradle.properties
+    // (cleanNotes.storeFile, .storePassword, .keyAlias, .keyPassword) or the same names as CLEAN_NOTES_* env vars.
+    val key = { name: String -> providers.gradleProperty("cleanNotes.$name").orElse(providers.environmentVariable("CLEAN_NOTES_${name.uppercase()}")).orNull }
+    signingConfigs {
+        if (key("storeFile") != null) create("release") {
+            storeFile = file(key("storeFile")!!)
+            storePassword = key("storePassword")
+            keyAlias = key("keyAlias")
+            keyPassword = key("keyPassword")
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
