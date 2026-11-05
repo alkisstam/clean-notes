@@ -1,5 +1,6 @@
 package io.cleannotes.app
 
+import org.json.JSONObject
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.activity.compose.BackHandler
@@ -58,6 +59,18 @@ fun NoteScreen(app: App, id: String, onClose: () -> Unit) {
                 actions = {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
                     DropdownMenu(menu, { menu = false }) {
+                        // Same toggles as the web's note menu; pending keystrokes are saved first.
+                        val n = note
+                        if (n != null) {
+                            DropdownMenuItem(text = { Text(if (n.pinned) "Unpin" else "Pin to top") }, onClick = {
+                                menu = false
+                                view.flush { app.scope.launch { app.updateNote(id) { j, _ -> j.put("pinned", !n.pinned) } } }
+                            })
+                            DropdownMenuItem(text = { Text(if (n.archivedAt != null) "Unarchive" else "Archive") }, onClick = {
+                                menu = false
+                                view.flush { app.scope.launch { app.updateNote(id) { j, now -> j.put("archivedAt", if (n.archivedAt != null) JSONObject.NULL else now) } } }
+                            })
+                        }
                         DropdownMenuItem(text = { Text("Move to notebook") }, onClick = { menu = false; moving = true })
                         DropdownMenuItem(text = { Text("Move to Trash") }, onClick = {
                             menu = false

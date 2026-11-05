@@ -89,6 +89,8 @@ fun NoteList(
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) {
                     val pick = { key: String -> onView(key); scope.launch { drawer.close() } }
                     NavigationDrawerItem(label = { Text("All notes") }, selected = view == "all", onClick = { pick("all") })
+                    NavigationDrawerItem(label = { Text("Pinned") }, selected = view == "pinned", onClick = { pick("pinned") })
+                    NavigationDrawerItem(label = { Text("Archive") }, selected = view == "archive", onClick = { pick("archive") })
                     Text("Notebooks", Modifier.padding(16.dp, 16.dp, 16.dp, 8.dp), style = MaterialTheme.typography.labelMedium)
                     notebooks.forEach { nb ->
                         NavigationDrawerItem(
@@ -110,7 +112,15 @@ fun NoteList(
                 TopAppBar(
                     title = {
                         Column {
-                            Text(current?.name?.ifBlank { "Untitled" } ?: "Notes", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                current?.name?.ifBlank { "Untitled" } ?: when (view) {
+                                    "pinned" -> "Pinned"
+                                    "archive" -> "Archive"
+                                    else -> "Notes"
+                                },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                             Text(
                                 when {
                                     !paired -> "On this device only"
@@ -137,7 +147,10 @@ fun NoteList(
             },
             snackbarHost = { SnackbarHost(snackbar) },
             floatingActionButton = {
-                FloatingActionButton(onClick = { onNew(current?.id) }) { Icon(Icons.Default.Add, "New note") }
+                // New notes only where they would show up, as on the web.
+                if (view == "all" || current != null) {
+                    FloatingActionButton(onClick = { onNew(current?.id) }) { Icon(Icons.Default.Add, "New note") }
+                }
             },
         ) { pad ->
             PullToRefreshBox(syncing, onSync, Modifier.padding(pad).fillMaxSize()) {
@@ -205,6 +218,8 @@ fun NameDialog(title: String, initial: String, confirm: String, onDone: (String?
 fun listFor(view: String, notes: List<NoteRow>): List<NoteRow> {
     val shelved = notes.filter { it.archivedAt == null }
     return when {
+        view == "pinned" -> shelved.filter { it.pinned }
+        view == "archive" -> notes.filter { it.archivedAt != null }
         view.startsWith("nb:") -> shelved.filter { it.notebookId == view.removePrefix("nb:") }
         else -> shelved.filter { it.kind == "note" }
     }

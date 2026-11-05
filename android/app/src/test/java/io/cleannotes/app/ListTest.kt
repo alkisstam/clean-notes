@@ -39,4 +39,14 @@ class ListTest {
         )
         assertEquals(listOf("a", "c"), listFor("nb:n", notes).map { it.id })
     }
+
+    @Test fun pinnedSkipsArchived() {
+        val notes = listOf(note("a", ""","pinned":true"""), note("b", ""","pinned":true,"archivedAt":5"""), note("c"))
+        assertEquals(listOf("a"), listFor("pinned", notes).map { it.id })
+    }
+
+    @Test fun archiveListsOnlyArchivedOfAnyKind() {
+        val notes = listOf(note("a", ""","archivedAt":5"""), note("b"), note("c", ""","kind":"daily","archivedAt":5"""))
+        assertEquals(listOf("a", "c"), listFor("archive", notes).map { it.id })
+    }
 }
