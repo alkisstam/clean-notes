@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Download, FileClock, HardDrive, Laptop, Moon, RefreshCw, Sun, Upload, X } from 'lucide-react';
+import { Download, FileClock, HardDrive, Laptop, Moon, QrCode, RefreshCw, Sun, Upload, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { autoBackupSupported, chooseBackupFile, exportBackup, importBackup, stopAutoBackup } from '../lib/backup';
 import { relativeTime } from '../lib/dates';
@@ -113,6 +113,7 @@ function Settings({ close }: { close: () => void }) {
     return { on, at };
   }, []);
   const [token, setToken] = useState('');
+  const [pairQr, setPairQr] = useState<string | null>(null);
   const [usage, setUsage] = useState<string | null>(null);
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [, bump] = useState(0);
@@ -243,10 +244,28 @@ function Settings({ close }: { close: () => void }) {
               <button type="button" className="btn" onClick={() => void syncNow()}>
                 <RefreshCw size={14} /> Sync now
               </button>
-              <button type="button" className="btn" onClick={() => void disableServerSync()}>
+              <button
+                type="button"
+                className="btn"
+                onClick={async () => {
+                  if (pairQr) return setPairQr(null);
+                  const { toDataURL } = await import('qrcode');
+                  const token = (await db.meta.get('syncToken'))?.value as string;
+                  setPairQr(await toDataURL(JSON.stringify({ url: new URL('.', location.href).href, token }), { margin: 1, width: 240 }));
+                }}
+              >
+                <QrCode size={14} /> {pairQr ? 'Hide code' : 'Pair a phone'}
+              </button>
+              <button type="button" className="btn" onClick={() => void disableServerSync().then(() => setPairQr(null))}>
                 Turn off
               </button>
             </div>
+            {pairQr && (
+              <>
+                <img className="pair-qr" src={pairQr} alt="Pairing code with the sync address and token" width={240} height={240} />
+                <p className="dialog-hint">Scan this in the Clean Notes Android app. It contains your sync token, so don't share it.</p>
+              </>
+            )}
           </>
         ) : (
           <form
