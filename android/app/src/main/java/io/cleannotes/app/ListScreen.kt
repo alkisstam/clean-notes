@@ -1,5 +1,6 @@
 package io.cleannotes.app
 
+import org.json.JSONObject
 import android.content.Context
 import androidx.core.content.edit
 import androidx.compose.foundation.layout.Spacer
@@ -96,6 +97,10 @@ fun NoteList(
     var tagsOpen by remember { mutableStateOf(ui.getBoolean("tagsOpen", true)) }
     var shutNotes by remember { mutableStateOf(ui.getStringSet("collapsedNotes", emptySet())!!.toSet()) }
     val tag = view.removePrefix("tag:").takeIf { view.startsWith("tag:") }
+    // Parsed once per change to the notes; the drawer shows the open count, the Tasks view the groups.
+    val tasks = remember(all) {
+        groupTasks(all.filter { it.archivedAt == null }.flatMap { extractTasks(it.id, it.title, JSONObject(it.raw).getJSONObject("content")) }, dateKey())
+    }
     val tree = remember(all) { buildTagTree(all.filter { it.archivedAt == null }.map { it.tagList }) }
     val current = notebooks.find { "nb:${it.id}" == view }
     // A notebook deleted on another device shows all notes, and new notes go outside any notebook.
@@ -109,6 +114,12 @@ fun NoteList(
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) {
                     val pick = { key: String -> onView(key); scope.launch { drawer.close() } }
                     NavigationDrawerItem(label = { Text("Today") }, selected = view == "daily", onClick = { onToday(); scope.launch { drawer.close() } })
+                    NavigationDrawerItem(
+                        label = { Text("Tasks") },
+                        badge = { (tasks.overdue.size + tasks.today.size + tasks.upcoming.size + tasks.someday.size).takeIf { it > 0 }?.let { Text("$it") } },
+                        selected = view == "tasks",
+                        onClick = { pick("tasks") },
+                    )
                     NavigationDrawerItem(label = { Text("All notes") }, selected = view == "all", onClick = { pick("all") })
                     NavigationDrawerItem(label = { Text("Pinned") }, selected = view == "pinned", onClick = { pick("pinned") })
                     NavigationDrawerItem(label = { Text("Archive") }, selected = view == "archive", onClick = { pick("archive") })
@@ -178,6 +189,7 @@ fun NoteList(
                                     "pinned" -> "Pinned"
                                     "archive" -> "Archive"
                                     "daily" -> "Daily notes"
+                                    "tasks" -> "Tasks"
                                     else -> tag?.let { "#$it" } ?: "Notes"
                                 },
                                 maxLines = 1,
@@ -220,7 +232,7 @@ fun NoteList(
             },
         ) { pad ->
             PullToRefreshBox(syncing, onSync, Modifier.padding(pad).fillMaxSize()) {
-                LazyColumn(Modifier.fillMaxSize()) {
+                if (view == "tasks") TasksBody(app, tasks, onOpen) else LazyColumn(Modifier.fillMaxSize()) {
                     // Sub-notes nest where the web nests them: All, notebooks and tags.
                     val rows = if (view == "all" || view.startsWith("nb:") || tag != null) nestNotes(notes, shutNotes, { it.id }, { it.parentId })
                     else notes.map { Nested(it, 0, false) }

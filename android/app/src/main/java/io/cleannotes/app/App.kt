@@ -100,6 +100,19 @@ class App : Application() {
         return id
     }
 
+    /** Port of setTaskAttrs(): ticks a task or sets its due date, where it lives in its note. */
+    suspend fun setTaskAttrs(noteId: String, taskId: String, attrs: Map<String, Any?>) =
+        updateNote(noteId, contentChanged = true) { n, _ -> n.put("content", patchTask(n.getJSONObject("content"), taskId, attrs)) }
+
+    /** Port of quickAddTask(): new tasks go to the end of today's note. */
+    suspend fun quickAddTask(text: String, due: String?) {
+        val id = dailyNote(dateKey())
+        updateNote(id, contentChanged = true) { n, _ ->
+            val content = appendTask(n.getJSONObject("content"), UUID.randomUUID().toString(), text, due)
+            n.put("content", content).put("text", docText(content))
+        }
+    }
+
     /** Port of createSubNote(): the new note goes in its parent's notebook. */
     suspend fun newSubNote(parentId: String, tag: String?): String? {
         val parent = db.dao().noteOnce(parentId) ?: return null
