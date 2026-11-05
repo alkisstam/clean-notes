@@ -7,6 +7,8 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Upsert
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 // Each row keeps the server's JSON in `raw`, so fields this app doesn't know yet survive a round-trip.
@@ -23,6 +25,8 @@ data class NoteRow(
     val trashedAt: Long?,
     val archivedAt: Long?,
     val raw: String,
+    /** When this device last wrote the row; 0 for rows that came from the server. Push picks rows by this. */
+    val savedAt: Long = 0,
 )
 
 @Entity(tableName = "notebooks")
@@ -33,7 +37,7 @@ data class TombstoneRow(@PrimaryKey val id: String, val tbl: String, val deleted
 
 /** A PDF (`files`) or image (`images`) record whose bytes are stored at filesDir/blobs/<id>. */
 @Entity(tableName = "attachments")
-data class AttachmentRow(@PrimaryKey val id: String, val tbl: String, val time: Long, val raw: String)
+data class AttachmentRow(@PrimaryKey val id: String, val tbl: String, val time: Long, val raw: String, val savedAt: Long = 0)
 
 @Dao
 interface NotesDao {
@@ -52,7 +56,7 @@ interface NotesDao {
     @Query("SELECT deletedAt FROM tombstones WHERE id = :id")
     suspend fun diedAt(id: String): Long?
 
-    @Query("SELECT * FROM notes WHERE updatedAt > :since")
+    @Query("SELECT * FROM notes WHERE savedAt > :since")
     suspend fun notesSince(since: Long): List<NoteRow>
 
     @Query("SELECT * FROM notes WHERE id = :id")
@@ -76,7 +80,14 @@ interface NotesDao {
     suspend fun deleteNotebook(id: String, deletedAt: Long): Int
 }
 
-@Database(entities = [NoteRow::class, NotebookRow::class, TombstoneRow::class, AttachmentRow::class], version = 1)
+@Database(entities = [NoteRow::class, NotebookRow::class, TombstoneRow::class, AttachmentRow::class], version = 2)
 abstract class AppDb : RoomDatabase() {
     abstract fun dao(): NotesDao
+}
+
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE notes ADD COLUMN savedAt INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE attachments ADD COLUMN savedAt INTEGER NOT NULL DEFAULT 0")
+    }
 }

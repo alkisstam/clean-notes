@@ -5,7 +5,6 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig(({ mode }) => ({
   // Relative paths let the app be hosted at a domain root or in any sub-folder.
   base: './',
-  publicDir: mode === 'android' ? false : 'public',
   plugins: [
     react(),
     VitePWA({

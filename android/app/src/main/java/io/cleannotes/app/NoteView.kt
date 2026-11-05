@@ -2,6 +2,12 @@ package io.cleannotes.app
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.net.Uri
+import android.view.ViewGroup
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import android.os.Handler
 import android.os.Looper
 import android.webkit.WebResourceRequest
@@ -20,7 +26,6 @@ import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewClientCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
-import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -56,6 +61,12 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, modifier: Modifier =
     val dark = isSystemInDarkTheme()
     var payload by remember { mutableStateOf<String?>(null) }
     var ready by remember { mutableStateOf(false) }
+    // The editor's "/image" and "/pdf" commands open a file input; Android answers it with the document picker.
+    var chooser by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        chooser?.onReceiveValue(uris.toTypedArray())
+        chooser = null
+    }
 
     LaunchedEffect(note.raw, dark) {
         // Ids are UUIDs, so a substring match finds exactly the attachments this note uses.
@@ -77,6 +88,8 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, modifier: Modifier =
                 .build()
             WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
             WebView(ctx).apply {
+                // AndroidView's default WRAP_CONTENT makes vh units 0, which collapses the slash menu and the page's bottom space.
+                layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 setBackgroundColor(0)
@@ -85,8 +98,23 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, modifier: Modifier =
                 WebViewCompat.addWebMessageListener(this, "CleanNotes", setOf(ORIGIN)) { _, message, _, _, _ ->
                     val msg = JSONObject(message.data ?: return@addWebMessageListener)
                     when (msg.getString("type")) {
-                        "save" -> app.scope.launch { app.saveNote(msg.getJSONObject("note")) }
-                        "flushed" -> state.flushed()
+                        // One queue, so a note is never stored before the files it points at.
+                        "attachment" -> app.enqueue {
+                            app.saveAttachment(msg.getString("table"), msg.getJSONObject("meta"), msg.getString("data"))
+                        }
+                        "save" -> app.enqueue { app.saveNote(msg.getJSONObject("note")) }
+                        // Queued too, so a note is only closed once its last save is stored.
+                        "flushed" -> app.enqueue { Handler(Looper.getMainLooper()).post { state.flushed() } }
+                    }
+                }
+                webChromeClient = object : WebChromeClient() {
+                    override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
+                        chooser?.onReceiveValue(null)
+                        chooser = callback
+                        val types = params.acceptTypes.flatMap { it.split(',') }.map { it.trim() }
+                            .map { if (it == ".pdf") "application/pdf" else it }.filter { '/' in it }.distinct()
+                        pick.launch(types.ifEmpty { listOf("*/*") }.toTypedArray())
+                        return true
                     }
                 }
                 webViewClient = object : WebViewClientCompat() {
@@ -108,6 +136,10 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, modifier: Modifier =
             }
         },
         update = { web -> if (ready) payload?.let { web.evaluateJavascript("cnLoad($it)", null) } },
-        onRelease = { state.web = null },
+        // A WebView left alive keeps the page's database open, and once Android freezes it, every later page waits on it forever.
+        onRelease = { web ->
+            state.web = null
+            web.destroy()
+        },
     )
 }

@@ -92,12 +92,22 @@ class Sync(context: Context, private val db: AppDb) {
             val since = prefs.getLong("seq", 0)
             val pushFrom = prefs.getLong("lastPushAt", 0)
             val startedAt = System.currentTimeMillis()
-            // shortcut: pushes notes only; notebooks, deletes and new PDFs/images come when the app can make them.
-            val out = dao.notesSince(pushFrom).map {
+            // shortcut: pushes notes, PDFs and images; notebooks and deletes come when the app can make them.
+            val notes = dao.notesSince(pushFrom)
+            // The server drops files no note uses, so each pushed note's own go along, in case they were dropped.
+            val files = dao.attachments().filter { a -> a.savedAt > pushFrom || notes.any { it.raw.contains(a.id) } }
+            // Bytes go first, so no device ever sees a file record whose bytes are missing.
+            for (f in files) {
+                if (request("HEAD", "api/blob/${f.id}") != null) continue
+                request("PUT", "api/blob/${f.id}", File(blobDir, f.id).readBytes(), "application/octet-stream")
+            }
+            val out = notes.map {
                 JSONObject().put("table", "notes").put("id", it.id).put("time", it.updatedAt).put("data", JSONObject(it.raw))
+            } + files.map {
+                JSONObject().put("table", it.tbl).put("id", it.id).put("time", it.time).put("data", JSONObject(it.raw))
             }
             val body = JSONObject().put("since", since).put("records", JSONArray(out)).toString()
-            val res = JSONObject(String(request("POST", "api/sync", body) ?: throw SyncError("The sync server was not found.")))
+            val res = JSONObject(String(request("POST", "api/sync", body.toByteArray(), "application/json") ?: throw SyncError("The sync server was not found.")))
             val records = res.getJSONArray("records").let { a -> List(a.length()) { a.getJSONObject(it) } }
 
             // Bytes first, like the web client: a PDF or image record is only kept once its file is here.
@@ -142,7 +152,7 @@ class Sync(context: Context, private val db: AppDb) {
     }
 
     /** Returns the body, or null on 404. */
-    private fun request(method: String, path: String, body: String? = null): ByteArray? {
+    private fun request(method: String, path: String, body: ByteArray? = null, type: String? = null): ByteArray? {
         val base = prefs.getString("url", null) ?: throw SyncError("Not paired.")
         val c = URL(base + path).openConnection() as HttpURLConnection
         try {
@@ -152,8 +162,9 @@ class Sync(context: Context, private val db: AppDb) {
             c.setRequestProperty("Authorization", "Bearer ${prefs.getString("token", "")}")
             if (body != null) {
                 c.doOutput = true
-                c.setRequestProperty("Content-Type", "application/json")
-                c.outputStream.use { it.write(body.toByteArray()) }
+                c.setRequestProperty("Content-Type", type)
+                c.setFixedLengthStreamingMode(body.size)
+                c.outputStream.use { it.write(body) }
             }
             return when (c.responseCode) {
                 200 -> c.inputStream.use { it.readBytes() }

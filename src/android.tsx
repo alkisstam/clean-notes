@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushEditor, patchNote } from './lib/actions';
 import { db, writeListeners } from './lib/db';
+import { imageIdsIn, pdfIdsIn } from './lib/doc';
 import { NoteEditor } from './editor/NoteEditor';
 import type { Note, NoteImage, PdfFile } from './lib/types';
 
@@ -28,11 +29,35 @@ const root = createRoot(document.getElementById('root')!);
 let noteId = '';
 // updatedAt of the newest copy the app already has, so its own echo is never sent back.
 let known = 0;
+// Images and PDFs the app already holds the bytes of.
+const sent = new Set<string>();
+
+const toBase64 = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(',')[1] ?? '');
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
 
 async function send() {
   const note = await db.notes.get(noteId);
   if (!note || note.updatedAt <= known) return;
   known = note.updatedAt;
+  // Bytes go first, so the app never holds a note pointing at a file it lacks.
+  for (const id of imageIdsIn(note.content).filter((id) => !sent.has(id))) {
+    const image = await db.images.get(id);
+    if (!image) continue;
+    const { blob, ...meta } = image;
+    CleanNotes.postMessage(JSON.stringify({ type: 'attachment', table: 'images', meta: { ...meta, type: blob.type }, data: await toBase64(blob) }));
+    sent.add(id);
+  }
+  for (const id of pdfIdsIn(note.content).filter((id) => !sent.has(id))) {
+    const [meta, blob] = await Promise.all([db.files.get(id), db.blobs.get(id)]);
+    if (!meta || !blob) continue;
+    CleanNotes.postMessage(JSON.stringify({ type: 'attachment', table: 'files', meta, data: await toBase64(blob.blob) }));
+    sent.add(id);
+  }
   CleanNotes.postMessage(JSON.stringify({ type: 'save', note }));
 }
 
@@ -101,7 +126,9 @@ w.cnLoad = async ({ note, images, files, dark }) => {
   if (opening) {
     noteId = note.id;
     known = note.updatedAt;
+    sent.clear();
   }
+  [...images, ...files].forEach((f) => sent.add(f.id));
   const cur = opening ? undefined : await db.notes.get(note.id);
   const have = new Set(opening ? [] : await db.images.toCollection().primaryKeys());
   const loaded = await Promise.all(
@@ -112,8 +139,8 @@ w.cnLoad = async ({ note, images, files, dark }) => {
         return res.ok ? { ...meta, blob: new Blob([await res.blob()], { type }) } : null;
       }),
   );
-  await db.transaction('rw', [db.notes, db.images, db.files], async () => {
-    if (opening) await Promise.all([db.notes.clear(), db.images.clear(), db.files.clear()]);
+  await db.transaction('rw', [db.notes, db.images, db.files, db.blobs], async () => {
+    if (opening) await Promise.all([db.notes.clear(), db.images.clear(), db.files.clear(), db.blobs.clear()]);
     await db.images.bulkPut(loaded.filter((i) => !!i));
     await db.files.bulkPut(files);
     // A newer local edit not yet handed to the app wins over the app's copy.
