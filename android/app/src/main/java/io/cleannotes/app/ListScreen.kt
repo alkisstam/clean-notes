@@ -75,6 +75,7 @@ fun NoteList(
     onView: (String) -> Unit,
     onSync: () -> Unit,
     onOpen: (String) -> Unit,
+    onOpenPdf: (note: String, file: String) -> Unit,
     onNew: (notebook: String?, tag: String?) -> Unit,
     onConnect: () -> Unit,
     onToday: () -> Unit,
@@ -121,6 +122,7 @@ fun NoteList(
                         onClick = { pick("tasks") },
                     )
                     NavigationDrawerItem(label = { Text("All notes") }, selected = view == "all", onClick = { pick("all") })
+                    NavigationDrawerItem(label = { Text("PDFs") }, selected = view == "pdfs", onClick = { pick("pdfs") })
                     NavigationDrawerItem(label = { Text("Pinned") }, selected = view == "pinned", onClick = { pick("pinned") })
                     NavigationDrawerItem(label = { Text("Archive") }, selected = view == "archive", onClick = { pick("archive") })
                     Text("Notebooks", Modifier.padding(16.dp, 16.dp, 16.dp, 8.dp), style = MaterialTheme.typography.labelMedium)
@@ -190,6 +192,7 @@ fun NoteList(
                                     "archive" -> "Archive"
                                     "daily" -> "Daily notes"
                                     "tasks" -> "Tasks"
+                                    "pdfs" -> "PDFs"
                                     else -> tag?.let { "#$it" } ?: "Notes"
                                 },
                                 maxLines = 1,
@@ -232,7 +235,9 @@ fun NoteList(
             },
         ) { pad ->
             PullToRefreshBox(syncing, onSync, Modifier.padding(pad).fillMaxSize()) {
-                if (view == "tasks") TasksBody(app, tasks, onOpen) else LazyColumn(Modifier.fillMaxSize()) {
+                if (view == "tasks") TasksBody(app, tasks, onOpen)
+                else if (view == "pdfs") PdfsBody(app, all, onOpenPdf)
+                else LazyColumn(Modifier.fillMaxSize()) {
                     // Sub-notes nest where the web nests them: All, notebooks and tags.
                     val rows = if (view == "all" || view.startsWith("nb:") || tag != null) nestNotes(notes, shutNotes, { it.id }, { it.parentId })
                     else notes.map { Nested(it, 0, false) }

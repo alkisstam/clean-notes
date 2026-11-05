@@ -23,6 +23,8 @@ interface Payload {
   images: (Omit<NoteImage, 'blob'> & { type: string })[];
   files: PdfFile[];
   dark: boolean;
+  /** A PDF to show as the note opens, from the app's PDFs list. */
+  pdf?: string | null;
 }
 
 /** Added by the Android app, and only for this page's origin. */
@@ -164,7 +166,7 @@ const w = window as unknown as {
 w.cnClosePdf = () => store.getState().setPdf(null);
 
 // Called by the app on open and whenever its copy changes. The page's own database is only a cache for this note.
-w.cnLoad = async ({ note, images, files, dark }) => {
+w.cnLoad = async ({ note, images, files, dark, pdf }) => {
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   const opening = note.id !== noteId;
   if (opening) {
@@ -193,7 +195,7 @@ w.cnLoad = async ({ note, images, files, dark }) => {
       await db.notes.put(note);
     }
   });
-  if (opening) store.getState().setPdf(null);
+  if (opening) store.getState().setPdf(pdf ? { fileId: pdf } : null);
   if (opening) root.render(<Page key={note.id} id={note.id} />);
 };
 

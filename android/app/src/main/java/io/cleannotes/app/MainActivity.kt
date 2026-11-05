@@ -45,6 +45,8 @@ fun NotesApp(app: App) {
     var connecting by rememberSaveable { mutableStateOf(false) }
     // One key per view, matching View in src/lib/types.ts: "all", "trash", "nb:<id>", ...
     var view by rememberSaveable { mutableStateOf("all") }
+    // A PDF to open with the note, when the note was opened from the PDFs list.
+    var openPdf by rememberSaveable { mutableStateOf<String?>(null) }
     val paired by app.sync.paired.collectAsState()
     val runSync = {
         if (!syncing && paired) scope.launch {
@@ -79,8 +81,8 @@ fun NotesApp(app: App) {
         // Keyed, so switching to another note (a new sub-note) builds a fresh editor for it.
         key(id) {
             NoteScreen(
-                app, id, view.removePrefix("tag:").takeIf { view.startsWith("tag:") },
-                onClose = { openId = null },
+                app, id, view.removePrefix("tag:").takeIf { view.startsWith("tag:") }, openPdf,
+                onClose = { openId = null; openPdf = null },
                 onOpenTag = { openId = null; view = "tag:$it" },
                 onOpenNote = { openId = it },
             )
@@ -91,6 +93,7 @@ fun NotesApp(app: App) {
             onView = { view = it },
             onSync = { runSync() },
             onOpen = { openId = it },
+            onOpenPdf = { note, file -> openPdf = file; openId = note },
             onNew = { nb, tag -> scope.launch { openId = app.newNote(nb, tag) } },
             onConnect = { connecting = true },
             onToday = { view = "daily"; scope.launch { openId = app.dailyNote(dateKey()) } },

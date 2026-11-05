@@ -77,7 +77,7 @@ class NoteViewState {
 /** Shows and edits a note with the web app's own Tiptap editor. */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun NoteView(app: App, note: NoteRow, state: NoteViewState, modifier: Modifier = Modifier) {
+fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifier: Modifier = Modifier) {
     val dark = isSystemInDarkTheme()
     var payload by remember { mutableStateOf<String?>(null) }
     var ready by remember { mutableStateOf(false) }
@@ -96,6 +96,7 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, modifier: Modifier =
             .put("images", JSONArray(used.filter { it.tbl == "images" }.map { JSONObject(it.raw) }))
             .put("files", JSONArray(used.filter { it.tbl == "files" }.map { JSONObject(it.raw) }))
             .put("dark", dark)
+            .put("pdf", pdf ?: JSONObject.NULL)
             .toString()
     }
 

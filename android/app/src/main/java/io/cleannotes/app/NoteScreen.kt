@@ -64,7 +64,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NoteScreen(app: App, id: String, tag: String?, onClose: () -> Unit, onOpenTag: (String) -> Unit, onOpenNote: (String) -> Unit) {
+fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> Unit, onOpenTag: (String) -> Unit, onOpenNote: (String) -> Unit) {
     val context = LocalContext.current
     var nesting by remember { mutableStateOf(false) }
     val live by app.db.dao().liveNotes().collectAsStateWithLifecycle(emptyList())
@@ -141,7 +141,7 @@ fun NoteScreen(app: App, id: String, tag: String?, onClose: () -> Unit, onOpenTa
                     onRemove = { t -> tags { it - t } },
                     onOpen = { t -> view.flush { onOpenTag(t) } },
                 )
-                NoteView(app, n, view, Modifier.weight(1f).fillMaxWidth())
+                NoteView(app, n, view, pdf, Modifier.weight(1f).fillMaxWidth())
             }
         }
     }

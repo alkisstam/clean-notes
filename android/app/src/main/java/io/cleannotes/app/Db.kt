@@ -108,6 +108,9 @@ interface NotesDao {
     @Query("SELECT * FROM attachments")
     suspend fun attachments(): List<AttachmentRow>
 
+    @Query("SELECT * FROM attachments WHERE tbl = 'files' ORDER BY time DESC")
+    fun livePdfs(): Flow<List<AttachmentRow>>
+
     @Query("SELECT id FROM attachments")
     suspend fun attachmentIds(): List<String>
 
