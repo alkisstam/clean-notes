@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 1.0.3 — 2026-11-06
+
+### Added
+- Inserting a table asks for the number of rows and columns.
+
+### Changed
+- Tables have a handle beside the current row and above the current column. Tapping one selects it and opens a menu with Cut, Copy, Paste, Add and Delete. A grid icon at the table's corner opens the same for the whole table, plus Add row, Add column and Delete table.
+- Drag the pill on a column border to resize the column. It replaces the small x and + buttons around tables.
 
 ### Fixed
 - A PDF or image over 200 MB no longer stops server sync; it stays on this device and the rest syncs.

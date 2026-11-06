@@ -1,8 +1,13 @@
 # Changelog — Android app
 
-## Unreleased
+## 1.0.2 — 2026-11-06
+
+### Added
+- Inserting a table asks for the number of rows and columns.
 
 ### Changed
+- Tables have a handle beside the current row and above the current column. Tapping one selects it and opens a menu with Cut, Copy, Paste, Add and Delete. A grid icon at the table's corner opens the same for the whole table, plus Add row, Add column and Delete table.
+- Drag the pill on a column border to resize the column. It replaces the small x and + buttons around tables.
 - Menus have larger rounded corners and roomier rows, and the + menu shows an icon for each option.
 - Long-pressing a note opens its menu in the middle of the screen.
 
