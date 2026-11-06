@@ -48,7 +48,8 @@ export function Menu({ items, label, trigger, className }: { items: MenuItem[]; 
 
 /** The menu itself, placed below `rect` (or above when there is no room). Also used for right-click menus. */
 /** `keepFocus` leaves focus (and the selection) where it was, for menus that act on a text field. */
-export function MenuPopup({ items, rect, anchor, keepFocus, onClose }: { items: MenuItem[]; rect: DOMRect | null; anchor?: HTMLElement | null; keepFocus?: boolean; onClose: (refocus?: boolean) => void }) {
+/** `tools` are icon-only actions shown as a row above the items. */
+export function MenuPopup({ items, tools, rect, anchor, keepFocus, onClose }: { items: MenuItem[]; tools?: MenuItem[]; rect: DOMRect | null; anchor?: HTMLElement | null; keepFocus?: boolean; onClose: (refocus?: boolean) => void }) {
   const pop = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const closeRef = useRef(onClose);
@@ -89,6 +90,28 @@ export function MenuPopup({ items, rect, anchor, keepFocus, onClose }: { items: 
     rect &&
     createPortal(
       <div ref={pop} className="menu" role="menu" style={pos ?? { visibility: 'hidden', left: 0, top: 0 }}>
+        {tools && (
+          <div className="menu-tools">
+            {tools.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                role="menuitem"
+                aria-label={item.label}
+                title={item.label}
+                disabled={item.disabled}
+                onMouseDown={keepFocus ? (e) => e.preventDefault() : undefined}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose();
+                  item.run();
+                }}
+              >
+                {item.icon}
+              </button>
+            ))}
+          </div>
+        )}
         {items.map((item) => (
           <button
             key={item.label}

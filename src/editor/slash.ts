@@ -13,8 +13,10 @@ export interface SlashItem {
   run: (editor: Editor, range: Range) => void;
 }
 
+type Run = (editor: Editor, range: Range) => void;
+
 /** Items that need the outside world, such as a file picker, are passed in. */
-export function slashItems(onPdf: (editor: Editor, range: Range) => void, onImage: (editor: Editor, range: Range) => void): SlashItem[] {
+export function slashItems(onPdf: Run, onImage: Run, onTable: Run): SlashItem[] {
   const chain = (e: Editor, r: Range) => e.chain().focus().deleteRange(r);
   return [
     { id: 'text', group: 'Basic', title: 'Text', hint: 'Plain paragraph', aliases: 'paragraph p', run: (e, r) => chain(e, r).setParagraph().run() },
@@ -27,7 +29,7 @@ export function slashItems(onPdf: (editor: Editor, range: Range) => void, onImag
     { id: 'quote', group: 'Blocks', title: 'Quote', hint: 'Set a passage apart', aliases: 'blockquote', run: (e, r) => chain(e, r).setBlockquote().run() },
     { id: 'code', group: 'Blocks', title: 'Code block', hint: 'Monospaced text', aliases: 'pre snippet', run: (e, r) => chain(e, r).setCodeBlock().run() },
     { id: 'divider', group: 'Blocks', title: 'Divider', hint: 'Horizontal line', aliases: 'hr rule line', run: (e, r) => chain(e, r).setHorizontalRule().run() },
-    { id: 'table', group: 'Blocks', title: 'Table', hint: '3 × 3, with a header', aliases: 'grid', run: (e, r) => chain(e, r).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
+    { id: 'table', group: 'Blocks', title: 'Table', hint: 'Choose rows and columns', aliases: 'grid', run: onTable },
     { id: 'image', group: 'Insert', title: 'Image', hint: 'Add a picture', aliases: 'picture photo img screenshot', run: onImage },
     { id: 'pdf', group: 'Insert', title: 'PDF', hint: 'Attach and read a file', aliases: 'file attachment document', run: onPdf },
     { id: 'date', group: 'Insert', title: "Today's date", hint: longDate(dateKey()), aliases: 'now day', run: (e, r) => chain(e, r).insertContent(longDate(dateKey())).run() },

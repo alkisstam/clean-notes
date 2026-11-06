@@ -4,22 +4,23 @@ import { FontSize, TextStyle } from '@tiptap/extension-text-style';
 import { NodeSelection, Selection } from '@tiptap/pm/state';
 import { TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
-import { TableMap } from '@tiptap/pm/tables';
+import { CellSelection, TableMap } from '@tiptap/pm/tables';
 import { Placeholder } from '@tiptap/extensions';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { StarterKit } from '@tiptap/starter-kit';
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
 import {
-  Bold, CalendarPlus, Check, Code, ExternalLink, FileText, Heading2, Highlighter, ImagePlus, Italic, Link2, List, ListOrdered, ListTodo,
-  Minus, Plus, Quote, SquareCode, Strikethrough, Table, Table2, Underline, X,
+  BetweenHorizontalEnd, BetweenVerticalEnd, Bold, CalendarPlus, Check, ChevronsLeftRight, ClipboardPaste, Code, Copy, ExternalLink, FileText,
+  Grid2x2, Heading2, Highlighter, ImagePlus, Italic, Link2, List, ListOrdered, ListTodo, Minus, Quote, Scissors, SquareCode, Strikethrough,
+  Table, Table2, Trash2, Underline, X,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { journalEdit, registerFlusher, saveContent } from '../lib/actions';
 import { importImage, looksLikeImage } from '../lib/images';
 import { importPdf, looksLikePdf } from '../lib/pdf';
-import { Menu } from '../components/Overlay';
+import { Menu, MenuPopup } from '../components/Overlay';
 import { store, useStore } from '../lib/store';
 import type { Note } from '../lib/types';
 import { ImageBlock } from './ImageBlock';
@@ -288,14 +289,46 @@ function setColumnWidth(editor: Editor, cellPos: number, width: number) {
   if (tr.docChanged) editor.view.dispatch(tr);
 }
 
-type Handle = { cellPos: number; x: number; y: number; width: number };
+type Handle = { cellPos: number; x: number; width: number };
 
-// Controls around the table holding the cursor: "+" to add a row or column at its end,
-// and a drag handle on the first row for a column border tapped, since the extension's resize is mouse-only.
-function TableAdders({ editor }: { editor: Editor }) {
-  const [box, setBox] = useState<{ pos: number; rect: DOMRect; cell: DOMRect | null; handles: Handle[] } | null>(null);
+// Kept for pasting when the page may not read the system clipboard, as in Android's WebView.
+let lastCopy = { html: '', text: '' };
+
+async function copySelection(editor: Editor) {
+  const { dom, text } = editor.view.serializeForClipboard(editor.state.selection.content());
+  lastCopy = { html: dom.innerHTML, text };
+  try {
+    await navigator.clipboard.write([new ClipboardItem({
+      'text/html': new Blob([lastCopy.html], { type: 'text/html' }),
+      'text/plain': new Blob([text], { type: 'text/plain' }),
+    })]);
+  } catch {
+    await navigator.clipboard?.writeText(text).catch(() => {});
+  }
+}
+
+async function pasteClipboard(editor: Editor) {
+  let { html, text } = lastCopy;
+  try {
+    const [item] = await navigator.clipboard.read();
+    if (item?.types.includes('text/html')) html = await (await item.getType('text/html')).text();
+    else if (item?.types.includes('text/plain')) [html, text] = ['', await (await item.getType('text/plain')).text()];
+  } catch {
+    // Not allowed to read it: fall back to what was copied here.
+  }
+  // Goes through the table extension's paste handling, which fits copied cells into the selected ones.
+  if (html) editor.view.pasteHTML(html);
+  else if (text) editor.view.pasteText(text);
+}
+
+type TableMenu = { kind: 'row' | 'col' | 'table'; rect: DOMRect };
+
+// Controls around the table holding the cursor: a handle beside its row and above its column,
+// a resize pill on every column border (the extension's own resize is mouse-only), and a table menu at the corner.
+function TableControls({ editor }: { editor: Editor }) {
+  const [box, setBox] = useState<{ pos: number; rect: DOMRect; cellPos: number; cell: DOMRect | null; handles: Handle[] } | null>(null);
+  const [menu, setMenu] = useState<TableMenu | null>(null);
   const drag = useRef<{ cellPos: number; startX: number; startWidth: number } | null>(null);
-  const active = useRef<number | null>(null);
   useEffect(() => {
     const update = () => {
       const { $from } = editor.state.selection;
@@ -307,42 +340,26 @@ function TableAdders({ editor }: { editor: Editor }) {
         if (cellPos < 0 && (name === 'tableCell' || name === 'tableHeader')) cellPos = $from.before(d);
       }
       const dom = pos >= 0 && (editor.isFocused || drag.current) ? (editor.view.nodeDOM(pos) as HTMLElement | null) : null;
-      if (!dom) return setBox(null);
+      if (!dom) {
+        setMenu(null);
+        return setBox(null);
+      }
       const rect = dom.getBoundingClientRect();
       const handles: Handle[] = [];
       for (const cell of dom.querySelectorAll<HTMLElement>('tr:first-child > th, tr:first-child > td')) {
         const r = cell.getBoundingClientRect();
         // Skip borders scrolled out of the table's box.
         if (r.right < rect.left + 4 || r.right > rect.right + 1) continue;
-        if (editor.view.posAtDOM(cell, 0) - 1 !== active.current) continue;
-        handles.push({ cellPos: editor.view.posAtDOM(cell, 0) - 1, x: r.right, y: r.top + r.height / 2, width: cell.offsetWidth });
+        handles.push({ cellPos: editor.view.posAtDOM(cell, 0) - 1, x: r.right, width: cell.offsetWidth });
       }
       const cell = cellPos >= 0 ? (editor.view.nodeDOM(cellPos) as HTMLElement | null)?.getBoundingClientRect() ?? null : null;
-      setBox({ pos, rect, cell, handles });
+      setBox({ pos, rect, cellPos, cell, handles });
     };
-    // A tap within reach of a vertical cell border shows that column's handle; any other tap hides it.
-    const onTap = (e: PointerEvent) => {
-      active.current = null;
-      const cell = (e.target as HTMLElement).closest('td, th');
-      const table = cell?.closest('table');
-      if (cell && table) {
-        const r = cell.getBoundingClientRect();
-        const border = e.clientX - r.left < 14 ? r.left : r.right - e.clientX < 14 ? r.right : null;
-        if (border !== null) {
-          for (const first of table.querySelectorAll<HTMLElement>('tr:first-child > th, tr:first-child > td')) {
-            if (Math.abs(first.getBoundingClientRect().right - border) < 3) active.current = editor.view.posAtDOM(first, 0) - 1;
-          }
-        }
-      }
-      update();
-    };
-    editor.view.dom.addEventListener('pointerdown', onTap);
     editor.on('transaction', update);
     editor.on('blur', update);
     window.addEventListener('scroll', update, true);
     window.addEventListener('resize', update);
     return () => {
-      editor.view.dom.removeEventListener('pointerdown', onTap);
       editor.off('transaction', update);
       editor.off('blur', update);
       window.removeEventListener('scroll', update, true);
@@ -351,9 +368,28 @@ function TableAdders({ editor }: { editor: Editor }) {
   }, [editor]);
   if (!box) return null;
 
+  const table = editor.state.doc.nodeAt(box.pos);
+  if (!table) return null;
+  const select = (kind: TableMenu['kind']) => {
+    const { doc } = editor.state;
+    let sel: CellSelection;
+    if (kind === 'table') {
+      const map = TableMap.get(table);
+      sel = new CellSelection(doc.resolve(box.pos + 1 + map.map[0]), doc.resolve(box.pos + 1 + map.map[map.map.length - 1]));
+    } else {
+      const $cell = doc.resolve(box.cellPos);
+      sel = kind === 'row' ? CellSelection.rowSelection($cell) : CellSelection.colSelection($cell);
+    }
+    editor.view.dispatch(editor.state.tr.setSelection(sel));
+  };
+  const open = (kind: TableMenu['kind'], el: HTMLElement) => {
+    if (menu?.kind === kind) return setMenu(null);
+    select(kind);
+    // Below the table, as the selection it acts on stays in view.
+    const r = el.getBoundingClientRect();
+    setMenu({ kind, rect: new DOMRect(r.left, r.top, r.width, box.rect.bottom - r.top) });
+  };
   const add = (where: 'row' | 'col') => {
-    const table = editor.state.doc.nodeAt(box.pos);
-    if (!table) return;
     // Inside the last cell of the last row: just before its closing tokens.
     const inLast = box.pos + table.nodeSize - 3;
     const chain = editor.chain().focus().command(({ tr }) => {
@@ -362,38 +398,61 @@ function TableAdders({ editor }: { editor: Editor }) {
     });
     (where === 'row' ? chain.addRowAfter() : chain.addColumnAfter()).run();
   };
+  const remove = (kind: TableMenu['kind']) => {
+    const chain = editor.chain().focus();
+    (kind === 'row' ? chain.deleteRow() : kind === 'col' ? chain.deleteColumn() : chain.deleteTable()).run();
+  };
+
+  const tools = menu && [
+    { label: 'Cut', icon: <Scissors size={18} />, run: () => void copySelection(editor).then(() => remove(menu.kind)) },
+    { label: 'Copy', icon: <Copy size={18} />, run: () => void copySelection(editor) },
+    { label: 'Paste', icon: <ClipboardPaste size={18} />, run: () => void pasteClipboard(editor) },
+  ];
+  const items = !menu ? [] : menu.kind === 'row'
+    ? [
+      { label: 'Add row', icon: <BetweenHorizontalEnd size={16} />, run: () => editor.chain().focus().addRowAfter().run() },
+      { label: 'Delete row', icon: <Trash2 size={16} />, danger: true, run: () => remove('row') },
+    ]
+    : menu.kind === 'col'
+      ? [
+        { label: 'Add column', icon: <BetweenVerticalEnd size={16} />, run: () => editor.chain().focus().addColumnAfter().run() },
+        { label: 'Delete column', icon: <Trash2 size={16} />, danger: true, run: () => remove('col') },
+      ]
+      : [
+        { label: 'Add row', icon: <BetweenHorizontalEnd size={16} />, run: () => add('row') },
+        { label: 'Add column', icon: <BetweenVerticalEnd size={16} />, run: () => add('col') },
+        { label: 'Delete table', icon: <Trash2 size={16} />, danger: true, run: () => remove('table') },
+      ];
+
   const { rect, cell } = box;
+  const above = rect.top - 13;
+  const keep = (e: React.MouseEvent) => e.preventDefault();
   return createPortal(
     <>
+      <button
+        type="button" className="table-corner" aria-label="Table options" title="Table options" data-open={menu?.kind === 'table'}
+        style={{ left: Math.max(14, rect.left - 12), top: Math.max(14, rect.top - 14) }}
+        onMouseDown={keep} onClick={(e) => open('table', e.currentTarget)}
+      ><Grid2x2 size={16} /></button>
       {cell && (
         <>
-          <button
-            type="button" className="table-add" aria-label="Delete row" title="Delete row"
-            style={{ left: Math.max(0, rect.left - 20), top: cell.top, height: cell.height }}
-            onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().deleteRow().run()}
-          ><X size={12} /></button>
-          <button
-            type="button" className="table-add" aria-label="Delete column" title="Delete column"
-            style={{ left: cell.left, top: rect.top - 20, width: cell.width }}
-            onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().deleteColumn().run()}
-          ><X size={12} /></button>
+          {menu?.kind !== 'col' && <button
+            type="button" className="table-handle" data-axis="row" aria-label="Row options" title="Row options" data-open={menu?.kind === 'row'}
+            style={{ left: Math.max(6, rect.left - 10), top: cell.top + cell.height / 2 }}
+            onMouseDown={keep} onClick={(e) => open('row', e.currentTarget)}
+          />}
+          {menu?.kind !== 'row' && <button
+            type="button" className="table-handle" data-axis="col" aria-label="Column options" title="Column options" data-open={menu?.kind === 'col'}
+            style={{ left: cell.left + cell.width / 2, top: above }}
+            onMouseDown={keep} onClick={(e) => open('col', e.currentTarget)}
+          />}
         </>
       )}
-      <button
-        type="button" className="table-add" aria-label="Add row" title="Add row"
-        style={{ left: rect.left, top: rect.bottom + 2, width: rect.width }}
-        onMouseDown={(e) => e.preventDefault()} onClick={() => add('row')}
-      ><Plus size={13} /></button>
-      <button
-        type="button" className="table-add" aria-label="Add column" title="Add column"
-        style={{ left: Math.min(rect.right + 10, window.innerWidth - 20), top: rect.top, height: rect.height }}
-        onMouseDown={(e) => e.preventDefault()} onClick={() => add('col')}
-      ><Plus size={13} /></button>
-      {box.handles.map((h, i) => (
+      {box.handles.map((h) => (
         <span
-          key={i} className="table-col-handle" aria-hidden="true"
-          style={{ left: h.x, top: h.y }}
-          onMouseDown={(e) => e.preventDefault()}
+          key={h.cellPos} className="table-resize" aria-hidden="true"
+          style={{ left: Math.min(h.x, innerWidth - 16), top: above }}
+          onMouseDown={keep}
           onPointerDown={(e) => {
             e.preventDefault();
             e.currentTarget.setPointerCapture(e.pointerId);
@@ -405,9 +464,60 @@ function TableAdders({ editor }: { editor: Editor }) {
           }}
           onPointerUp={() => (drag.current = null)}
           onPointerCancel={() => (drag.current = null)}
-        />
+        ><ChevronsLeftRight size={12} /></span>
       ))}
+      <MenuPopup items={items} tools={tools ?? undefined} rect={menu?.rect ?? null} keepFocus onClose={() => setMenu(null)} />
     </>,
+    document.body,
+  );
+}
+
+const PICK_ROW = 44;
+
+function Wheel({ value, onChange, label }: { value: number; onChange: (n: number) => void; label: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    ref.current!.scrollTop = (value - 1) * PICK_ROW;
+    // Only on open; afterwards the scroll position is the source of the value.
+  }, []);
+  return (
+    <div
+      ref={ref} className="wheel" role="listbox" aria-label={label}
+      onScroll={(e) => onChange(Math.min(10, Math.max(1, Math.round(e.currentTarget.scrollTop / PICK_ROW) + 1)))}
+    >
+      {Array.from({ length: 10 }, (_, i) => (
+        <button
+          key={i} type="button" role="option" aria-selected={value === i + 1}
+          onClick={() => ref.current!.scrollTo({ top: i * PICK_ROW, behavior: 'smooth' })}
+        >{i + 1}</button>
+      ))}
+    </div>
+  );
+}
+
+function TablePicker({ onDone, onClose }: { onDone: (rows: number, cols: number) => void; onClose: () => void }) {
+  const [rows, setRows] = useState(3);
+  const [cols, setCols] = useState(3);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    document.addEventListener('keydown', key);
+    return () => document.removeEventListener('keydown', key);
+  }, [onClose]);
+  return createPortal(
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div className="sheet table-picker" role="dialog" aria-label="Table properties" onClick={(e) => e.stopPropagation()}>
+        <h2>Table properties</h2>
+        <div className="table-picker-wheels">
+          <div><span>Rows</span><Wheel value={rows} onChange={setRows} label="Rows" /></div>
+          <X size={18} className="table-picker-x" />
+          <div><span>Columns</span><Wheel value={cols} onChange={setCols} label="Columns" /></div>
+        </div>
+        <div className="sheet-actions">
+          <button type="button" onClick={onClose}>Cancel</button>
+          <button type="button" onClick={() => onDone(rows, cols)}>Done</button>
+        </div>
+      </div>
+    </div>,
     document.body,
   );
 }
@@ -439,7 +549,7 @@ function FormatMenu({ editor }: { editor: Editor }) {
       options={{ placement: formatMenu.placement, offset: formatMenu.placement === 'bottom' ? 28 : 8, flip: { boundary: toolbarEdge(editor), padding: { top: 8 } } }}
       shouldShow={({ editor: e, state, from, to }) => {
         if (linking) return true;
-        if (from === to || !e.isEditable || !e.isFocused) return false;
+        if (from === to || !e.isEditable || !e.isFocused || state.selection instanceof CellSelection) return false;
         if (e.isActive('codeBlock') || e.isActive('pdfAttachment') || e.isActive('noteImage')) return false;
         return state.doc.textBetween(from, to).length > 0;
       }}
@@ -528,6 +638,7 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
   });
 
   const [slash, setSlash] = useState<SlashState | null>(null);
+  const [picking, setPicking] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
   const slashLive = useRef({ state: slash, index: slashIndex });
   slashLive.current = { state: slash, index: slashIndex };
@@ -584,6 +695,10 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
         (editor: Editor, range: Range) => {
           editor.chain().focus().deleteRange(range).run();
           pickFiles(editor, 'image/*');
+        },
+        (editor: Editor, range: Range) => {
+          editor.chain().focus().deleteRange(range).run();
+          setPicking(true);
         },
       ),
     [],
@@ -740,7 +855,16 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
       {!readOnly && showToolbar && <Toolbar editor={editor} items={items} />}
       <EditorContent editor={editor} />
       {!readOnly && <FormatMenu editor={editor} />}
-      {!readOnly && <TableAdders editor={editor} />}
+      {!readOnly && <TableControls editor={editor} />}
+      {picking && (
+        <TablePicker
+          onClose={() => setPicking(false)}
+          onDone={(rows, cols) => {
+            setPicking(false);
+            editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
+          }}
+        />
+      )}
       {slash && <SlashMenu state={slash} index={slashIndex} onHover={setSlashIndex} />}
     </>
   );
