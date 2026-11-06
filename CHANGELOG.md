@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2 — 2026-11-06
+
+### Added
+- Desktop app: server sync. Settings → Sync takes the server address and sync token, and can show the pairing code for the Android app.
+- Images have a Delete button in their toolbar.
+
 ## 1.0.1 — 2026-11-04
 
 ### Added

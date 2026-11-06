@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, net, protocol, session, shell } from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -9,8 +10,34 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 
+// The sync server's address, kept outside the page so its requests can be forwarded from the first launch on.
+const serverFile = () => path.join(app.getPath('userData'), 'sync-server.txt');
+let server = '';
+
 app.whenReady().then(() => {
+  try {
+    server = fs.readFileSync(serverFile(), 'utf8').trim();
+  } catch {}
+  ipcMain.handle('sync-server', () => server);
+  ipcMain.handle('set-sync-server', (_e, url) => {
+    const u = new URL(url);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new Error('The server address must start with https://');
+    server = new URL(u.pathname.endsWith('/') ? u.href : u.href + '/').href;
+    fs.writeFileSync(serverFile(), server);
+  });
+
   protocol.handle('app', (req) => {
+    const { pathname, search } = new URL(req.url);
+    // The page syncs with ./api like the web app; here that means the server set in Settings, which also avoids CORS.
+    if (pathname.startsWith('/api/')) {
+      if (!server) return new Response(null, { status: 404 });
+      return net.fetch(new URL(pathname.slice(1) + search, server).href, {
+        method: req.method,
+        headers: req.headers,
+        body: req.body,
+        duplex: 'half',
+      });
+    }
     const file = path.join(dist, decodeURIComponent(new URL(req.url).pathname));
     if (!file.startsWith(dist + path.sep)) return new Response(null, { status: 403 });
     return net.fetch(pathToFileURL(file).toString()).catch(() => new Response(null, { status: 404 }));

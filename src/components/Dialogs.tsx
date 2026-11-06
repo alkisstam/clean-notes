@@ -113,11 +113,17 @@ function Settings({ close }: { close: () => void }) {
     return { on, at };
   }, []);
   const [token, setToken] = useState('');
+  // The desktop app has no server behind it, so it asks for one; the web app syncs with the server it came from.
+  const [server, setServer] = useState('https://');
   const [pairQr, setPairQr] = useState<string | null>(null);
   const [usage, setUsage] = useState<string | null>(null);
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [, bump] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    void window.desktop?.syncServer().then((s) => s && setServer(s));
+  }, []);
 
   useEffect(() => {
     void navigator.storage?.estimate?.().then((e) => setUsage(`${formatBytes(e.usage ?? 0)} of ${formatBytes(e.quota ?? 0)} available`));
@@ -231,9 +237,13 @@ function Settings({ close }: { close: () => void }) {
         )}
       </section>
 
-      {import.meta.env.MODE !== 'desktop' && <section className="settings-section">
+      <section className="settings-section">
         <h3>Sync</h3>
-        <p>Keep your devices in step through the server this app is hosted on. Notes are sent to that server over HTTPS.</p>
+        <p>
+          {window.desktop
+            ? 'Keep your devices in step through your Clean Notes server. Notes are sent to that server over HTTPS.'
+            : 'Keep your devices in step through the server this app is hosted on. Notes are sent to that server over HTTPS.'}
+        </p>
         {sync?.on ? (
           <>
             <p className="settings-stat">
@@ -251,7 +261,8 @@ function Settings({ close }: { close: () => void }) {
                   if (pairQr) return setPairQr(null);
                   const { toDataURL } = await import('qrcode');
                   const token = (await db.meta.get('syncToken'))?.value as string;
-                  setPairQr(await toDataURL(JSON.stringify({ url: new URL('.', location.href).href, token }), { margin: 1, width: 240 }));
+                  const url = window.desktop ? await window.desktop.syncServer() : new URL('.', location.href).href;
+                  setPairQr(await toDataURL(JSON.stringify({ url, token }), { margin: 1, width: 240 }));
                 }}
               >
                 <QrCode size={14} /> {pairQr ? 'Hide code' : 'Pair a phone'}
@@ -270,11 +281,28 @@ function Settings({ close }: { close: () => void }) {
         ) : (
           <form
             className="settings-row"
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
-              if (token.trim()) void enableServerSync(token).then(() => setToken(''));
+              if (!token.trim()) return;
+              try {
+                await window.desktop?.setSyncServer(server.trim());
+              } catch {
+                return showToast({ message: 'Enter the server address, starting with https://' });
+              }
+              await enableServerSync(token);
+              setToken('');
             }}
           >
+            {window.desktop && (
+              <input
+                type="url"
+                autoComplete="off"
+                placeholder="Server address"
+                aria-label="Server address"
+                value={server}
+                onChange={(e) => setServer(e.target.value)}
+              />
+            )}
             <input
               type="password"
               autoComplete="off"
@@ -289,7 +317,7 @@ function Settings({ close }: { close: () => void }) {
           </form>
         )}
         <p className="dialog-hint">Changes sync about a minute after you make them, and when you come back to the app. If a note was edited on two devices, the newer edit wins.</p>
-      </section>}
+      </section>
 
       {installEvent && (
         <section className="settings-section">

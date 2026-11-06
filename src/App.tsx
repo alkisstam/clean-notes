@@ -18,7 +18,12 @@ import { ClipboardPaste, Copy, Redo2, Scissors, TextSelect, Undo2 } from 'lucide
 type EditFlags = { canCut: boolean; canCopy: boolean; canPaste: boolean; canSelectAll: boolean };
 declare global {
   interface Window {
-    desktop?: { edit: (role: string) => void; onEditMenu: (cb: (p: { x: number; y: number; flags: EditFlags }) => void) => void };
+    desktop?: {
+      edit: (role: string) => void;
+      onEditMenu: (cb: (p: { x: number; y: number; flags: EditFlags }) => void) => void;
+      syncServer: () => Promise<string>;
+      setSyncServer: (url: string) => Promise<void>;
+    };
   }
 }
 
