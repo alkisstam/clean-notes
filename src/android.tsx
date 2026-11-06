@@ -13,7 +13,7 @@ import { flushEditor, patchNote } from './lib/actions';
 import { db, writeListeners } from './lib/db';
 import { imageIdsIn, pdfIdsIn } from './lib/doc';
 import { blobSaver } from './lib/pdf';
-import { NoteEditor } from './editor/NoteEditor';
+import { formatMenu, insertIntoEditor, NoteEditor } from './editor/NoteEditor';
 import { Boundary } from './components/EditorPane';
 import { store, useStore, type PdfTarget } from './lib/store';
 import type { Note, NoteImage, PdfFile } from './lib/types';
@@ -163,6 +163,14 @@ const w = window as unknown as {
   cnLoad: (p: Payload) => Promise<void>;
   cnFlush: () => Promise<void>;
   cnClosePdf: () => void;
+  cnInsertPicked: (picked: { url: string; name: string; type: string }[]) => Promise<void>;
+};
+
+formatMenu.placement = 'bottom';
+// The app's + menu picks files natively, since a page may only open its own file chooser from a tap inside it.
+w.cnInsertPicked = async (picked) => {
+  const files = await Promise.all(picked.map(async ({ url, name, type }) => new File([await (await fetch(url)).blob()], name, { type })));
+  await insertIntoEditor(files);
 };
 
 w.cnClosePdf = () => store.getState().setPdf(null);

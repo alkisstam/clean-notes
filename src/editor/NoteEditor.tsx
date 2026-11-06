@@ -69,6 +69,13 @@ async function insertFiles(editor: Editor, files: File[], dropAt?: number) {
   }
 }
 
+// The editor that commands from outside the page, such as the Android app's + menu, act on.
+let current: Editor | null = null;
+export const insertIntoEditor = (files: File[]) => current && insertFiles(current, files);
+
+/** Hosts override placement, as the Android app does to keep clear of the system's own selection bar above. */
+export const formatMenu = { placement: 'top' as 'top' | 'bottom' };
+
 function pickFiles(editor: Editor, accept: string) {
   const input = document.createElement('input');
   input.type = 'file';
@@ -426,7 +433,7 @@ function FormatMenu({ editor }: { editor: Editor }) {
     <BubbleMenu
       editor={editor}
       // Flip below the selection before the toolbar would cover it, wherever the toolbar sits on screen.
-      options={{ placement: 'top', offset: 8, flip: { boundary: toolbarEdge(editor), padding: { top: 8 } } }}
+      options={{ placement: formatMenu.placement, offset: formatMenu.placement === 'bottom' ? 28 : 8, flip: { boundary: toolbarEdge(editor), padding: { top: 8 } } }}
       shouldShow={({ editor: e, state, from, to }) => {
         if (linking) return true;
         if (from === to || !e.isEditable || !e.isFocused) return false;
@@ -660,6 +667,14 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
   const editorInstance = useRef<Editor | null>(null);
   editorInstance.current = editor;
   if (editorRef) editorRef.current = editor;
+
+  useEffect(() => {
+    if (!editor || readOnly) return;
+    current = editor;
+    return () => {
+      if (current === editor) current = null;
+    };
+  }, [editor, readOnly]);
 
   // Save pending edits when the note closes, and let other actions request a save.
   useEffect(() => {

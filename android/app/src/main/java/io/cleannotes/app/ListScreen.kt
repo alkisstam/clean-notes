@@ -25,6 +25,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -94,6 +98,7 @@ fun NoteList(
     val syncedAt by app.sync.syncedAt.collectAsState()
     val paired by app.sync.paired.collectAsState()
     val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
     val drawer = rememberDrawerState(DrawerValue.Closed)
     var menu by remember { mutableStateOf(false) }
     var naming by remember { mutableStateOf<NotebookRow?>(null) }
@@ -281,7 +286,12 @@ fun NoteList(
                     val rows = if (view == "all" || view.startsWith("nb:") || tag != null) nestNotes(notes, shutNotes, { it.id }, { it.parentId })
                     else notes.map { Nested(it, 0, false) }
                     items(rows, key = { it.note.id }) { (note, depth, hasKids) ->
-                        Column(Modifier.fillMaxWidth().clickable { onOpen(note.id) }.padding(start = (16 + depth * 20).dp, top = 12.dp, end = 16.dp, bottom = 12.dp)) {
+                        var pressed by remember { mutableStateOf(false) }
+                        Box {
+                        Column(Modifier.fillMaxWidth().combinedClickable(onClick = { onOpen(note.id) }, onLongClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            pressed = true
+                        }).padding(start = (16 + depth * 20).dp, top = 12.dp, end = 16.dp, bottom = 12.dp)) {
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                                 if (hasKids) {
                                     val open = note.id !in shutNotes
@@ -294,8 +304,8 @@ fun NoteList(
                                         },
                                     )
                                 }
-                                if (note.pinned) Text("Pinned", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                                Text(note.title.ifBlank { "Untitled" }, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(note.title.ifBlank { "Untitled" }, Modifier.weight(1f, fill = false), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (note.pinned) Icon(painterResource(R.drawable.ic_pin), "Pinned", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
                             }
                             Text(
                                 note.text.replace('\n', ' ').take(170).ifBlank { "No content yet" },
@@ -304,6 +314,8 @@ fun NoteList(
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
+                        }
+                        NoteMenu(app, note, all, pressed, { pressed = false }, { it() }, {})
                         }
                         HorizontalDivider()
                     }

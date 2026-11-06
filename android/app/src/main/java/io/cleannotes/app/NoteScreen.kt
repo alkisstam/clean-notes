@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicTextField
@@ -66,15 +67,12 @@ import kotlinx.coroutines.launch
 @Composable
 /** `pdf` is the web's PdfTarget as JSON text: {fileId, page?, query?}. */
 fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> Unit, onOpenTag: (String) -> Unit, onOpenNote: (String) -> Unit) {
-    val context = LocalContext.current
-    var nesting by remember { mutableStateOf(false) }
     val live by app.db.dao().liveNotes().collectAsStateWithLifecycle(emptyList())
     val allTags = remember(live) { allTagPaths(live.map { it.tagList }) }
     val note by app.db.dao().note(id).collectAsStateWithLifecycle(null)
     val view = remember(id) { NoteViewState() }
     var menu by remember { mutableStateOf(false) }
-    var moving by remember { mutableStateOf(false) }
-    val notebooks by app.db.dao().liveNotebooks().collectAsStateWithLifecycle(emptyList())
+    var adding by remember { mutableStateOf(false) }
     val back = { if (view.pdfOpen) view.closePdf() else view.flush(onClose) }
     BackHandler { back() }
     // Pending keystrokes are saved and sent when the app goes to the background.
@@ -97,37 +95,19 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
                 },
                 navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
-                    DropdownMenu(menu, { menu = false }) {
-                        // Same toggles as the web's note menu; pending keystrokes are saved first.
-                        val n = note
-                        if (n != null) {
-                            DropdownMenuItem(text = { Text(if (n.pinned) "Unpin" else "Pin to top") }, onClick = {
-                                menu = false
-                                view.flush { app.scope.launch { app.updateNote(id) { j, _ -> j.put("pinned", !n.pinned) } } }
-                            })
-                            DropdownMenuItem(text = { Text(if (n.archivedAt != null) "Unarchive" else "Archive") }, onClick = {
-                                menu = false
-                                view.flush { app.scope.launch { app.updateNote(id) { j, now -> j.put("archivedAt", if (n.archivedAt != null) JSONObject.NULL else now) } } }
-                            })
+                    IconButton(onClick = { adding = true }) { Icon(painterResource(R.drawable.ic_plus), "Add", Modifier.size(22.dp)) }
+                    DropdownMenu(adding, { adding = false }) {
+                        val open = { make: suspend () -> String? ->
+                            adding = false
+                            view.flush { app.scope.launch { make()?.let { withContext(Dispatchers.Main) { onOpenNote(it) } } } }
                         }
-                        DropdownMenuItem(text = { Text("New sub-note") }, onClick = {
-                            menu = false
-                            view.flush { app.scope.launch { app.newSubNote(id, tag)?.let { withContext(Dispatchers.Main) { onOpenNote(it) } } } }
-                        })
-                        DropdownMenuItem(text = { Text("Move into note…") }, onClick = { menu = false; nesting = true })
-                        if (note?.parentId != null) {
-                            DropdownMenuItem(text = { Text("Move to top level") }, onClick = {
-                                menu = false
-                                view.flush { app.scope.launch { app.updateNote(id) { j, _ -> j.put("parentId", JSONObject.NULL) } } }
-                            })
-                        }
-                        DropdownMenuItem(text = { Text("Move to notebook") }, onClick = { menu = false; moving = true })
-                        DropdownMenuItem(text = { Text("Move to Trash") }, onClick = {
-                            menu = false
-                            view.flush { app.scope.launch { app.trashNote(id) }; onClose() }
-                        })
+                        DropdownMenuItem(text = { Text("New note") }, onClick = { open { app.newNote(note?.notebookId, tag) } })
+                        DropdownMenuItem(text = { Text("New sub-note") }, onClick = { open { app.newSubNote(id, tag) } })
+                        DropdownMenuItem(text = { Text("Add image") }, onClick = { adding = false; view.pick("image") })
+                        DropdownMenuItem(text = { Text("Add PDF") }, onClick = { adding = false; view.pick("pdf") })
                     }
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
+                    note?.let { n -> NoteMenu(app, n, live, menu, { menu = false }, view::flush, onClose) }
                 },
             )
         },
@@ -146,6 +126,37 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
             }
         }
     }
+}
+
+/** The note's ⋮ menu, also opened by a long press in the list. `before` runs first, to save pending keystrokes. */
+@Composable
+fun NoteMenu(app: App, note: NoteRow, live: List<NoteRow>, expanded: Boolean, onDismiss: () -> Unit, before: (() -> Unit) -> Unit, onTrashed: () -> Unit) {
+    val context = LocalContext.current
+    val id = note.id
+    var nesting by remember { mutableStateOf(false) }
+    var moving by remember { mutableStateOf(false) }
+    val notebooks by app.db.dao().liveNotebooks().collectAsStateWithLifecycle(emptyList())
+    val act = { block: suspend () -> Unit -> onDismiss(); before { app.scope.launch { block() } } }
+    DropdownMenu(expanded, onDismiss) {
+        // Same toggles as the web's note menu.
+        DropdownMenuItem(text = { Text(if (note.pinned) "Unpin" else "Pin to top") }, onClick = {
+            act { app.updateNote(id) { j, _ -> j.put("pinned", !note.pinned) } }
+        })
+        DropdownMenuItem(text = { Text(if (note.archivedAt != null) "Unarchive" else "Archive") }, onClick = {
+            act { app.updateNote(id) { j, now -> j.put("archivedAt", if (note.archivedAt != null) JSONObject.NULL else now) } }
+        })
+        DropdownMenuItem(text = { Text("Move into note…") }, onClick = { onDismiss(); nesting = true })
+        if (note.parentId != null) {
+            DropdownMenuItem(text = { Text("Move to top level") }, onClick = {
+                act { app.updateNote(id) { j, _ -> j.put("parentId", JSONObject.NULL) } }
+            })
+        }
+        DropdownMenuItem(text = { Text("Move to notebook") }, onClick = { onDismiss(); moving = true })
+        DropdownMenuItem(text = { Text("Move to Trash") }, onClick = {
+            onDismiss()
+            before { app.scope.launch { app.trashNote(id) }; onTrashed() }
+        })
+    }
     if (nesting) {
         // The note itself and its own sub-notes cannot hold it; nestNote() also refuses them.
         val inside = mutableSetOf(id)
@@ -154,7 +165,7 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
         val targets = live.filter { it.archivedAt == null && it.id !in inside }.sortedBy { it.title.ifBlank { "Untitled" }.lowercase() }
         val pick = { target: String ->
             nesting = false
-            view.flush {
+            before {
                 app.scope.launch {
                     if (!app.nestNote(id, target)) withContext(Dispatchers.Main) {
                         Toast.makeText(context, "A note cannot go inside its own sub-note", Toast.LENGTH_SHORT).show()
@@ -182,7 +193,7 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
         )
     }
     if (moving) {
-        val pick = { target: String? -> moving = false; view.flush { app.scope.launch { app.moveNote(id, target) } } }
+        val pick = { target: String? -> moving = false; before { app.scope.launch { app.moveNote(id, target) } } }
         AlertDialog(
             onDismissRequest = { moving = false },
             title = { Text("Move to notebook") },
@@ -190,7 +201,7 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     (listOf<NotebookRow?>(null) + notebooks).forEach { nb ->
                         Row(Modifier.fillMaxWidth().clickable { pick(nb?.id) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = note?.notebookId == nb?.id, onClick = { pick(nb?.id) })
+                            RadioButton(selected = note.notebookId == nb?.id, onClick = { pick(nb?.id) })
                             Text(nb?.name?.ifBlank { "Untitled" } ?: "No notebook")
                         }
                     }

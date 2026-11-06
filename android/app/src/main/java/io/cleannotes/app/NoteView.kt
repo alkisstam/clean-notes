@@ -34,6 +34,9 @@ import androidx.webkit.WebViewFeature
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.UUID
+import android.provider.OpenableColumns
+import androidx.compose.ui.platform.LocalContext
 
 private const val ORIGIN = "https://appassets.androidplatform.net"
 private const val PAGE = "$ORIGIN/assets/editor/android.html"
@@ -54,6 +57,13 @@ class NoteViewState {
 
     fun closePdf() {
         web?.evaluateJavascript("cnClosePdf()", null)
+    }
+
+    internal var launchPicker: ((Array<String>) -> Unit)? = null
+
+    /** `kind` is "image" or "pdf"; the picked files go into the note at the cursor. */
+    fun pick(kind: String) {
+        launchPicker?.invoke(arrayOf(if (kind == "pdf") "application/pdf" else "image/*"))
     }
     private var after: (() -> Unit)? = null
     private val main = Handler(Looper.getMainLooper())
@@ -83,10 +93,23 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
     var ready by remember { mutableStateOf(false) }
     // The editor's "/image" and "/pdf" commands open a file input; Android answers it with the document picker.
     var chooser by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
+    val context = LocalContext.current
+    // Files picked from the + menu, served once to the page at /picked/<key>.
+    val picked = remember { mutableMapOf<String, Uri>() }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        chooser?.onReceiveValue(uris.toTypedArray())
+        val cb = chooser
         chooser = null
+        if (cb != null) return@rememberLauncherForActivityResult cb.onReceiveValue(uris.toTypedArray())
+        val list = JSONArray(uris.map { uri ->
+            val key = UUID.randomUUID().toString()
+            picked[key] = uri
+            val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+            JSONObject().put("url", "$ORIGIN/picked/$key").put("name", name ?: "file").put("type", context.contentResolver.getType(uri) ?: "")
+        })
+        if (uris.isNotEmpty()) state.web?.evaluateJavascript("cnInsertPicked($list)", null)
     }
+    state.launchPicker = { pick.launch(it) }
 
     LaunchedEffect(note.raw, dark, deviceFonts) {
         // Ids are UUIDs, so a substring match finds exactly the attachments this note uses.
@@ -149,8 +172,13 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
                     }
                 }
                 webViewClient = object : WebViewClientCompat() {
-                    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
-                        loader.shouldInterceptRequest(request.url)
+                    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                        val url = request.url
+                        val key = url.path?.removePrefix("/picked/")?.takeIf { url.host == Uri.parse(ORIGIN).host && it != url.path }
+                            ?: return loader.shouldInterceptRequest(url)
+                        val uri = picked.remove(key) ?: return null
+                        return WebResourceResponse(ctx.contentResolver.getType(uri), null, ctx.contentResolver.openInputStream(uri))
+                    }
 
                     // Links leave the app instead of replacing the note page.
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
