@@ -14,6 +14,10 @@ interface SyncRecord {
 
 class SyncError extends Error {}
 
+// Matches client_max_body_size in server/nginx-location.conf.
+const MAX_UPLOAD = 200 * 1024 * 1024;
+const warnedTooBig = new Set<string>();
+
 /** Same server as the app, at ./api. Off until a token is saved. */
 async function api(path: string, init: RequestInit = {}) {
   const token = await getMeta<string>('syncToken');
@@ -54,14 +58,28 @@ async function serverSync(): Promise<boolean> {
   files.push(...(await db.files.bulkGet(fileIds)).filter((f) => !!f));
   images.push(...(await db.images.bulkGet(imageIds)).filter((i) => !!i));
   // Bytes go first, so no device ever sees a file record whose bytes are missing.
-  for (const f of files) await uploadBlob(f.id, (await db.blobs.get(f.id))?.blob);
-  for (const i of images) await uploadBlob(i.id, i.blob);
+  const tooBig = new Set<string>();
+  for (const f of files) {
+    const blob = (await db.blobs.get(f.id))?.blob;
+    if (blob && blob.size > MAX_UPLOAD) tooBig.add(f.id);
+    else await uploadBlob(f.id, blob);
+  }
+  for (const i of images) {
+    if (i.blob.size > MAX_UPLOAD) tooBig.add(i.id);
+    else await uploadBlob(i.id, i.blob);
+  }
+  // Skipped, so one file the server refuses does not stop every sync.
+  const unwarned = [...tooBig].filter((id) => !warnedTooBig.has(id));
+  unwarned.forEach((id) => warnedTooBig.add(id));
+  if (unwarned.length) {
+    store.getState().showToast({ message: 'A PDF or image is over 200 MB, too large to sync. It stays on this device.' });
+  }
   const records: SyncRecord[] = [
     ...notes.map((n) => ({ table: 'notes' as const, id: n.id, time: n.updatedAt, data: n })),
     ...notebooks.map((nb) => ({ table: 'notebooks' as const, id: nb.id, time: nb.updatedAt ?? nb.createdAt, data: nb })),
     ...tombstones.map((t) => ({ table: 'tombstones' as const, id: t.id, time: t.deletedAt, data: t })),
-    ...files.map((f) => ({ table: 'files' as const, id: f.id, time: f.createdAt, data: f })),
-    ...images.map(({ blob, ...meta }) => ({ table: 'images' as const, id: meta.id, time: meta.createdAt, data: { ...meta, type: blob.type } })),
+    ...files.filter((f) => !tooBig.has(f.id)).map((f) => ({ table: 'files' as const, id: f.id, time: f.createdAt, data: f })),
+    ...images.filter((i) => !tooBig.has(i.id)).map(({ blob, ...meta }) => ({ table: 'images' as const, id: meta.id, time: meta.createdAt, data: { ...meta, type: blob.type } })),
   ];
   const res = await api('sync', { method: 'POST', body: JSON.stringify({ since, records }) });
   const { seq, records: incoming } = (await res.json()) as { seq: number; records: SyncRecord[] };

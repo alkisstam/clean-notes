@@ -21,7 +21,7 @@ app.whenReady().then(() => {
   ipcMain.handle('sync-server', () => server);
   ipcMain.handle('set-sync-server', (_e, url) => {
     const u = new URL(url);
-    if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new Error('The server address must start with https://');
+    if (u.protocol !== 'https:') throw new Error('The server address must start with https://');
     server = new URL(u.pathname.endsWith('/') ? u.href : u.href + '/').href;
     fs.writeFileSync(serverFile(), server);
   });

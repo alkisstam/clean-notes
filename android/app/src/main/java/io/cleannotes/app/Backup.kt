@@ -100,7 +100,7 @@ class Backup(private val context: Context, private val db: AppDb, private val sy
                 .map { AttachmentRow(it.getString("id"), "files", it.optLong("createdAt"), it.toString()) }
             val result = sync.merge(notes, notebooks, tombstones, pdfs + images, savedAt = System.currentTimeMillis())
             sync.pushAgainFrom(result.oldest)
-            sync.collectOrphans()
+            if (result.deleted > 0) sync.collectOrphans()
             sync.schedule()
             result
         } catch (e: Exception) {

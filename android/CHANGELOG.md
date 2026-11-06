@@ -1,5 +1,14 @@
 # Changelog — Android app
 
+## Unreleased
+
+### Fixed
+- Adding a large PDF no longer crashes the app, and neither does Download / Open with on one. Files over 200 MB are refused with a message.
+- Undo after deleting an image brings the image back instead of a broken block.
+- A backup restored while a sync runs now sends its notebooks and deletes to the server.
+- A note that fails to save shows a message instead of losing the edit silently.
+- A PDF or image over 200 MB no longer stops sync; it stays on this device and the rest syncs.
+
 ## 1.0.1 — 2026-11-06
 
 ### Added

@@ -3,6 +3,10 @@ package io.cleannotes.app
 import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.core.content.edit
 import android.app.Application
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import android.widget.Toast
 import androidx.room.Room
 import androidx.room.withTransaction
 import kotlinx.coroutines.CoroutineScope
@@ -11,7 +15,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import org.json.JSONArray
-import android.util.Base64
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
@@ -40,7 +43,16 @@ class App : Application() {
     private val inbox = Channel<suspend () -> Unit>(Channel.UNLIMITED)
 
     init {
-        scope.launch { for (job in inbox) runCatching { job() } }
+        scope.launch {
+            for (job in inbox) {
+                try {
+                    job()
+                } catch (e: Exception) {
+                    Log.e("CleanNotes", "Save failed", e)
+                    Handler(Looper.getMainLooper()).post { Toast.makeText(this@App, "Could not save the note.", Toast.LENGTH_LONG).show() }
+                }
+            }
+        }
     }
 
     override fun onCreate() {
@@ -52,12 +64,18 @@ class App : Application() {
     /** Runs writes from the editor one at a time, in the order they arrived. */
     fun enqueue(job: suspend () -> Unit) = inbox.trySend(job)
 
-    /** An image or PDF added in the editor: bytes to filesDir/blobs, record to the database. */
-    suspend fun saveAttachment(table: String, meta: JSONObject, base64: String) {
-        val id = meta.getString("id")
+    /** Where an attachment's bytes collect while the editor sends them, before [saveAttachment] moves them into place. */
+    fun incomingFile(id: String): File {
         require(Regex("[\\w-]{1,100}").matches(id)) { "Bad attachment id" }
-        val dir = File(filesDir, "blobs")
-        File(dir, "$id.tmp").apply { writeBytes(Base64.decode(base64, Base64.DEFAULT)); renameTo(File(dir, id)) }
+        return File(File(filesDir, "blobs"), "$id.tmp")
+    }
+
+    /** An image or PDF added in the editor: bytes to filesDir/blobs, record to the database. */
+    suspend fun saveAttachment(table: String, meta: JSONObject) {
+        val id = meta.getString("id")
+        val tmp = incomingFile(id)
+        if (!tmp.exists()) tmp.createNewFile()
+        check(tmp.renameTo(File(tmp.parentFile, id))) { "Could not store attachment $id" }
         stamped { now -> db.dao().put(AttachmentRow(id, table, meta.getLong("createdAt"), meta.toString(), now)) }
     }
 

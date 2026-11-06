@@ -26,7 +26,7 @@ DEPLOY_URL=https://notes.example.com
 
 ## Desktop app (Linux AppImage)
 
-`npm run appimage` builds `release/Clean Notes-<version>.AppImage`, an Electron window around the bundled app (`electron/main.js`). Make it executable (`chmod +x`) and run it; Gear Lever or AppImageLauncher can add it to the app menu. It works fully offline and keeps its own data in `~/.config/Clean Notes`, separate from any browser copy. The desktop build has no server sync and no service worker; to share notes with other devices, use **Auto-backup to a file** in a cloud folder. To update, build and replace the AppImage.
+`npm run appimage` builds `release/Clean Notes-<version>.AppImage`, an Electron window around the bundled app (`electron/main.js`). Make it executable (`chmod +x`) and run it; Gear Lever or AppImageLauncher can add it to the app menu. It works fully offline and keeps its own data in `~/.config/Clean Notes`, separate from any browser copy. It has no service worker. To sync with other devices, enter your sync server's address and token in Settings → **Sync**; the app sends `./api/` requests there, so it needs no CORS setup. **Auto-backup to a file** in a cloud folder also works. To update, build and replace the AppImage.
 
 ## How it fits together
 

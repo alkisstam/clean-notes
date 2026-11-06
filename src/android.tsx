@@ -10,7 +10,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushEditor, patchNote } from './lib/actions';
-import { db, writeListeners } from './lib/db';
+import { db, uid, writeListeners } from './lib/db';
 import { imageIdsIn, pdfIdsIn } from './lib/doc';
 import { blobSaver } from './lib/pdf';
 import { currentEditor, editorHooks, formatMenu, insertIntoEditor, NoteEditor } from './editor/NoteEditor';
@@ -30,7 +30,7 @@ interface Payload {
 }
 
 /** Added by the Android app, and only for this page's origin. */
-declare const CleanNotes: { postMessage(message: string): void };
+declare const CleanNotes: { postMessage(message: string | ArrayBuffer): void };
 
 const PdfViewer = lazy(() => import('./components/PdfViewer').then((m) => ({ default: m.PdfViewer })));
 
@@ -41,16 +41,25 @@ let known = 0;
 // Images and PDFs the app already holds the bytes of.
 const sent = new Set<string>();
 
-const toBase64 = (blob: Blob) =>
-  new Promise<string>((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result).split(',')[1] ?? '');
-    r.onerror = () => reject(r.error);
-    r.readAsDataURL(blob);
-  });
+// Bytes go over in pieces, each acknowledged, so neither side ever holds a whole large PDF as one string.
+const CHUNK = 4 * 1024 * 1024;
+const acks: (() => void)[] = [];
+let sending = Promise.resolve();
+/** Hands a file's bytes to the app under `id`, one file at a time, since the app collects one stream at once. */
+const sendBytes = (id: string, blob: Blob) =>
+  (sending = sending.catch(() => {}).then(async () => {
+    CleanNotes.postMessage(JSON.stringify({ type: 'bytes', id }));
+    for (let at = 0; at < blob.size; at += CHUNK) {
+      const acked = new Promise<void>((resolve) => acks.push(resolve));
+      CleanNotes.postMessage(await blob.slice(at, at + CHUNK).arrayBuffer());
+      await acked;
+    }
+  }));
 
-blobSaver.save = (blob, name) =>
-  void toBase64(blob).then((data) => CleanNotes.postMessage(JSON.stringify({ type: 'open', name, mime: blob.type, data })));
+blobSaver.save = (blob, name) => {
+  const id = `open-${uid()}`;
+  void sendBytes(id, blob).then(() => CleanNotes.postMessage(JSON.stringify({ type: 'open', id, name, mime: blob.type })));
+};
 
 async function send() {
   const note = await db.notes.get(noteId);
@@ -61,13 +70,15 @@ async function send() {
     const image = await db.images.get(id);
     if (!image) continue;
     const { blob, ...meta } = image;
-    CleanNotes.postMessage(JSON.stringify({ type: 'attachment', table: 'images', meta: { ...meta, type: blob.type }, data: await toBase64(blob) }));
+    await sendBytes(id, blob);
+    CleanNotes.postMessage(JSON.stringify({ type: 'attachment', table: 'images', meta: { ...meta, type: blob.type } }));
     sent.add(id);
   }
   for (const id of pdfIdsIn(note.content).filter((id) => !sent.has(id))) {
     const [meta, blob] = await Promise.all([db.files.get(id), db.blobs.get(id)]);
     if (!meta || !blob) continue;
-    CleanNotes.postMessage(JSON.stringify({ type: 'attachment', table: 'files', meta, data: await toBase64(blob.blob) }));
+    await sendBytes(id, blob.blob);
+    CleanNotes.postMessage(JSON.stringify({ type: 'attachment', table: 'files', meta }));
     sent.add(id);
   }
   CleanNotes.postMessage(JSON.stringify({ type: 'save', note }));
@@ -165,6 +176,7 @@ const w = window as unknown as {
   cnLoad: (p: Payload) => Promise<void>;
   cnFlush: () => Promise<void>;
   cnClosePdf: () => void;
+  cnAck: () => void;
   cnUndo: () => void;
   cnRedo: () => void;
   cnInsertPicked: (picked: { url: string; name: string; type: string }[]) => Promise<void>;
@@ -207,6 +219,7 @@ w.cnInsertPicked = async (picked) => {
 };
 
 w.cnClosePdf = () => store.getState().setPdf(null);
+w.cnAck = () => acks.shift()?.();
 
 // Called by the app on open and whenever its copy changes. The page's own database is only a cache for this note.
 w.cnLoad = async ({ note, images, files, dark, deviceFonts, pdf }) => {

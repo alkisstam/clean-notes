@@ -1,6 +1,9 @@
 package io.cleannotes.app
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
 import androidx.core.content.edit
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +18,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 class SyncError(message: String) : Exception(message)
+
+// Matches client_max_body_size in server/nginx-location.conf.
+const val MAX_UPLOAD = 200L * 1024 * 1024
 
 /** Same LWW rule as the web merge: newer edit wins, and a delete at or after the edit wins over it. */
 fun accepts(incoming: Long, current: Long?, diedAt: Long?) =
@@ -45,6 +51,7 @@ class Sync(private val context: Context, private val db: AppDb) {
     private val blobDir = File(context.filesDir, "blobs").apply { mkdirs() }
     private val dao = db.dao()
     private val lock = Mutex()
+    private val warnedTooBig = mutableSetOf<String>()
 
     val paired = MutableStateFlow(prefs.getString("token", null) != null)
     val syncedAt = MutableStateFlow(prefs.getLong("syncedAt", 0))
@@ -100,6 +107,14 @@ class Sync(private val context: Context, private val db: AppDb) {
                 // The server drops files no note uses, so each pushed note's own go along, in case they were dropped.
                 files = dao.attachments().filter { a -> a.savedAt > pushFrom || notes.any { it.raw.contains(a.id) } }
             }
+            // Skipped, so one file the server refuses does not stop every sync.
+            val tooBig = files.filter { File(blobDir, it.id).length() > MAX_UPLOAD }
+            if (tooBig.map { warnedTooBig.add(it.id) }.any { it }) {
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(context, "A PDF or image is over 200 MB, too large to sync. It stays on this device.", Toast.LENGTH_LONG).show()
+                }
+            }
+            files = files - tooBig.toSet()
             // Bytes go first, so no device ever sees a file record whose bytes are missing.
             for (f in files) {
                 if (request("HEAD", "api/blob/${f.id}") != null) continue
@@ -129,15 +144,18 @@ class Sync(private val context: Context, private val db: AppDb) {
                     AttachmentRow(id, r.getString("table"), r.getLong("time"), r.getJSONObject("data").toString())
                 }
 
-            merge(
+            val merged = merge(
                 records.filter { it.getString("table") == "notes" }.map { it.getJSONObject("data") },
                 records.filter { it.getString("table") == "notebooks" }.map { it.getJSONObject("data") },
                 records.filter { it.getString("table") == "tombstones" }.map { it.getJSONObject("data") },
                 attachments,
             )
-            collectOrphans()
+            // Only after deletes, as on the web: a file dropped from a note may come back with Undo.
+            if (merged.deleted > 0) collectOrphans()
             val now = System.currentTimeMillis()
-            prefs.edit { putLong("seq", res.getLong("seq")); putLong("lastPushAt", startedAt); putLong("syncedAt", now) }
+            // A backup import during this sync may have moved the marker back; keep that.
+            val pushMarker = prefs.getLong("lastPushAt", 0).let { if (it >= pushFrom) startedAt else it }
+            prefs.edit { putLong("seq", res.getLong("seq")); putLong("lastPushAt", pushMarker); putLong("syncedAt", now) }
             syncedAt.value = now
         }
     }

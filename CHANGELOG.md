@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- A PDF or image over 200 MB no longer stops server sync; it stays on this device and the rest syncs.
+- Desktop app: the sync server address must use https://, so the token is never sent unencrypted.
+
 ## 1.0.2 — 2026-11-06
 
 ### Added

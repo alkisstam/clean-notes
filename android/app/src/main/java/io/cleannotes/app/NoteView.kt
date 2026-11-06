@@ -3,7 +3,6 @@ package io.cleannotes.app
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
-import android.util.Base64
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -17,6 +16,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.os.Handler
 import android.os.Looper
+import android.widget.Toast
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewClientCompat
+import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import org.json.JSONArray
@@ -42,11 +43,13 @@ import androidx.compose.ui.platform.LocalContext
 private const val ORIGIN = "https://appassets.androidplatform.net"
 private const val PAGE = "$ORIGIN/assets/editor/android.html"
 
-/** Writes a file other apps may read, replacing the last one, and returns its content URI. */
-private fun shareable(context: Context, name: String, base64: String): Uri {
+/** Moves the received bytes to a file other apps may read, replacing the last one, and returns its content URI. */
+private fun shareable(context: Context, name: String, bytes: File): Uri {
     val dir = File(context.cacheDir, "open").apply { deleteRecursively(); mkdirs() }
     val file = File(dir, name.replace(Regex("[/\\\\]"), "_").ifBlank { "file" })
-    file.writeBytes(Base64.decode(base64, Base64.DEFAULT))
+    // copyTo, not renameTo: cacheDir and filesDir may sit on different file systems.
+    bytes.copyTo(file, overwrite = true)
+    bytes.delete()
     return FileProvider.getUriForFile(context, "${context.packageName}.files", file)
 }
 
@@ -109,7 +112,14 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
     val context = LocalContext.current
     // Files picked from the + menu, served once to the page at /picked/<key>.
     val picked = remember { mutableMapOf<String, Uri>() }
-    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { all ->
+        val size = { uri: Uri ->
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)
+                ?.use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else 0L } ?: 0L
+        }
+        // The editor holds the whole file to read a PDF's text, and the sync server refuses more.
+        val uris = all.filter { size(it) <= MAX_UPLOAD }
+        if (uris.size < all.size) Toast.makeText(context, "Files over 200 MB cannot be added.", Toast.LENGTH_LONG).show()
         val cb = chooser
         chooser = null
         if (cb != null) return@rememberLauncherForActivityResult cb.onReceiveValue(uris.toTypedArray())
@@ -152,14 +162,28 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
                 settings.domStorageEnabled = true
                 setBackgroundColor(0)
                 check(WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) { "This WebView is too old to edit notes." }
+                check(WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_ARRAY_BUFFER)) { "This WebView is too old to edit notes." }
+                // Where the attachment being sent collects its bytes. Only queued jobs touch it, one at a time.
+                var incoming: File? = null
                 // Only our own page can reach this, unlike addJavascriptInterface.
                 WebViewCompat.addWebMessageListener(this, "CleanNotes", setOf(ORIGIN)) { _, message, _, _, _ ->
+                    if (message.type == WebMessageCompat.TYPE_ARRAY_BUFFER) {
+                        val bytes = message.arrayBuffer
+                        app.enqueue {
+                            // Acked even on failure, or the page would wait forever and stop saving.
+                            try {
+                                checkNotNull(incoming).appendBytes(bytes)
+                            } finally {
+                                withContext(Dispatchers.Main) { evaluateJavascript("cnAck()", null) }
+                            }
+                        }
+                        return@addWebMessageListener
+                    }
                     val msg = JSONObject(message.data ?: return@addWebMessageListener)
                     when (msg.getString("type")) {
+                        "bytes" -> app.enqueue { incoming = app.incomingFile(msg.getString("id")).apply { delete() } }
                         // One queue, so a note is never stored before the files it points at.
-                        "attachment" -> app.enqueue {
-                            app.saveAttachment(msg.getString("table"), msg.getJSONObject("meta"), msg.getString("data"))
-                        }
+                        "attachment" -> app.enqueue { app.saveAttachment(msg.getString("table"), msg.getJSONObject("meta")) }
                         "save" -> app.enqueue { app.saveNote(msg.getJSONObject("note")) }
                         "pdf" -> state.pdfOpen = msg.getBoolean("open")
                         "history" -> {
@@ -167,8 +191,9 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
                             state.canRedo = msg.getBoolean("redo")
                         }
                         "hideKeyboard" -> ctx.getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(windowToken, 0)
-                        "open" -> app.scope.launch {
-                            val uri = shareable(ctx, msg.getString("name"), msg.getString("data"))
+                        // Queued, so it runs after the bytes sent just before it are written.
+                        "open" -> app.enqueue {
+                            val uri = shareable(ctx, msg.getString("name"), app.incomingFile(msg.getString("id")))
                             val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, msg.optString("mime").ifBlank { "*/*" })
                                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             withContext(Dispatchers.Main) {

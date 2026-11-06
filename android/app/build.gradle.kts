@@ -70,6 +70,9 @@ dependencies {
     testImplementation(libs.junit)
     // Android's own org.json is a stub in JVM tests.
     testImplementation(libs.org.json)
+    // A real Room database for the sync merge test.
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
 }
 
 // The note view is the web app's Tiptap editor, built from ../src into assets/editor.
