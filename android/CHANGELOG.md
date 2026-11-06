@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+- Menus have larger rounded corners and roomier rows, and the + menu shows an icon for each option.
+- Long-pressing a note opens its menu in the middle of the screen.
+
 ### Fixed
 - Adding a large PDF no longer crashes the app, and neither does Download / Open with on one. Files over 200 MB are refused with a message.
 - Undo after deleting an image brings the image back instead of a broken block.

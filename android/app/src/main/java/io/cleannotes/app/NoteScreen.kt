@@ -39,11 +39,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.window.Dialog
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -101,7 +103,7 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
                     IconButton(onClick = view::undo, enabled = view.canUndo) { Icon(painterResource(R.drawable.ic_undo), "Undo", Modifier.size(22.dp)) }
                     IconButton(onClick = view::redo, enabled = view.canRedo) { Icon(painterResource(R.drawable.ic_redo), "Redo", Modifier.size(22.dp)) }
                     IconButton(onClick = { adding = true }) { Icon(painterResource(R.drawable.ic_plus), "Add", Modifier.size(22.dp)) }
-                    DropdownMenu(adding, { adding = false }) {
+                    Menu(adding, { adding = false }) {
                         // A sub-note keeps this note, so only leaving for a sibling may discard it.
                         val open = { leaving: Boolean, make: suspend () -> String? ->
                             adding = false
@@ -110,10 +112,10 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
                                 app.scope.launch { make()?.let { withContext(Dispatchers.Main) { onOpenNote(it) } } }
                             }
                         }
-                        DropdownMenuItem(text = { Text("New note") }, onClick = { open(true) { app.newNote(note?.notebookId, tag) } })
-                        DropdownMenuItem(text = { Text("New sub-note") }, onClick = { open(false) { app.newSubNote(id, tag) } })
-                        DropdownMenuItem(text = { Text("Add image") }, onClick = { adding = false; view.pick("image") })
-                        DropdownMenuItem(text = { Text("Add PDF") }, onClick = { adding = false; view.pick("pdf") })
+                        MenuItem("New note", { open(true) { app.newNote(note?.notebookId, tag) } }, R.drawable.ic_square_pen)
+                        MenuItem("New sub-note", { open(false) { app.newSubNote(id, tag) } }, R.drawable.ic_file_plus)
+                        MenuItem("Add image", { adding = false; view.pick("image") }, R.drawable.ic_image)
+                        MenuItem("Add PDF", { adding = false; view.pick("pdf") }, R.drawable.ic_file_text)
                     }
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
                     note?.let { n -> NoteMenu(app, n, live, menu, { menu = false }, view::flush, onClose) }
@@ -139,33 +141,44 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
 
 /** The note's ⋮ menu, also opened by a long press in the list. `before` runs first, to save pending keystrokes. */
 @Composable
-fun NoteMenu(app: App, note: NoteRow, live: List<NoteRow>, expanded: Boolean, onDismiss: () -> Unit, before: (() -> Unit) -> Unit, onTrashed: () -> Unit) {
+fun NoteMenu(
+    app: App, note: NoteRow, live: List<NoteRow>, expanded: Boolean, onDismiss: () -> Unit, before: (() -> Unit) -> Unit, onTrashed: () -> Unit,
+    centered: Boolean = false,
+) {
     val context = LocalContext.current
     val id = note.id
     var nesting by remember { mutableStateOf(false) }
     var moving by remember { mutableStateOf(false) }
     val notebooks by app.db.dao().liveNotebooks().collectAsStateWithLifecycle(emptyList())
     val act = { block: suspend () -> Unit -> onDismiss(); before { app.scope.launch { block() } } }
-    DropdownMenu(expanded, onDismiss) {
+    val items: @Composable () -> Unit = {
         // Same toggles as the web's note menu.
-        DropdownMenuItem(text = { Text(if (note.pinned) "Unpin" else "Pin to top") }, onClick = {
+        MenuItem(if (note.pinned) "Unpin" else "Pin to top", {
             act { app.updateNote(id) { j, _ -> j.put("pinned", !note.pinned) } }
         })
-        DropdownMenuItem(text = { Text(if (note.archivedAt != null) "Unarchive" else "Archive") }, onClick = {
+        MenuItem(if (note.archivedAt != null) "Unarchive" else "Archive", {
             act { app.updateNote(id) { j, now -> j.put("archivedAt", if (note.archivedAt != null) JSONObject.NULL else now) } }
         })
-        DropdownMenuItem(text = { Text("Move into note…") }, onClick = { onDismiss(); nesting = true })
+        MenuItem("Move into note…", { onDismiss(); nesting = true })
         if (note.parentId != null) {
-            DropdownMenuItem(text = { Text("Move to top level") }, onClick = {
+            MenuItem("Move to top level", {
                 act { app.updateNote(id) { j, _ -> j.put("parentId", JSONObject.NULL) } }
             })
         }
-        DropdownMenuItem(text = { Text("Move to notebook") }, onClick = { onDismiss(); moving = true })
-        DropdownMenuItem(text = { Text("Move to Trash") }, onClick = {
+        MenuItem("Move to notebook", { onDismiss(); moving = true })
+        MenuItem("Move to Trash", {
             onDismiss()
             before { app.scope.launch { app.trashNote(id) }; onTrashed() }
         })
     }
+    // A long press in the list opens it in the middle of the screen; the note page's ⋮ drops it from the corner.
+    if (centered) {
+        if (expanded) Dialog(onDismiss) {
+            Surface(shape = MenuShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                Column(Modifier.width(IntrinsicSize.Max).widthIn(min = 240.dp).padding(vertical = 8.dp)) { items() }
+            }
+        }
+    } else Menu(expanded, onDismiss) { items() }
     if (nesting) {
         // The note itself and its own sub-notes cannot hold it; nestNote() also refuses them.
         val inside = mutableSetOf(id)
@@ -271,8 +284,8 @@ private fun TagRow(tags: List<String>, allTags: List<String>, onAdd: (String) ->
                 },
             )
             // Not focusable, so the keyboard stays up while suggestions show.
-            DropdownMenu(focused && options.isNotEmpty(), onDismissRequest = {}, properties = PopupProperties(focusable = false)) {
-                options.forEach { o -> DropdownMenuItem(text = { Text(o) }, onClick = { add(o) }) }
+            Menu(focused && options.isNotEmpty(), {}, PopupProperties(focusable = false)) {
+                options.forEach { o -> MenuItem(o, { add(o) }) }
             }
         }
     }

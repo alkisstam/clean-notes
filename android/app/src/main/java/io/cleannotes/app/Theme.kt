@@ -16,6 +16,19 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.PopupProperties
 
 // From src/styles/tokens.css. Translucent tokens are pre-blended over --list, the note page's background.
 private val Day = lightColorScheme(
@@ -94,3 +107,22 @@ fun CleanTheme(app: App, content: @Composable () -> Unit) {
         )
     }
 }
+
+val MenuShape = RoundedCornerShape(24.dp)
+
+/** Every menu in the app: large rounded corners and roomy rows. */
+@Composable
+fun Menu(expanded: Boolean, onDismiss: () -> Unit, properties: PopupProperties = PopupProperties(focusable = true), content: @Composable ColumnScope.() -> Unit) =
+    DropdownMenu(
+        expanded, onDismiss, properties = properties, shape = MenuShape,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, content = content,
+    )
+
+@Composable
+fun MenuItem(text: String, onClick: () -> Unit, icon: Int? = null) = DropdownMenuItem(
+    text = { Text(text, style = MaterialTheme.typography.bodyLarge) },
+    onClick = onClick,
+    modifier = Modifier.heightIn(min = 52.dp),
+    leadingIcon = icon?.let { { Icon(painterResource(it), null, Modifier.size(20.dp)) } },
+    contentPadding = PaddingValues(horizontal = 24.dp),
+)

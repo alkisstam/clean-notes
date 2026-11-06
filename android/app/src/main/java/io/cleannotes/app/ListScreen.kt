@@ -45,8 +45,6 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -253,16 +251,16 @@ fun NoteList(
                         }
                         IconButton(onClick = { searching = true }) { Icon(Icons.Default.Search, "Search") }
                         IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
-                        DropdownMenu(menu, { menu = false }) {
+                        Menu(menu, { menu = false }) {
                             if (tag != null) {
-                                DropdownMenuItem(text = { Text("Rename tag") }, onClick = { menu = false; renamingTag = true })
-                                DropdownMenuItem(text = { Text("Delete tag") }, onClick = { menu = false; deletingTag = true })
+                                MenuItem("Rename tag", { menu = false; renamingTag = true })
+                                MenuItem("Delete tag", { menu = false; deletingTag = true })
                             }
                             if (current != null) {
-                                DropdownMenuItem(text = { Text("Rename notebook") }, onClick = { menu = false; naming = current })
-                                DropdownMenuItem(text = { Text("Delete notebook") }, onClick = { menu = false; deleting = current })
+                                MenuItem("Rename notebook", { menu = false; naming = current })
+                                MenuItem("Delete notebook", { menu = false; deleting = current })
                             }
-                            DropdownMenuItem(text = { Text("Settings") }, onClick = { menu = false; onView("settings") })
+                            MenuItem("Settings", { menu = false; onView("settings") })
                         }
                     },
                 )
@@ -315,7 +313,7 @@ fun NoteList(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        NoteMenu(app, note, all, pressed, { pressed = false }, { it() }, {})
+                        NoteMenu(app, note, all, pressed, { pressed = false }, { it() }, {}, centered = true)
                         }
                         HorizontalDivider()
                     }
