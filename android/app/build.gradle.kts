@@ -13,8 +13,8 @@ android {
         applicationId = "io.cleannotes.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.0.0"
+        versionCode = 3
+        versionName = "1.0.1"
     }
 
     // The release key never enters the repo: its path and passwords come from ~/.gradle/gradle.properties

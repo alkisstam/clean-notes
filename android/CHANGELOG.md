@@ -1,6 +1,6 @@
 # Changelog — Android app
 
-## Unreleased
+## 1.0.1 — 2026-11-06
 
 ### Added
 - A + button in a note for New note, New sub-note, Add image and Add PDF. New sub-note moves here from the ⋮ menu.
