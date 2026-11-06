@@ -72,6 +72,16 @@ class App : Application() {
         sync.schedule()
     }
 
+    // Notes made by New note / New sub-note on this run, discarded on leaving if still empty.
+    private val fresh: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    suspend fun discardIfEmpty(id: String) {
+        if (!fresh.remove(id)) return
+        val n = db.dao().noteOnce(id) ?: return
+        val attached = "\"noteImage\"" in n.raw || "\"pdfAttachment\"" in n.raw
+        if (n.title.isBlank() && n.text.isBlank() && !attached && db.dao().childCount(id) == 0) deleteForever(listOf(id))
+    }
+
     /** Same shape as baseNote() in src/lib/actions.ts. */
     suspend fun newNote(notebookId: String? = null, tag: String? = null, parentId: String? = null): String {
         val now = System.currentTimeMillis()
@@ -91,6 +101,7 @@ class App : Application() {
                 .put("trashedAt", JSONObject.NULL)
                 .apply { if (parentId != null) put("parentId", parentId) }
         )
+        fresh.add(id)
         return id
     }
 

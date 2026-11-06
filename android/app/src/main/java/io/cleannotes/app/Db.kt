@@ -111,6 +111,9 @@ interface NotesDao {
     @Query("SELECT * FROM notes WHERE id = :id")
     suspend fun noteOnce(id: String): NoteRow?
 
+    @Query("SELECT COUNT(*) FROM notes WHERE parentId = :id")
+    suspend fun childCount(id: String): Int
+
     @Query("SELECT * FROM attachments")
     suspend fun attachments(): List<AttachmentRow>
 

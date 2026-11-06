@@ -13,7 +13,7 @@ import { flushEditor, patchNote } from './lib/actions';
 import { db, writeListeners } from './lib/db';
 import { imageIdsIn, pdfIdsIn } from './lib/doc';
 import { blobSaver } from './lib/pdf';
-import { formatMenu, insertIntoEditor, NoteEditor } from './editor/NoteEditor';
+import { currentEditor, editorHooks, formatMenu, insertIntoEditor, NoteEditor } from './editor/NoteEditor';
 import { Boundary } from './components/EditorPane';
 import { store, useStore, type PdfTarget } from './lib/store';
 import type { Note, NoteImage, PdfFile } from './lib/types';
@@ -95,6 +95,8 @@ function PdfLayer() {
   useEffect(() => {
     CleanNotes.postMessage(JSON.stringify({ type: 'pdf', open: !!pdf }));
     if (!pdf) return;
+    // The tap that opened it left the editor focused, which keeps the keyboard up over the viewer.
+    (document.activeElement as HTMLElement | null)?.blur();
     let gone = false;
     void (async () => {
       if (!(await db.blobs.get(pdf.fileId))) {
@@ -163,10 +165,41 @@ const w = window as unknown as {
   cnLoad: (p: Payload) => Promise<void>;
   cnFlush: () => Promise<void>;
   cnClosePdf: () => void;
+  cnUndo: () => void;
+  cnRedo: () => void;
   cnInsertPicked: (picked: { url: string; name: string; type: string }[]) => Promise<void>;
 };
 
 formatMenu.placement = 'bottom';
+let history = '';
+editorHooks.onChange = (e) => {
+  const next = JSON.stringify({ type: 'history', undo: e.can().undo(), redo: e.can().redo() });
+  if (next !== history) CleanNotes.postMessage((history = next));
+};
+w.cnUndo = () => currentEditor()?.commands.undo();
+w.cnRedo = () => currentEditor()?.commands.redo();
+
+// Tapping an image selects it for its toolbar; that is no reason to raise the keyboard.
+addEventListener(
+  'pointerdown',
+  (ev) => {
+    const prose = currentEditor()?.view.dom;
+    if (!prose) return;
+    if (!(ev.target as Element).closest('.image-node')) return prose.removeAttribute('inputmode');
+    prose.inputMode = 'none';
+    // inputmode only stops the keyboard from rising; one already up needs the app to lower it.
+    CleanNotes.postMessage(JSON.stringify({ type: 'hideKeyboard' }));
+  },
+  true,
+);
+
+// The keyboard shrinks the page; keep the caret above it.
+addEventListener('resize', () => {
+  const e = currentEditor();
+  if (!e?.isFocused) return;
+  const gap = e.view.coordsAtPos(e.state.selection.head).bottom - (innerHeight - 96);
+  if (gap > 0) document.querySelector('.doc-scroll')?.scrollBy({ top: gap });
+});
 // The app's + menu picks files natively, since a page may only open its own file chooser from a tap inside it.
 w.cnInsertPicked = async (picked) => {
   const files = await Promise.all(picked.map(async ({ url, name, type }) => new File([await (await fetch(url)).blob()], name, { type })));

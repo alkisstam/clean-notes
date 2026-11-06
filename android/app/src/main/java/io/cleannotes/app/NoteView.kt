@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.net.Uri
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -54,9 +55,21 @@ class NoteViewState {
     internal var web: WebView? = null
     var pdfOpen by mutableStateOf(false)
         internal set
+    var canUndo by mutableStateOf(false)
+        internal set
+    var canRedo by mutableStateOf(false)
+        internal set
 
     fun closePdf() {
         web?.evaluateJavascript("cnClosePdf()", null)
+    }
+
+    fun undo() {
+        web?.evaluateJavascript("cnUndo()", null)
+    }
+
+    fun redo() {
+        web?.evaluateJavascript("cnRedo()", null)
     }
 
     internal var launchPicker: ((Array<String>) -> Unit)? = null
@@ -149,6 +162,11 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
                         }
                         "save" -> app.enqueue { app.saveNote(msg.getJSONObject("note")) }
                         "pdf" -> state.pdfOpen = msg.getBoolean("open")
+                        "history" -> {
+                            state.canUndo = msg.getBoolean("undo")
+                            state.canRedo = msg.getBoolean("redo")
+                        }
+                        "hideKeyboard" -> ctx.getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(windowToken, 0)
                         "open" -> app.scope.launch {
                             val uri = shareable(ctx, msg.getString("name"), msg.getString("data"))
                             val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, msg.optString("mime").ifBlank { "*/*" })

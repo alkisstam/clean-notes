@@ -1,7 +1,7 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { AlignEndVertical, AlignStartVertical, Download, ImageOff, Maximize2, Rows2, Type, X } from 'lucide-react';
+import { AlignEndVertical, AlignStartVertical, Download, ImageOff, Maximize2, Rows2, Trash2, Type, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { db } from '../lib/db';
 import { saveBlob } from '../lib/pdf';
@@ -59,7 +59,7 @@ function Lightbox({ src, alt, close }: { src: string; alt: string; close: () => 
   );
 }
 
-function ImageView({ node, selected, editor, updateAttributes }: NodeViewProps) {
+function ImageView({ node, selected, editor, updateAttributes, deleteNode }: NodeViewProps) {
   const imageId: string = node.attrs.imageId;
   const alt: string = node.attrs.alt ?? '';
   const image = useLiveQuery(() => db.images.get(imageId), [imageId], null as NoteImage | null | undefined);
@@ -180,6 +180,9 @@ function ImageView({ node, selected, editor, updateAttributes }: NodeViewProps) 
                 onClick={() => image && saveBlob(image.blob, image.name)}
               >
                 <Download size={15} />
+              </button>
+              <button type="button" title="Delete" aria-label="Delete image" onClick={deleteNode}>
+                <Trash2 size={15} />
               </button>
             </div>
             <span className="image-handle" aria-hidden onPointerDown={startResize} />

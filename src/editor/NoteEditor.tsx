@@ -72,6 +72,9 @@ async function insertFiles(editor: Editor, files: File[], dropAt?: number) {
 // The editor that commands from outside the page, such as the Android app's + menu, act on.
 let current: Editor | null = null;
 export const insertIntoEditor = (files: File[]) => current && insertFiles(current, files);
+export const currentEditor = () => current;
+/** Hosts listen here for every change to the open editor, as the Android app does for its undo and redo buttons. */
+export const editorHooks = { onChange: null as ((editor: Editor) => void) | null };
 
 /** Hosts override placement, as the Android app does to keep clear of the system's own selection bar above. */
 export const formatMenu = { placement: 'top' as 'top' | 'bottom' };
@@ -671,7 +674,11 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
   useEffect(() => {
     if (!editor || readOnly) return;
     current = editor;
+    const changed = () => editorHooks.onChange?.(editor);
+    editor.on('transaction', changed);
+    changed();
     return () => {
+      editor.off('transaction', changed);
       if (current === editor) current = null;
     };
   }, [editor, readOnly]);

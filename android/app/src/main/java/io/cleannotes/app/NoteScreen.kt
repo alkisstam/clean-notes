@@ -73,13 +73,16 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
     val view = remember(id) { NoteViewState() }
     var menu by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
-    val back = { if (view.pdfOpen) view.closePdf() else view.flush(onClose) }
+    // Queued behind the page's last save, so an empty check sees what was typed.
+    val discard = { app.enqueue { app.discardIfEmpty(id) } }
+    val back = { if (view.pdfOpen) view.closePdf() else view.flush { discard(); onClose() } }
     BackHandler { back() }
     // Pending keystrokes are saved and sent when the app goes to the background.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { view.flush { app.sync.runInBackground() } }
     Scaffold(
         topBar = {
-            TopAppBar(
+            // The PDF viewer has its own toolbar; back still closes it.
+            if (!view.pdfOpen) TopAppBar(
                 title = {
                     // Daily notes step to the day before or after, creating it if needed, as on the web.
                     val date = note?.date?.takeIf { note?.kind == "daily" }
@@ -95,14 +98,20 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
                 },
                 navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
+                    IconButton(onClick = view::undo, enabled = view.canUndo) { Icon(painterResource(R.drawable.ic_undo), "Undo", Modifier.size(22.dp)) }
+                    IconButton(onClick = view::redo, enabled = view.canRedo) { Icon(painterResource(R.drawable.ic_redo), "Redo", Modifier.size(22.dp)) }
                     IconButton(onClick = { adding = true }) { Icon(painterResource(R.drawable.ic_plus), "Add", Modifier.size(22.dp)) }
                     DropdownMenu(adding, { adding = false }) {
-                        val open = { make: suspend () -> String? ->
+                        // A sub-note keeps this note, so only leaving for a sibling may discard it.
+                        val open = { leaving: Boolean, make: suspend () -> String? ->
                             adding = false
-                            view.flush { app.scope.launch { make()?.let { withContext(Dispatchers.Main) { onOpenNote(it) } } } }
+                            view.flush {
+                                if (leaving) discard()
+                                app.scope.launch { make()?.let { withContext(Dispatchers.Main) { onOpenNote(it) } } }
+                            }
                         }
-                        DropdownMenuItem(text = { Text("New note") }, onClick = { open { app.newNote(note?.notebookId, tag) } })
-                        DropdownMenuItem(text = { Text("New sub-note") }, onClick = { open { app.newSubNote(id, tag) } })
+                        DropdownMenuItem(text = { Text("New note") }, onClick = { open(true) { app.newNote(note?.notebookId, tag) } })
+                        DropdownMenuItem(text = { Text("New sub-note") }, onClick = { open(false) { app.newSubNote(id, tag) } })
                         DropdownMenuItem(text = { Text("Add image") }, onClick = { adding = false; view.pick("image") })
                         DropdownMenuItem(text = { Text("Add PDF") }, onClick = { adding = false; view.pick("pdf") })
                     }
@@ -116,11 +125,11 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
             Column(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize().imePadding()) {
                 // Saving pending keystrokes first keeps the editor from adopting a copy older than what it shows.
                 val tags = { change: (List<String>) -> List<String> -> view.flush { app.scope.launch { app.editTags(id, change) } } }
-                TagRow(
+                if (!view.pdfOpen) TagRow(
                     n.tagList, allTags,
                     onAdd = { t -> tags { if (t in it) it else it + t } },
                     onRemove = { t -> tags { it - t } },
-                    onOpen = { t -> view.flush { onOpenTag(t) } },
+                    onOpen = { t -> view.flush { discard(); onOpenTag(t) } },
                 )
                 NoteView(app, n, view, pdf, Modifier.weight(1f).fillMaxWidth())
             }
