@@ -1,5 +1,24 @@
 # Changelog — Android app
 
+## Unreleased
+
+### Added
+- A + button in a note for New note, New sub-note, Add image and Add PDF. New sub-note moves here from the ⋮ menu.
+- Undo and Redo buttons in a note, greyed out when there is nothing to undo or redo.
+- Long-press a note in the list for the same options as its ⋮ menu.
+- Images have a Delete button in their toolbar.
+
+### Changed
+- Pinned notes show a pin icon after the title instead of the word "Pinned".
+- The selection format bar appears below the selected text, clear of the system's Cut/Copy bar.
+- PDFs open full screen with only their own toolbar; back still closes them.
+- A new note or sub-note left empty is discarded on leaving it.
+
+### Fixed
+- The QR scanner in Settings → Connect crashed the release build before opening.
+- The keyboard no longer opens when a PDF opens or when an image is tapped.
+- Tapping low in a note scrolls the cursor above the keyboard.
+
 ## 1.0.0 — 2026-11-05
 
 First release. Notes work fully offline on the phone; syncing with the web app is optional and goes through your own Clean Notes server.
