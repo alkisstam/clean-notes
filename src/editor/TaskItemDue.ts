@@ -2,6 +2,12 @@ import { TaskItem } from '@tiptap/extension-list';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { dateKey, dueLabel } from '../lib/dates';
 
+/** The page shows its own calendar by the button, since Chromium on Wayland opens the native one in the screen's corner. Android keeps its native dialog. */
+export const dueHooks = {
+  native: false,
+  open: null as ((anchor: DOMRect, due: string | null, set: (due: string | null) => void) => void) | null,
+};
+
 /** To-do item with a stable id, so the Tasks view can reach it, and an optional due date. */
 export const TaskItemDue = TaskItem.extend({
   addAttributes() {
@@ -62,6 +68,7 @@ export const TaskItemDue = TaskItem.extend({
 
       check.addEventListener('change', () => setAttrs({ checked: check.checked }));
       dueBtn.addEventListener('click', () => {
+        if (!dueHooks.native && dueHooks.open) return dueHooks.open(dueBtn.getBoundingClientRect(), node.attrs.due, (due) => setAttrs({ due }));
         dueInput.value = node.attrs.due ?? '';
         try {
           dueInput.showPicker();

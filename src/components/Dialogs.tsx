@@ -1,10 +1,11 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Download, FileClock, HardDrive, Laptop, Moon, QrCode, RefreshCw, Sun, Upload, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { autoBackupSupported, chooseBackupFile, exportBackup, importBackup, stopAutoBackup } from '../lib/backup';
 import { relativeTime } from '../lib/dates';
 import { db } from '../lib/db';
 import { formatBytes } from '../lib/pdf';
+import { foldQuery } from '../lib/search';
 import { useStore, type DialogState, type ThemePref } from '../lib/store';
 import { disableServerSync, enableServerSync, syncNow } from '../lib/sync';
 
@@ -66,6 +67,49 @@ function Prompt({ dialog, close }: { dialog: Extract<DialogState, { kind: 'promp
           <button type="button" className="btn" onClick={close}>Cancel</button>
           <button type="submit" className="btn primary" disabled={!value.trim() && !dialog.allowEmpty}>{dialog.confirm}</button>
         </footer>
+      </form>
+    </Modal>
+  );
+}
+
+function PickNote({ dialog, close }: { dialog: Extract<DialogState, { kind: 'pickNote' }>; close: () => void }) {
+  const [query, setQuery] = useState('');
+  const input = useRef<HTMLInputElement>(null);
+  // After the Modal's showModal(), which moves focus to its close button.
+  useEffect(() => input.current?.focus(), []);
+  const current = useStore((s) => s.noteId);
+  const notes = useLiveQuery(() => db.notes.filter((n) => !n.trashedAt && n.id !== current).toArray(), [current], []);
+  const shown = useMemo(() => {
+    const q = foldQuery(query);
+    return notes
+      .map((n) => ({ n, title: n.title || 'Untitled' }))
+      .filter(({ title }) => !q || foldQuery(title).includes(q))
+      .sort((a, b) => b.n.updatedAt - a.n.updatedAt)
+      .slice(0, 50);
+  }, [notes, query]);
+  const pick = (id: string, title: string) => {
+    close();
+    dialog.onPick(id, title);
+  };
+  return (
+    <Modal title="Link to note" onClose={close}>
+      <form
+        className="pick-note"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (shown[0]) pick(shown[0].n.id, shown[0].title);
+        }}
+      >
+        <label className="field">
+          <span className="sr-only">Search notes</span>
+          <input ref={input} value={query} placeholder="Search notes" onChange={(e) => setQuery(e.target.value)} />
+        </label>
+        <div className="pick-note-list" role="listbox" aria-label="Notes">
+          {shown.length === 0 && <p className="dialog-hint">No matching note</p>}
+          {shown.map(({ n, title }) => (
+            <button key={n.id} type="button" role="option" aria-selected={false} onClick={() => pick(n.id, title)}>{title}{n.text && <small>{n.text}</small>}</button>
+          ))}
+        </div>
       </form>
     </Modal>
   );
@@ -356,6 +400,7 @@ export function Dialogs() {
   const close = () => setDialog(null);
   if (!dialog) return null;
   if (dialog.kind === 'settings') return <Settings close={close} />;
+  if (dialog.kind === 'pickNote') return <PickNote dialog={dialog} close={close} />;
   if (dialog.kind === 'prompt') return <Prompt key={dialog.title} dialog={dialog} close={close} />;
   return (
     <Modal title={dialog.title} onClose={close}>

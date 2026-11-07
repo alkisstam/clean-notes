@@ -1,5 +1,9 @@
 package io.cleannotes.app
 
+import androidx.compose.material.icons.filled.Check
+
+import androidx.compose.material.icons.Icons
+
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.CompositionLocalProvider
@@ -119,10 +123,11 @@ fun Menu(expanded: Boolean, onDismiss: () -> Unit, properties: PopupProperties =
     )
 
 @Composable
-fun MenuItem(text: String, onClick: () -> Unit, icon: Int? = null) = DropdownMenuItem(
+fun MenuItem(text: String, onClick: () -> Unit, icon: Int? = null, checked: Boolean = false) = DropdownMenuItem(
     text = { Text(text, style = MaterialTheme.typography.bodyLarge) },
     onClick = onClick,
     modifier = Modifier.heightIn(min = 52.dp),
     leadingIcon = icon?.let { { Icon(painterResource(it), null, Modifier.size(20.dp)) } },
+    trailingIcon = if (checked) { { Icon(Icons.Default.Check, "Selected", Modifier.size(20.dp)) } } else null,
     contentPadding = PaddingValues(horizontal = 24.dp),
 )

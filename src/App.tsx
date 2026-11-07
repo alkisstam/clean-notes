@@ -13,9 +13,10 @@ import { EditorPane, Boundary } from './components/EditorPane';
 import { ListColumn } from './components/ListColumn';
 import { Sidebar } from './components/Sidebar';
 import { MenuPopup, type MenuItem } from './components/Overlay';
-import { ClipboardPaste, Copy, Redo2, Scissors, TextSelect, Undo2 } from 'lucide-react';
+import { ClipboardPaste, Copy, FileSymlink, Redo2, Scissors, TextSelect, Undo2 } from 'lucide-react';
+import { currentEditor, linkToNote } from './editor/NoteEditor';
 
-type EditFlags = { canCut: boolean; canCopy: boolean; canPaste: boolean; canSelectAll: boolean };
+type EditFlags = { canCut: boolean; canCopy: boolean; canPaste: boolean; canSelectAll: boolean; canUndo: boolean; canRedo: boolean };
 declare global {
   interface Window {
     desktop?: {
@@ -249,8 +250,9 @@ function EditMenu() {
     label, icon, disabled: !enabled, run: () => window.desktop!.edit(role),
   });
   // Chromium's undo can't see the editor's own history, but the editor answers these events. Plain inputs fall back to Chromium.
+  const editor = menu && document.activeElement?.closest('.ProseMirror') ? currentEditor() : null;
   const history = (label: string, icon: React.ReactNode, role: 'undo' | 'redo'): MenuItem => ({
-    label, icon, run: () => {
+    label, icon, disabled: !(editor ? editor.can()[role]() : role === 'undo' ? f?.canUndo : f?.canRedo), run: () => {
       const e = new InputEvent('beforeinput', { inputType: role === 'undo' ? 'historyUndo' : 'historyRedo', bubbles: true, cancelable: true });
       if (document.activeElement?.dispatchEvent(e) !== false) window.desktop!.edit(role);
     },
@@ -263,6 +265,7 @@ function EditMenu() {
         history('Undo', <Undo2 size={14} />, 'undo'),
         history('Redo', <Redo2 size={14} />, 'redo'),
         item('Select All', <TextSelect size={14} />, 'selectAll', f.canSelectAll),
+        ...(editor ? [{ label: 'Link to note', icon: <FileSymlink size={14} />, run: () => linkToNote(editor) }] : []),
       ]
     : [];
   return <MenuPopup items={items} rect={menu?.rect ?? null} keepFocus onClose={() => setMenu(null)} />;

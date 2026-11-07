@@ -19,6 +19,11 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.InputChip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
@@ -77,14 +82,21 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
     var adding by remember { mutableStateOf(false) }
     // Queued behind the page's last save, so an empty check sees what was typed.
     val discard = { app.enqueue { app.discardIfEmpty(id) } }
-    val back = { if (view.pdfOpen) view.closePdf() else view.flush { discard(); onClose() } }
+    val back = { if (view.imageOpen) view.closeViewer() else if (view.pdfOpen) view.closePdf() else view.flush { discard(); onClose() } }
+    val viewing = view.pdfOpen || view.imageOpen
+    val context = LocalContext.current
+    view.onOpenNote = { target ->
+        if (live.any { it.id == target }) view.flush { onOpenNote(target) }
+        else Toast.makeText(context, "That note was deleted", Toast.LENGTH_SHORT).show()
+    }
+    if (view.linking) NotePicker("Link to note", live.filter { it.id != id }, { t -> view.linkNote(t.id, t.title.ifBlank { "Untitled" }) }, { view.linking = false })
     BackHandler { back() }
     // Pending keystrokes are saved and sent when the app goes to the background.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { view.flush { app.sync.runInBackground() } }
     Scaffold(
         topBar = {
-            // The PDF viewer has its own toolbar; back still closes it.
-            if (!view.pdfOpen) TopAppBar(
+            // The PDF viewer has its own toolbar, and an image fills the screen; back still closes them.
+            if (!viewing) TopAppBar(
                 title = {
                     // Daily notes step to the day before or after, creating it if needed, as on the web.
                     val date = note?.date?.takeIf { note?.kind == "daily" }
@@ -118,7 +130,7 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
                         MenuItem("Add PDF", { adding = false; view.pick("pdf") }, R.drawable.ic_file_text)
                     }
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
-                    note?.let { n -> NoteMenu(app, n, live, menu, { menu = false }, view::flush, onClose) }
+                    note?.let { n -> NoteMenu(app, n, live, menu, { menu = false }, view::flush, onClose, onLinkNote = view::startLink) }
                 },
             )
         },
@@ -127,7 +139,7 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
             Column(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize().imePadding()) {
                 // Saving pending keystrokes first keeps the editor from adopting a copy older than what it shows.
                 val tags = { change: (List<String>) -> List<String> -> view.flush { app.scope.launch { app.editTags(id, change) } } }
-                if (!view.pdfOpen) TagRow(
+                if (!viewing) TagRow(
                     n.tagList, allTags,
                     onAdd = { t -> tags { if (t in it) it else it + t } },
                     onRemove = { t -> tags { it - t } },
@@ -144,6 +156,7 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
 fun NoteMenu(
     app: App, note: NoteRow, live: List<NoteRow>, expanded: Boolean, onDismiss: () -> Unit, before: (() -> Unit) -> Unit, onTrashed: () -> Unit,
     centered: Boolean = false,
+    onLinkNote: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val id = note.id
@@ -159,6 +172,7 @@ fun NoteMenu(
         MenuItem(if (note.archivedAt != null) "Unarchive" else "Archive", {
             act { app.updateNote(id) { j, now -> j.put("archivedAt", if (note.archivedAt != null) JSONObject.NULL else now) } }
         })
+        if (onLinkNote != null) MenuItem("Link to note", { onDismiss(); onLinkNote() })
         MenuItem("Move into note…", { onDismiss(); nesting = true })
         if (note.parentId != null) {
             MenuItem("Move to top level", {
@@ -184,35 +198,17 @@ fun NoteMenu(
         val inside = mutableSetOf(id)
         var grew = true
         while (grew) grew = live.filter { it.parentId in inside }.map { it.id }.any { inside.add(it) }
-        val targets = live.filter { it.archivedAt == null && it.id !in inside }.sortedBy { it.title.ifBlank { "Untitled" }.lowercase() }
-        val pick = { target: String ->
+        val targets = live.filter { it.archivedAt == null && it.id !in inside }
+        NotePicker("Move into note", targets, { t ->
             nesting = false
             before {
                 app.scope.launch {
-                    if (!app.nestNote(id, target)) withContext(Dispatchers.Main) {
+                    if (!app.nestNote(id, t.id)) withContext(Dispatchers.Main) {
                         Toast.makeText(context, "A note cannot go inside its own sub-note", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
-        }
-        AlertDialog(
-            onDismissRequest = { nesting = false },
-            title = { Text("Move into note") },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    if (targets.isEmpty()) Text("There is no other note to move it into.")
-                    targets.forEach { t ->
-                        Text(
-                            t.title.ifBlank { "Untitled" },
-                            Modifier.fillMaxWidth().clickable { pick(t.id) }.padding(vertical = 12.dp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { nesting = false }) { Text("Cancel") } },
-        )
+        }, { nesting = false })
     }
     if (moving) {
         val pick = { target: String? -> moving = false; before { app.scope.launch { app.moveNote(id, target) } } }
@@ -232,6 +228,51 @@ fun NoteMenu(
             confirmButton = { TextButton(onClick = { moving = false }) { Text("Cancel") } },
         )
     }
+}
+
+/** A list of notes by title to pick one from, with a search field behind the icon at the top right. */
+@Composable
+fun NotePicker(title: String, notes: List<NoteRow>, onPick: (NoteRow) -> Unit, onDismiss: () -> Unit) {
+    var searching by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    val focus = remember { FocusRequester() }
+    val q = foldQuery(query)
+    val shown = notes.filter { q.isEmpty() || fold(it.title.ifBlank { "Untitled" }).first.contains(q) }
+        .sortedBy { it.title.ifBlank { "Untitled" }.lowercase() }
+    LaunchedEffect(searching) { if (searching) focus.requestFocus() }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, Modifier.weight(1f))
+                IconButton(onClick = { searching = !searching; query = "" }) {
+                    Icon(if (searching) Icons.Default.Close else Icons.Default.Search, if (searching) "Close search" else "Search notes")
+                }
+            }
+        },
+        text = {
+            Column {
+                if (searching) OutlinedTextField(
+                    query, { query = it }, Modifier.fillMaxWidth().focusRequester(focus).padding(bottom = 8.dp),
+                    singleLine = true, placeholder = { Text("Search notes") },
+                )
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    if (shown.isEmpty()) Text(if (notes.isEmpty()) "There is no other note." else "No matching note")
+                    shown.forEach { t ->
+                        Column(Modifier.fillMaxWidth().clickable { onPick(t) }.padding(vertical = 10.dp)) {
+                            Text(t.title.ifBlank { "Untitled" }, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            // Tells untitled notes apart.
+                            if (t.text.isNotBlank()) Text(
+                                t.text, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /** Port of TagInput in EditorPane.tsx: chips that open the tag, and a field that suggests existing tags. */

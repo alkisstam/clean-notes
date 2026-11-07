@@ -393,6 +393,10 @@ kbd { font: 500 10.5px var(--font-mono); color: var(--ink-3); }
 .field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 500; color: var(--ink-2); }
 .field input, .settings-row input { height: 36px; padding: 0 10px; font-size: 14px; font-weight: 400; color: var(--ink); background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius); }
 .field input:focus-visible, .settings-row input:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.pick-note-list { display: flex; flex-direction: column; max-height: 50vh; overflow-y: auto; margin-top: 10px; }
+.pick-note-list button { flex: none; padding: 9px 10px; text-align: left; border-radius: var(--radius); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pick-note-list small { display: block; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--ink-3); }
+.pick-note-list button:hover, .pick-note-list button:focus-visible { background: var(--hover); }
 .settings-section { padding: 13px 0; border-top: 1px solid var(--line); }
 .settings-section:first-of-type { border-top: 0; padding-top: 5px; }
 .settings-section h3 { font-size: 12.5px; font-weight: 600; margin-bottom: 7px; }

@@ -33,12 +33,21 @@ function useObjectUrl(blob?: Blob) {
   return url;
 }
 
+/** Hosts hear when an image opens full screen, as the Android app does to hide its bars, and may close it. */
+export const viewerHooks = { onChange: null as ((open: boolean) => void) | null, close: null as (() => void) | null };
+
 function Lightbox({ src, alt, close }: { src: string; alt: string; close: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const d = ref.current!;
     if (!d.open) d.showModal();
-    return () => d.close();
+    viewerHooks.onChange?.(true);
+    viewerHooks.close = close;
+    return () => {
+      d.close();
+      viewerHooks.close = null;
+      viewerHooks.onChange?.(false);
+    };
   }, []);
   return (
     <dialog

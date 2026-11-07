@@ -8,6 +8,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.net.Uri
+import android.graphics.Rect
+import android.view.ActionMode
+import android.view.Menu
+import android.view.MenuItem
+import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.webkit.ValueCallback
@@ -62,6 +67,25 @@ class NoteViewState {
         internal set
     var canRedo by mutableStateOf(false)
         internal set
+    var imageOpen by mutableStateOf(false)
+        internal set
+    /** The page asked for a note to link the selection to; the screen shows its picker while set. */
+    var linking by mutableStateOf(false)
+    /** Called when a note link in the page is tapped. */
+    var onOpenNote: ((String) -> Unit)? = null
+
+    fun closeViewer() {
+        web?.evaluateJavascript("cnCloseViewer()", null)
+    }
+
+    fun startLink() {
+        web?.evaluateJavascript("cnStartLink()", null)
+    }
+
+    fun linkNote(id: String, title: String) {
+        linking = false
+        web?.evaluateJavascript("cnLinkNote(${JSONObject.quote(id)}, ${JSONObject.quote(title)})", null)
+    }
 
     fun closePdf() {
         web?.evaluateJavascript("cnClosePdf()", null)
@@ -96,6 +120,27 @@ class NoteViewState {
         val then = after ?: return
         after = null
         then()
+    }
+}
+
+private const val LINK_NOTE = 0x4c4e
+
+/** Adds "Link to note" to the overflow of the system's text selection bar. */
+private fun withLinkItem(callback: ActionMode.Callback, state: NoteViewState) = object : ActionMode.Callback2() {
+    private fun add(menu: Menu) {
+        if (menu.findItem(LINK_NOTE) == null) menu.add(Menu.NONE, LINK_NOTE, 1000, "Link to note")
+    }
+    override fun onCreateActionMode(mode: ActionMode, menu: Menu) = callback.onCreateActionMode(mode, menu).also { add(menu) }
+    override fun onPrepareActionMode(mode: ActionMode, menu: Menu) = callback.onPrepareActionMode(mode, menu).also { add(menu) }
+    override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+        if (item.itemId != LINK_NOTE) return callback.onActionItemClicked(mode, item)
+        state.startLink()
+        mode.finish()
+        return true
+    }
+    override fun onDestroyActionMode(mode: ActionMode) = callback.onDestroyActionMode(mode)
+    override fun onGetContentRect(mode: ActionMode, view: View, outRect: Rect) {
+        if (callback is ActionMode.Callback2) callback.onGetContentRect(mode, view, outRect) else super.onGetContentRect(mode, view, outRect)
     }
 }
 
@@ -155,7 +200,10 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
                 .addPathHandler("/blobs/", WebViewAssetLoader.InternalStoragePathHandler(ctx, File(ctx.filesDir, "blobs")))
                 .build()
             WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
-            WebView(ctx).apply {
+            object : WebView(ctx) {
+                override fun startActionMode(callback: ActionMode.Callback, type: Int): ActionMode? =
+                    super.startActionMode(withLinkItem(callback, state), type)
+            }.apply {
                 // AndroidView's default WRAP_CONTENT makes vh units 0, which collapses the slash menu and the page's bottom space.
                 layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 settings.javaScriptEnabled = true
@@ -186,6 +234,9 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
                         "attachment" -> app.enqueue { app.saveAttachment(msg.getString("table"), msg.getJSONObject("meta")) }
                         "save" -> app.enqueue { app.saveNote(msg.getJSONObject("note")) }
                         "pdf" -> state.pdfOpen = msg.getBoolean("open")
+                        "viewer" -> state.imageOpen = msg.getBoolean("open")
+                        "linkNote" -> state.linking = true
+                        "openNote" -> state.onOpenNote?.invoke(msg.getString("id"))
                         "history" -> {
                             state.canUndo = msg.getBoolean("undo")
                             state.canRedo = msg.getBoolean("redo")

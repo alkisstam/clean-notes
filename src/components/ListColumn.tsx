@@ -1,11 +1,12 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  Archive, ArchiveRestore, ArrowDownUp, ChevronLeft, Copy, FilePlus, PinOff, ChevronRight, FileText, Image as ImageIcon, Menu as MenuIcon, Pin, Plus, RotateCcw, SearchX, Trash2, ChevronDown,
+  Archive, ArchiveRestore, ArrowDownUp, Copy, FilePlus, PinOff, FileText, Image as ImageIcon, Menu as MenuIcon, Pin, Plus, RotateCcw, SearchX, Trash2, ChevronDown,
 } from 'lucide-react';
-import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { memo, useMemo, useState, type ReactNode } from 'react';
 import { createNote, createSubNote, deleteForever, duplicateNote, nestNote, patchNote, trashNote, flushEditor, openDaily, quickAddTask, restoreNote, setTaskAttrs } from '../lib/actions';
 import { db } from '../lib/db';
-import { dateKey, dueLabel, firstDayOfWeek, longDate, monthGrid, parseKey, relativeTime, shortDate } from '../lib/dates';
+import { dateKey, dueLabel, relativeTime, shortDate } from '../lib/dates';
+import { Calendar } from './Calendar';
 import { imageIdsIn, pdfIdsIn } from '../lib/doc';
 import { formatBytes } from '../lib/pdf';
 import { foldQuery, includesFolded, snippet, type Snippet } from '../lib/search';
@@ -130,57 +131,6 @@ function Empty({ icon, title, body, action }: { icon?: ReactNode; title: string;
       <strong>{title}</strong>
       {body && <p>{body}</p>}
       {action}
-    </div>
-  );
-}
-
-function Calendar({ selected, withNotes }: { selected: string; withNotes: Set<string> }) {
-  const today = dateKey();
-  const [cursor, setCursor] = useState(() => {
-    const d = parseKey(selected);
-    return { y: d.getFullYear(), m: d.getMonth() };
-  });
-  useEffect(() => {
-    const d = parseKey(selected);
-    setCursor({ y: d.getFullYear(), m: d.getMonth() });
-  }, [selected]);
-  const weekStart = useMemo(firstDayOfWeek, []);
-  const grid = useMemo(() => monthGrid(cursor.y, cursor.m, weekStart), [cursor, weekStart]);
-  const heads = useMemo(
-    () => grid.slice(0, 7).map((k) => parseKey(k).toLocaleDateString(undefined, { weekday: 'narrow' })),
-    [grid],
-  );
-  const shift = (by: number) => {
-    const d = new Date(cursor.y, cursor.m + by, 1);
-    setCursor({ y: d.getFullYear(), m: d.getMonth() });
-  };
-  const monthName = new Date(cursor.y, cursor.m, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-  return (
-    <div className="calendar">
-      <div className="calendar-head">
-        <strong>{monthName}</strong>
-        <button type="button" className="icon-btn small" aria-label="Previous month" onClick={() => shift(-1)}><ChevronLeft size={14} /></button>
-        <button type="button" className="link-btn" onClick={() => void openDaily(today)}>Today</button>
-        <button type="button" className="icon-btn small" aria-label="Next month" onClick={() => shift(1)}><ChevronRight size={14} /></button>
-      </div>
-      <div className="calendar-grid" role="grid" aria-label={monthName}>
-        {heads.map((h, i) => <span key={i} className="calendar-dow" aria-hidden>{h}</span>)}
-        {grid.map((key) => (
-          <button
-            key={key}
-            type="button"
-            data-outside={parseKey(key).getMonth() !== cursor.m}
-            data-today={key === today}
-            data-selected={key === selected}
-            data-has={withNotes.has(key)}
-            aria-label={`${longDate(key)}${withNotes.has(key) ? ', has a note' : ''}`}
-            aria-pressed={key === selected}
-            onClick={() => void openDaily(key)}
-          >
-            {parseKey(key).getDate()}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }
@@ -470,7 +420,7 @@ export function ListColumn({ notes, notebooks }: { notes: Note[]; notebooks: Not
   } else {
     body = (
       <>
-        {view.type === 'daily' && <Calendar selected={dailyDate} withNotes={dates} />}
+        {view.type === 'daily' && <Calendar selected={dailyDate} marked={dates} onPick={(key) => void openDaily(key)} />}
         {view.type === 'trash' && listed.length > 0 && (
           <div className="trash-bar">
             <span>Notes stay here until you delete them.</span>

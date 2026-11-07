@@ -11,7 +11,7 @@ import { BubbleMenu } from '@tiptap/react/menus';
 import { StarterKit } from '@tiptap/starter-kit';
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
 import {
-  BetweenHorizontalEnd, BetweenVerticalEnd, Bold, CalendarPlus, Check, ChevronsLeftRight, ClipboardPaste, Code, Copy, ExternalLink, FileText,
+  BetweenHorizontalEnd, BetweenVerticalEnd, Bold, CalendarPlus, Check, ChevronsLeftRight, ClipboardPaste, Code, Copy, ExternalLink, FileSymlink, FileText,
   Grid2x2, Heading2, Highlighter, ImagePlus, Italic, Link2, List, ListOrdered, ListTodo, Minus, Quote, Scissors, SquareCode, Strikethrough,
   Table, Table2, Trash2, Underline, X,
 } from 'lucide-react';
@@ -26,7 +26,10 @@ import type { Note } from '../lib/types';
 import { ImageBlock } from './ImageBlock';
 import { PdfAttachment } from './PdfAttachment';
 import { SlashCommands, slashItems, type SlashHandlers, type SlashItem } from './slash';
-import { TaskItemDue } from './TaskItemDue';
+import { dueHooks, TaskItemDue } from './TaskItemDue';
+import { Calendar } from '../components/Calendar';
+import { db } from '../lib/db';
+import { dateKey } from '../lib/dates';
 
 const SAVE_DELAY = 350;
 const CELL_MIN_WIDTH = 80;
@@ -76,6 +79,67 @@ export const insertIntoEditor = (files: File[]) => current && insertFiles(curren
 export const currentEditor = () => current;
 /** Hosts listen here for every change to the open editor, as the Android app does for its undo and redo buttons. */
 export const editorHooks = { onChange: null as ((editor: Editor) => void) | null };
+
+export const NOTE_HREF = '#note/';
+
+/** Hosts override how a note is picked and opened, as the Android app does with its own screens. */
+export const noteLinks = {
+  pick: (apply: (id: string, title: string) => void) => store.getState().setDialog({ kind: 'pickNote', onPick: apply }),
+  open: async (id: string) => {
+    const note = await db.notes.get(id);
+    if (note && !note.trashedAt) store.getState().openNote(id);
+    else store.getState().showToast({ message: 'That note was deleted' });
+  },
+};
+
+/** Links the selection to a picked note, or inserts the note's title as a link when nothing is selected. */
+export function linkToNote(editor: Editor) {
+  const { from, to } = editor.state.selection;
+  noteLinks.pick((id, title) => {
+    const href = NOTE_HREF + id;
+    const end = editor.state.doc.content.size;
+    const chain = editor.chain().focus();
+    if (from === to) chain.insertContentAt(Math.min(from, end), { type: 'text', text: title || 'Untitled', marks: [{ type: 'link', attrs: { href } }] }).run();
+    else chain.setTextSelection({ from: Math.min(from, end), to: Math.min(to, end) }).setLink({ href }).run();
+  });
+}
+
+const noteIdOf = (href: string | undefined) => (href?.startsWith(NOTE_HREF) ? href.slice(NOTE_HREF.length) : null);
+
+type DueState = { anchor: DOMRect; due: string | null; set: (due: string | null) => void };
+
+function DuePopover({ state, onClose }: { state: DueState; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const { offsetWidth: w, offsetHeight: h } = ref.current!;
+    const pad = 8;
+    const { anchor } = state;
+    const top = anchor.top - h - 6 >= pad ? anchor.top - h - 6 : Math.min(anchor.bottom + 6, innerHeight - h - pad);
+    setPos({ left: Math.max(pad, Math.min(anchor.right - w, innerWidth - w - pad)), top });
+  }, [state]);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const down = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && onClose();
+    document.addEventListener('keydown', key);
+    document.addEventListener('pointerdown', down, true);
+    return () => {
+      document.removeEventListener('keydown', key);
+      document.removeEventListener('pointerdown', down, true);
+    };
+  }, [onClose]);
+  const pick = (due: string | null) => {
+    state.set(due);
+    onClose();
+  };
+  return createPortal(
+    <div ref={ref} className="due-popover" role="dialog" aria-label="Due date" style={pos ?? { visibility: 'hidden' }}>
+      <Calendar selected={state.due ?? dateKey()} onPick={pick} />
+      {state.due && <button type="button" className="link-btn" onClick={() => pick(null)}>Clear date</button>}
+    </div>,
+    document.body,
+  );
+}
 
 /** Hosts override placement, as the Android app does to keep clear of the system's own selection bar above. */
 export const formatMenu = { placement: 'top' as 'top' | 'bottom' };
@@ -600,12 +664,20 @@ function FormatMenu({ editor }: { editor: Editor }) {
             <button type="button" aria-label="Link" title="Link" data-active={editor.isActive('link')} onClick={startLink}>
               <Link2 size={15} />
             </button>
+            <button type="button" aria-label="Link to note" title="Link to note" onClick={() => linkToNote(editor)}>
+              <FileSymlink size={15} />
+            </button>
             {editor.isActive('link') && (
               <button
                 type="button"
                 aria-label="Open link"
                 title="Open link"
-                onClick={() => window.open(editor.getAttributes('link').href, '_blank', 'noopener')}
+                onClick={() => {
+                  const href: string = editor.getAttributes('link').href;
+                  const id = noteIdOf(href);
+                  if (id) void noteLinks.open(id);
+                  else window.open(href, '_blank', 'noopener');
+                }}
               >
                 <ExternalLink size={15} />
               </button>
@@ -639,6 +711,14 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
 
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [picking, setPicking] = useState(false);
+  const [due, setDue] = useState<DueState | null>(null);
+  useEffect(() => {
+    if (readOnly) return;
+    dueHooks.open = (anchor, value, set) => setDue({ anchor, due: value, set });
+    return () => {
+      dueHooks.open = null;
+    };
+  }, [readOnly]);
   const [slashIndex, setSlashIndex] = useState(0);
   const slashLive = useRef({ state: slash, index: slashIndex });
   slashLive.current = { state: slash, index: slashIndex };
@@ -739,6 +819,11 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
       attributes: { class: 'prose', spellcheck: 'true', 'aria-label': 'Note content' },
       handleClick: (_view, _pos, event) => {
         const a = (event.target as HTMLElement).closest('a');
+        const id = noteIdOf(a?.getAttribute('href') ?? undefined);
+        if (id) {
+          void noteLinks.open(id);
+          return true;
+        }
         if (a && (event.ctrlKey || event.metaKey)) {
           window.open(a.href, '_blank', 'noopener');
           return true;
@@ -866,6 +951,7 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
         />
       )}
       {slash && <SlashMenu state={slash} index={slashIndex} onHover={setSlashIndex} />}
+      {due && <DuePopover state={due} onClose={() => setDue(null)} />}
     </>
   );
 }

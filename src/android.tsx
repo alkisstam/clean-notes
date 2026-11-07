@@ -13,7 +13,9 @@ import { flushEditor, patchNote } from './lib/actions';
 import { db, uid, writeListeners } from './lib/db';
 import { imageIdsIn, pdfIdsIn } from './lib/doc';
 import { blobSaver } from './lib/pdf';
-import { currentEditor, editorHooks, formatMenu, insertIntoEditor, NoteEditor } from './editor/NoteEditor';
+import { currentEditor, editorHooks, formatMenu, insertIntoEditor, linkToNote, NoteEditor, noteLinks } from './editor/NoteEditor';
+import { viewerHooks } from './editor/ImageBlock';
+import { dueHooks } from './editor/TaskItemDue';
 import { Boundary } from './components/EditorPane';
 import { store, useStore, type PdfTarget } from './lib/store';
 import type { Note, NoteImage, PdfFile } from './lib/types';
@@ -179,10 +181,34 @@ const w = window as unknown as {
   cnAck: () => void;
   cnUndo: () => void;
   cnRedo: () => void;
+  cnStartLink: () => void;
+  cnLinkNote: (id: string, title: string) => void;
+  cnCloseViewer: () => void;
   cnInsertPicked: (picked: { url: string; name: string; type: string }[]) => Promise<void>;
 };
 
 formatMenu.placement = 'bottom';
+// The phone's own date dialog works here, and suits touch better.
+dueHooks.native = true;
+
+// The app picks and opens notes, since this page only holds the open one.
+let linkPick: ((id: string, title: string) => void) | null = null;
+noteLinks.pick = (apply) => {
+  linkPick = apply;
+  CleanNotes.postMessage(JSON.stringify({ type: 'linkNote' }));
+};
+noteLinks.open = async (id) => CleanNotes.postMessage(JSON.stringify({ type: 'openNote', id }));
+w.cnStartLink = () => {
+  const e = currentEditor();
+  if (e) linkToNote(e);
+};
+w.cnLinkNote = (id, title) => {
+  linkPick?.(id, title);
+  linkPick = null;
+};
+
+viewerHooks.onChange = (open) => CleanNotes.postMessage(JSON.stringify({ type: 'viewer', open }));
+w.cnCloseViewer = () => viewerHooks.close?.();
 let history = '';
 editorHooks.onChange = (e) => {
   const next = JSON.stringify({ type: 'history', undo: e.can().undo(), redo: e.can().redo() });

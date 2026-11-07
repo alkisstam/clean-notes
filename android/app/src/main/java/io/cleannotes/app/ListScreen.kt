@@ -108,6 +108,10 @@ fun NoteList(
     var collapsed by rememberSaveable { mutableStateOf("") }
     val ui = remember { app.getSharedPreferences("ui", Context.MODE_PRIVATE) }
     var tagsOpen by remember { mutableStateOf(ui.getBoolean("tagsOpen", true)) }
+    var sort by remember { mutableStateOf(ui.getString("sort", "updated")!!) }
+    var sorting by remember { mutableStateOf(false) }
+    // Not a column, so read from each note's JSON once per change to the notes.
+    val created = remember(all) { all.associate { it.id to JSONObject(it.raw).optLong("createdAt") } }
     var shutNotes by remember { mutableStateOf(ui.getStringSet("collapsedNotes", emptySet())!!.toSet()) }
     val tag = view.removePrefix("tag:").takeIf { view.startsWith("tag:") }
     var searching by rememberSaveable { mutableStateOf(false) }
@@ -120,7 +124,17 @@ fun NoteList(
     val tree = remember(all) { buildTagTree(all.filter { it.archivedAt == null }.map { it.tagList }) }
     val current = notebooks.find { "nb:${it.id}" == view }
     // A notebook deleted on another device shows all notes, and new notes go outside any notebook.
-    val notes = listFor(if (view.startsWith("nb:") && current == null) "all" else view, all)
+    val listed = listFor(if (view.startsWith("nb:") && current == null) "all" else view, all)
+    // Pinned first, then the chosen order, as on the web. Daily notes keep their date order.
+    val notes = if (view == "daily") listed else listed.sortedWith(
+        compareByDescending<NoteRow> { it.pinned }.then(
+            when (sort) {
+                "created" -> compareByDescending { created[it.id] ?: 0L }
+                "title" -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.title.ifBlank { "Untitled" } }
+                else -> compareByDescending { it.updatedAt }
+            },
+        ),
+    )
 
     BackHandler(drawer.isOpen) { scope.launch { drawer.close() } }
     BackHandler(searching && !drawer.isOpen) { closeSearch() }
@@ -250,6 +264,18 @@ fun NoteList(
                             return@TopAppBar
                         }
                         IconButton(onClick = { searching = true }) { Icon(Icons.Default.Search, "Search") }
+                        if (view != "daily" && view != "tasks" && view != "pdfs") Box {
+                            IconButton(onClick = { sorting = true }) { Icon(painterResource(R.drawable.ic_arrow_down_up), "Sort by", Modifier.size(22.dp)) }
+                            Menu(sorting, { sorting = false }) {
+                                listOf("updated" to "Last edited", "created" to "Date created", "title" to "Title").forEach { (key, label) ->
+                                    MenuItem(label, {
+                                        sorting = false
+                                        sort = key
+                                        ui.edit { putString("sort", key) }
+                                    }, checked = sort == key)
+                                }
+                            }
+                        }
                         IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
                         Menu(menu, { menu = false }) {
                             if (tag != null) {

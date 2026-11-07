@@ -36,7 +36,8 @@ export interface Toast {
 export type DialogState =
   | { kind: 'confirm'; title: string; body?: string; confirm: string; danger?: boolean; onConfirm: () => void }
   | { kind: 'prompt'; title: string; label: string; value: string; confirm: string; hint?: string; allowEmpty?: boolean; onConfirm: (value: string) => void }
-  | { kind: 'settings' };
+  | { kind: 'settings' }
+  | { kind: 'pickNote'; onPick: (id: string, title: string) => void };
 
 interface State {
   view: View;

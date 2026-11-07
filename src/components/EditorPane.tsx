@@ -1,10 +1,10 @@
 import {
-  Archive, ArchiveRestore, ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Copy, CornerLeftUp, PanelTop, Feather, FilePlus, Maximize2, Minimize2, Pin, PinOff, RotateCcw, Trash2, X,
+  Archive, ArchiveRestore, ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Copy, CornerLeftUp, PanelTop, Feather, FilePlus, FileSymlink, Redo2, Undo2, Maximize2, Minimize2, Pin, PinOff, RotateCcw, Trash2, X,
 } from 'lucide-react';
 import { lazy, Component, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createNote, createSubNote, deleteForever, duplicateNote, editTags, journalEdit, openDaily, patchNote, restoreNote, trashNote } from '../lib/actions';
 import { addDays, dateKey, relativeTime } from '../lib/dates';
-import { NoteEditor } from '../editor/NoteEditor';
+import { currentEditor, editorHooks, linkToNote, NoteEditor } from '../editor/NoteEditor';
 import { store, useStore } from '../lib/store';
 import { normalizeTag } from '../lib/tags';
 import type { Note, Notebook } from '../lib/types';
@@ -119,6 +119,17 @@ function Document({ note, notebooks, allTags }: { note: Note; notebooks: Noteboo
   const isDaily = note.kind === 'daily';
   const inTrash = Boolean(note.trashedAt);
 
+  // Re-render on every editor change, so Undo and Redo show whether there is anything to do.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    editorHooks.onChange = () => tick((n) => n + 1);
+    tick((n) => n + 1);
+    return () => {
+      editorHooks.onChange = null;
+    };
+  }, []);
+  const editor = currentEditor();
+
   useEffect(() => {
     if (!editingTitle.current) setTitle(note.title);
   }, [note.title]);
@@ -227,6 +238,12 @@ function Document({ note, notebooks, allTags }: { note: Note; notebooks: Noteboo
           </>
         ) : (
           <>
+            <button type="button" className="icon-btn" aria-label="Undo" title="Undo (Ctrl Z)" disabled={!editor?.can().undo()} onClick={() => editor?.chain().focus().undo().run()}>
+              <Undo2 size={15} />
+            </button>
+            <button type="button" className="icon-btn" aria-label="Redo" title="Redo (Ctrl Shift Z)" disabled={!editor?.can().redo()} onClick={() => editor?.chain().focus().redo().run()}>
+              <Redo2 size={15} />
+            </button>
             {!isDaily && (
               <button type="button" className="icon-btn" aria-label="New sub-note" title="New sub-note" onClick={() => void createSubNote(note.id)}>
                 <FilePlus size={15} />
@@ -259,6 +276,7 @@ function Document({ note, notebooks, allTags }: { note: Note; notebooks: Noteboo
               items={[
                 ...(note.parentId ? [{ label: 'Move to top level', icon: <CornerLeftUp size={14} />, run: () => void patchNote(note.id, { parentId: null }) }] : []),
                 ...(!isDaily ? [{ label: 'Duplicate', icon: <Copy size={14} />, run: () => void duplicateNote(note.id) }] : []),
+                ...(editor ? [{ label: 'Link to note', icon: <FileSymlink size={14} />, run: () => linkToNote(editor) }] : []),
                 { label: showToolbar ? 'Hide toolbar' : 'Show toolbar', icon: <PanelTop size={14} />, run: () => store.getState().toggleToolbar() },
                 ...(!isDaily
                   ? [{
