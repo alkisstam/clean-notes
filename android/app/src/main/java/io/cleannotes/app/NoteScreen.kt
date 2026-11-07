@@ -11,11 +11,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.filled.Close
@@ -24,11 +22,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.InputChip
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.window.PopupProperties
 import org.json.JSONObject
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
@@ -90,6 +86,10 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
         else Toast.makeText(context, "That note was deleted", Toast.LENGTH_SHORT).show()
     }
     view.dating?.let { due -> DueDialog(due.ifEmpty { null }, view::setDue) { view.dating = null } }
+    // Saving pending keystrokes first keeps the editor from adopting a copy older than what it shows.
+    if (view.tagging) note?.let { n ->
+        TagPicker(n.tagList, allTags, { sel -> view.tagging = false; view.flush { app.scope.launch { app.editTags(id) { sel } } } }) { view.tagging = false }
+    }
     if (view.linking) NotePicker("Link to note", live.filter { it.id != id }, { t -> view.linkNote(t.id, t.title.ifBlank { "Untitled" }) }, { view.linking = false }, if (view.linked) view::unlinkNote else null)
     BackHandler { back() }
     // Pending keystrokes are saved and sent when the app goes to the background.
@@ -138,14 +138,6 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
     ) { pad ->
         note?.let { n ->
             Column(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize().imePadding()) {
-                // Saving pending keystrokes first keeps the editor from adopting a copy older than what it shows.
-                val tags = { change: (List<String>) -> List<String> -> view.flush { app.scope.launch { app.editTags(id, change) } } }
-                if (!viewing) TagRow(
-                    n.tagList, allTags,
-                    onAdd = { t -> tags { if (t in it) it else it + t } },
-                    onRemove = { t -> tags { it - t } },
-                    onOpen = { t -> view.flush { discard(); onOpenTag(t) } },
-                )
                 NoteView(app, n, view, pdf, Modifier.weight(1f).fillMaxWidth())
             }
         }
@@ -277,59 +269,54 @@ fun NotePicker(title: String, notes: List<NoteRow>, onPick: (NoteRow) -> Unit, o
     )
 }
 
-/** Port of TagInput in EditorPane.tsx: chips that open the tag, and a field that suggests existing tags. */
+/** The note's tags as pills to toggle, with a field below to create one; nothing changes until Save. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TagRow(tags: List<String>, allTags: List<String>, onAdd: (String) -> Unit, onRemove: (String) -> Unit, onOpen: (String) -> Unit) {
+private fun TagPicker(tags: List<String>, allTags: List<String>, onSave: (List<String>) -> Unit, onDismiss: () -> Unit) {
+    var selected by remember { mutableStateOf(tags.toSet()) }
+    var created by remember { mutableStateOf(emptySet<String>()) }
     var value by remember { mutableStateOf("") }
-    var focused by remember { mutableStateOf(false) }
     val norm = normalizeTag(value)
-    val options = if (value.isBlank()) emptyList() else allTags.filter { norm in it && it !in tags }.take(7)
-    val add = { raw: String ->
-        normalizeTag(raw).takeIf { it.isNotEmpty() }?.let(onAdd)
+    val shown = (allTags + tags + created).distinct().sorted()
+    val add = {
+        if (norm.isNotEmpty()) {
+            created += norm
+            selected += norm
+        }
         value = ""
     }
-    FlowRow(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.Center,
-    ) {
-        tags.forEach { t ->
-            InputChip(
-                selected = false,
-                onClick = { onOpen(t) },
-                label = { Text(t) },
-                trailingIcon = { Icon(Icons.Default.Close, "Remove tag $t", Modifier.size(16.dp).clickable { onRemove(t) }) },
-            )
-        }
-        Box(Modifier.align(Alignment.CenterVertically)) {
-            BasicTextField(
-                value,
-                { v -> if (v.endsWith(",")) add(v.dropLast(1)) else value = v },
-                Modifier.widthIn(min = 140.dp).padding(vertical = 12.dp).onFocusChanged {
-                    focused = it.isFocused
-                    if (!it.isFocused && value.isNotBlank()) add(value)
-                },
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { add(value) }),
-                decorationBox = { inner ->
-                    if (value.isEmpty()) {
-                        Text(
-                            if (tags.isEmpty()) "Add a tag, like work/ideas" else "Add tag",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Tags") },
+        text = {
+            Column {
+                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+                    if (shown.isEmpty()) Text("No tags yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        shown.forEach { t ->
+                            val on = t in selected
+                            FilterChip(
+                                selected = on,
+                                onClick = { selected = if (on) selected - t else selected + t },
+                                label = { Text(t) },
+                                shape = CircleShape,
+                            )
+                        }
                     }
-                    inner()
-                },
-            )
-            // Not focusable, so the keyboard stays up while suggestions show.
-            Menu(focused && options.isNotEmpty(), {}, PopupProperties(focusable = false)) {
-                options.forEach { o -> MenuItem(o, { add(o) }) }
+                }
+                OutlinedTextField(
+                    value, { value = it }, Modifier.fillMaxWidth().padding(top = 12.dp),
+                    singleLine = true,
+                    placeholder = { Text("Create new tag") },
+                    trailingIcon = if (norm.isNotEmpty()) {
+                        { IconButton(onClick = add) { Icon(painterResource(R.drawable.ic_plus), "Create tag", Modifier.size(20.dp)) } }
+                    } else null,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { add() }),
+                )
             }
-        }
-    }
+        },
+        confirmButton = { TextButton(onClick = { onSave(selected.toList()) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

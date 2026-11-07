@@ -167,6 +167,21 @@ function Page({ id }: { id: string }) {
             }
           }}
         />
+        <button
+          type="button"
+          className="doc-tags"
+          onClick={() => {
+            (document.activeElement as HTMLElement | null)?.blur();
+            CleanNotes.postMessage(JSON.stringify({ type: 'tags' }));
+          }}
+        >
+          {note.tags.map((t) => (
+            <span key={t} className="tag-chip">
+              {t}
+            </span>
+          ))}
+          <span className="doc-tags-add">Add tags</span>
+        </button>
         <NoteEditor note={note} />
       </article>
       <PdfLayer />

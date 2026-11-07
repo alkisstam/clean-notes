@@ -74,6 +74,8 @@ class NoteViewState {
     /** The selection already links to a note, so the picker offers to remove it. */
     var linked by mutableStateOf(false)
         internal set
+    /** The page's "Add tags" was tapped; the screen shows its tag picker while set. */
+    var tagging by mutableStateOf(false)
 
     fun unlinkNote() {
         linking = false
@@ -255,6 +257,7 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
                             state.linked = msg.optBoolean("linked")
                             state.linking = true
                         }
+                        "tags" -> state.tagging = true
                         "due" -> state.dating = if (msg.isNull("due")) "" else msg.getString("due")
                         "openNote" -> state.onOpenNote?.invoke(msg.getString("id"))
                         "history" -> {
