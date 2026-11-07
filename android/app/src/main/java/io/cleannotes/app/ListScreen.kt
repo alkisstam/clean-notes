@@ -37,6 +37,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -110,6 +117,7 @@ fun NoteList(
     var tagsOpen by remember { mutableStateOf(ui.getBoolean("tagsOpen", true)) }
     var sort by remember { mutableStateOf(ui.getString("sort", "updated")!!) }
     var sorting by remember { mutableStateOf(false) }
+    var grid by remember { mutableStateOf(ui.getBoolean("grid", false)) }
     // Not a column, so read from each note's JSON once per change to the notes.
     val created = remember(all) { all.associate { it.id to JSONObject(it.raw).optLong("createdAt") } }
     var shutNotes by remember { mutableStateOf(ui.getStringSet("collapsedNotes", emptySet())!!.toSet()) }
@@ -264,6 +272,12 @@ fun NoteList(
                             return@TopAppBar
                         }
                         IconButton(onClick = { searching = true }) { Icon(Icons.Default.Search, "Search") }
+                        if (view != "daily" && view != "tasks" && view != "pdfs") IconButton(onClick = {
+                            grid = !grid
+                            ui.edit { putBoolean("grid", grid) }
+                        }) {
+                            Icon(painterResource(if (grid) R.drawable.ic_list else R.drawable.ic_layout_grid), if (grid) "List view" else "Grid view", Modifier.size(22.dp))
+                        }
                         if (view != "daily" && view != "tasks" && view != "pdfs") Box {
                             IconButton(onClick = { sorting = true }) { Icon(painterResource(R.drawable.ic_arrow_down_up), "Sort by", Modifier.size(22.dp)) }
                             Menu(sorting, { sorting = false }) {
@@ -305,10 +319,62 @@ fun NoteList(
                 else if (view == "daily") DailyBody(app, all, onOpen)
                 else if (view == "tasks") TasksBody(app, tasks, onOpen)
                 else if (view == "pdfs") PdfsBody(app, all, onOpenPdf)
-                else LazyColumn(Modifier.fillMaxSize()) {
+                else {
                     // Sub-notes nest where the web nests them: All, notebooks and tags.
                     val rows = if (view == "all" || view.startsWith("nb:") || tag != null) nestNotes(notes, shutNotes, { it.id }, { it.parentId })
                     else notes.map { Nested(it, 0, false) }
+                    val toggle = { id: String ->
+                        shutNotes = if (id in shutNotes) shutNotes - id else shutNotes + id
+                        ui.edit { putStringSet("collapsedNotes", shutNotes) }
+                    }
+                    if (grid) {
+                        // Null is an empty cell, so a sibling group ending mid-row doesn't share it with the next group.
+                        val cells = buildList<Nested<NoteRow>?> {
+                            var half = false
+                            var group: String? = null
+                            for (r in rows) {
+                                val g = if (r.depth == 0) "" else r.note.parentId
+                                if (r.hasKids) half = false
+                                else {
+                                    if (half && g != group) { add(null); half = false }
+                                    half = !half
+                                }
+                                add(r)
+                                group = g
+                            }
+                        }
+                        LazyVerticalGrid(
+                            GridCells.Fixed(2), Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            items(cells.size, key = { cells[it]?.note?.id ?: "gap-$it" }, span = { GridItemSpan(if (cells[it]?.hasKids == true) maxLineSpan else 1) }) { i ->
+                                val (note, depth, hasKids) = cells[i] ?: return@items
+                                var pressed by remember { mutableStateOf(false) }
+                                val sub = depth > 0
+                                Box(Modifier.padding(start = (depth * 12).dp)) {
+                                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+                                        Column(Modifier.fillMaxWidth().combinedClickable(onClick = { onOpen(note.id) }, onLongClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            pressed = true
+                                        }).padding(if (sub) 12.dp else 14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            NoteTitle(note, hasKids, note.id !in shutNotes, { toggle(note.id) }, if (sub) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium)
+                                            Text(
+                                                note.text.take(400).ifBlank { "No content yet" },
+                                                style = if (sub) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                minLines = if (sub) 4 else 6,
+                                                maxLines = if (sub) 4 else 6,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                    }
+                                    NoteMenu(app, note, all, pressed, { pressed = false }, { it() }, {}, centered = true)
+                                }
+                            }
+                        }
+                    } else LazyColumn(Modifier.fillMaxSize()) {
                     items(rows, key = { it.note.id }) { (note, depth, hasKids) ->
                         var pressed by remember { mutableStateOf(false) }
                         Box {
@@ -316,21 +382,7 @@ fun NoteList(
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             pressed = true
                         }).padding(start = (16 + depth * 20).dp, top = 12.dp, end = 16.dp, bottom = 12.dp)) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                if (hasKids) {
-                                    val open = note.id !in shutNotes
-                                    Icon(
-                                        if (open) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                        if (open) "Hide sub-notes" else "Show sub-notes",
-                                        Modifier.size(22.dp).clickable {
-                                            shutNotes = if (open) shutNotes + note.id else shutNotes - note.id
-                                            ui.edit { putStringSet("collapsedNotes", shutNotes) }
-                                        },
-                                    )
-                                }
-                                Text(note.title.ifBlank { "Untitled" }, Modifier.weight(1f, fill = false), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (note.pinned) Icon(painterResource(R.drawable.ic_pin), "Pinned", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
-                            }
+                            NoteTitle(note, hasKids, note.id !in shutNotes, { toggle(note.id) }, MaterialTheme.typography.bodyLarge)
                             Text(
                                 note.text.replace('\n', ' ').take(170).ifBlank { "No content yet" },
                                 style = MaterialTheme.typography.bodyMedium,
@@ -342,6 +394,7 @@ fun NoteList(
                         NoteMenu(app, note, all, pressed, { pressed = false }, { it() }, {}, centered = true)
                         }
                         HorizontalDivider()
+                    }
                     }
                 }
             }
@@ -396,6 +449,18 @@ fun NoteList(
         )
     }
 }
+
+@Composable
+private fun NoteTitle(note: NoteRow, hasKids: Boolean, open: Boolean, onToggle: () -> Unit, style: TextStyle) =
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (hasKids) Icon(
+            if (open) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            if (open) "Hide sub-notes" else "Show sub-notes",
+            Modifier.size(22.dp).clickable(onClick = onToggle),
+        )
+        Text(note.title.ifBlank { "Untitled" }, Modifier.weight(1f, fill = false), style = style, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (note.pinned) Icon(painterResource(R.drawable.ic_pin), "Pinned", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+    }
 
 @Composable
 fun NameDialog(title: String, initial: String, confirm: String, onDone: (String?) -> Unit) {
