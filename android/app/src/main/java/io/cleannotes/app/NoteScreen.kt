@@ -69,7 +69,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 /** `pdf` is the web's PdfTarget as JSON text: {fileId, page?, query?}. */
-fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> Unit, onOpenTag: (String) -> Unit, onOpenNote: (String) -> Unit) {
+fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> Unit, onOpenTag: (String) -> Unit, onOpenNote: (String) -> Unit, onFollowLink: (String) -> Unit) {
     val live by app.db.dao().liveNotes().collectAsStateWithLifecycle(emptyList())
     val allTags = remember(live) { allTagPaths(live.map { it.tagList }) }
     val note by app.db.dao().note(id).collectAsStateWithLifecycle(null)
@@ -82,7 +82,7 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
     val viewing = view.pdfOpen || view.imageOpen
     val context = LocalContext.current
     view.onOpenNote = { target ->
-        if (live.any { it.id == target }) view.flush { onOpenNote(target) }
+        if (live.any { it.id == target }) view.flush { onFollowLink(target) }
         else Toast.makeText(context, "That note was deleted", Toast.LENGTH_SHORT).show()
     }
     view.dating?.let { due -> DueDialog(due.ifEmpty { null }, view::setDue) { view.dating = null } }

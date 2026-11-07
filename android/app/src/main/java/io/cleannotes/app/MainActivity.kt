@@ -52,6 +52,8 @@ fun NotesApp(app: App) {
     val snackbar = remember { SnackbarHostState() }
     var syncing by remember { mutableStateOf(false) }
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
+    // Notes left by following a link, so closing a note returns to the one that linked to it.
+    var trail by rememberSaveable { mutableStateOf(listOf<String>()) }
     var connecting by rememberSaveable { mutableStateOf(false) }
     // One key per view, matching View in src/lib/types.ts: "all", "trash", "nb:<id>", ...
     var view by rememberSaveable { mutableStateOf("all") }
@@ -95,9 +97,10 @@ fun NotesApp(app: App) {
         key(id) {
             NoteScreen(
                 app, id, view.removePrefix("tag:").takeIf { view.startsWith("tag:") }, openPdf,
-                onClose = { openId = null; openPdf = null },
-                onOpenTag = { openId = null; view = "tag:$it" },
+                onClose = { openId = trail.lastOrNull(); trail = trail.dropLast(1); openPdf = null },
+                onOpenTag = { openId = null; trail = emptyList(); view = "tag:$it" },
                 onOpenNote = { openId = it },
+                onFollowLink = { trail = trail + id; openId = it; openPdf = null },
             )
         }
     } else {
