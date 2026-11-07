@@ -84,7 +84,8 @@ export const NOTE_HREF = '#note/';
 
 /** Hosts override how a note is picked and opened, as the Android app does with its own screens. */
 export const noteLinks = {
-  pick: (apply: (id: string, title: string) => void) => store.getState().setDialog({ kind: 'pickNote', onPick: apply }),
+  /** `unlink` is given when the selection already links to a note. */
+  pick: (apply: (id: string, title: string) => void, unlink?: () => void) => store.getState().setDialog({ kind: 'pickNote', onPick: apply, onUnlink: unlink }),
   open: async (id: string) => {
     const note = await db.notes.get(id);
     if (note && !note.trashedAt) store.getState().openNote(id);
@@ -95,13 +96,20 @@ export const noteLinks = {
 /** Links the selection to a picked note, or inserts the note's title as a link when nothing is selected. */
 export function linkToNote(editor: Editor) {
   const { from, to } = editor.state.selection;
-  noteLinks.pick((id, title) => {
-    const href = NOTE_HREF + id;
+  const at = () => {
     const end = editor.state.doc.content.size;
-    const chain = editor.chain().focus();
-    if (from === to) chain.insertContentAt(Math.min(from, end), { type: 'text', text: title || 'Untitled', marks: [{ type: 'link', attrs: { href } }] }).run();
-    else chain.setTextSelection({ from: Math.min(from, end), to: Math.min(to, end) }).setLink({ href }).run();
-  });
+    return { from: Math.min(from, end), to: Math.min(to, end) };
+  };
+  const linked = Boolean(noteIdOf(editor.getAttributes('link').href));
+  noteLinks.pick(
+    (id, title) => {
+      const href = NOTE_HREF + id;
+      const chain = editor.chain().focus();
+      if (from === to) chain.insertContentAt(at().from, { type: 'text', text: title || 'Untitled', marks: [{ type: 'link', attrs: { href } }] }).run();
+      else chain.setTextSelection(at()).setLink({ href }).run();
+    },
+    linked ? () => editor.chain().focus().setTextSelection(at()).extendMarkRange('link').unsetLink().run() : undefined,
+  );
 }
 
 const noteIdOf = (href: string | undefined) => (href?.startsWith(NOTE_HREF) ? href.slice(NOTE_HREF.length) : null);

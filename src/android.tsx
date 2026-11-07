@@ -182,21 +182,34 @@ const w = window as unknown as {
   cnUndo: () => void;
   cnRedo: () => void;
   cnStartLink: () => void;
+  cnUnlinkNote: () => void;
+  cnSetDue: (due: string | null) => void;
   cnLinkNote: (id: string, title: string) => void;
   cnCloseViewer: () => void;
   cnInsertPicked: (picked: { url: string; name: string; type: string }[]) => Promise<void>;
 };
 
 formatMenu.placement = 'bottom';
-// The phone's own date dialog works here, and suits touch better.
-dueHooks.native = true;
+// The app shows the same date dialog as its Tasks screen, then answers with cnSetDue().
+let dueSet: ((due: string | null) => void) | null = null;
+dueHooks.host = (_anchor, due, set) => {
+  dueSet = set;
+  CleanNotes.postMessage(JSON.stringify({ type: 'due', due }));
+};
+w.cnSetDue = (due) => {
+  dueSet?.(due);
+  dueSet = null;
+};
 
 // The app picks and opens notes, since this page only holds the open one.
 let linkPick: ((id: string, title: string) => void) | null = null;
-noteLinks.pick = (apply) => {
+let linkUnlink: (() => void) | undefined;
+noteLinks.pick = (apply, unlink) => {
   linkPick = apply;
-  CleanNotes.postMessage(JSON.stringify({ type: 'linkNote' }));
+  linkUnlink = unlink;
+  CleanNotes.postMessage(JSON.stringify({ type: 'linkNote', linked: Boolean(unlink) }));
 };
+w.cnUnlinkNote = () => linkUnlink?.();
 noteLinks.open = async (id) => CleanNotes.postMessage(JSON.stringify({ type: 'openNote', id }));
 w.cnStartLink = () => {
   const e = currentEditor();

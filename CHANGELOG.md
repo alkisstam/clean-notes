@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.4 — 2026-11-07
+
+### Added
+- Link to note: link selected text to another note from the selection format bar, the note's … menu, or the desktop right-click menu. With nothing selected, it inserts the note's title as a link. Clicking a note link opens that note.
+- The Link to note picker has a search field, shows a line of each note's text, and offers Remove link when the selection already links to a note.
+- Undo and Redo buttons in the note header, greyed out when there is nothing to undo or redo.
+
+### Changed
+- A to-do's date opens a calendar right above its date button instead of the system picker, which could appear in the corner of the screen.
+
+### Fixed
+- Desktop app: right-click Undo and Redo are greyed out when there is nothing to undo or redo.
+
 ## 1.0.3 — 2026-11-06
 
 ### Added

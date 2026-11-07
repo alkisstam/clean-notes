@@ -1,5 +1,17 @@
 # Changelog — Android app
 
+## 1.0.3 — 2026-11-07
+
+### Added
+- Link to note: link selected text to another note from the selection format bar, the system text selection menu, or the note's ⋮ menu. With nothing selected, it inserts the note's title as a link. Tapping a note link opens that note.
+- The Link to note picker has a search icon, shows a line of each note's text, and offers Remove link when the selection already links to a note.
+- A Sort button in the notes list: Last edited, Date created or Title. The choice is remembered.
+- Move into note has a search icon to find the note.
+
+### Changed
+- A to-do's date in a note opens the same calendar as the Tasks screen.
+- Viewing an image full screen hides the top bar and tags, as the PDF viewer does. Back closes the image.
+
 ## 1.0.2 — 2026-11-06
 
 ### Added

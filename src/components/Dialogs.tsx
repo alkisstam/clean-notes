@@ -110,6 +110,18 @@ function PickNote({ dialog, close }: { dialog: Extract<DialogState, { kind: 'pic
             <button key={n.id} type="button" role="option" aria-selected={false} onClick={() => pick(n.id, title)}>{title}{n.text && <small>{n.text}</small>}</button>
           ))}
         </div>
+        {dialog.onUnlink && (
+          <footer>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                close();
+                dialog.onUnlink!();
+              }}
+            >Remove link</button>
+          </footer>
+        )}
       </form>
     </Modal>
   );

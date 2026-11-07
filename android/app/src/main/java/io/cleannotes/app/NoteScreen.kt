@@ -89,7 +89,8 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
         if (live.any { it.id == target }) view.flush { onOpenNote(target) }
         else Toast.makeText(context, "That note was deleted", Toast.LENGTH_SHORT).show()
     }
-    if (view.linking) NotePicker("Link to note", live.filter { it.id != id }, { t -> view.linkNote(t.id, t.title.ifBlank { "Untitled" }) }, { view.linking = false })
+    view.dating?.let { due -> DueDialog(due.ifEmpty { null }, view::setDue) { view.dating = null } }
+    if (view.linking) NotePicker("Link to note", live.filter { it.id != id }, { t -> view.linkNote(t.id, t.title.ifBlank { "Untitled" }) }, { view.linking = false }, if (view.linked) view::unlinkNote else null)
     BackHandler { back() }
     // Pending keystrokes are saved and sent when the app goes to the background.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { view.flush { app.sync.runInBackground() } }
@@ -232,7 +233,7 @@ fun NoteMenu(
 
 /** A list of notes by title to pick one from, with a search field behind the icon at the top right. */
 @Composable
-fun NotePicker(title: String, notes: List<NoteRow>, onPick: (NoteRow) -> Unit, onDismiss: () -> Unit) {
+fun NotePicker(title: String, notes: List<NoteRow>, onPick: (NoteRow) -> Unit, onDismiss: () -> Unit, onUnlink: (() -> Unit)? = null) {
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     val focus = remember { FocusRequester() }
@@ -272,6 +273,7 @@ fun NotePicker(title: String, notes: List<NoteRow>, onPick: (NoteRow) -> Unit, o
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = onUnlink?.let { { TextButton(onClick = it) { Text("Remove link") } } },
     )
 }
 

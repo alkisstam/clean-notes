@@ -146,7 +146,7 @@ private fun TaskLine(app: App, t: TaskRef, today: String, onOpen: (String) -> Un
 /** Picks a due date; Clear removes it. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DueDialog(initial: String?, onDone: (String?) -> Unit, onDismiss: () -> Unit) {
+fun DueDialog(initial: String?, onDone: (String?) -> Unit, onDismiss: () -> Unit) {
     val state = rememberDatePickerState(initialSelectedDateMillis = initial?.let(::keyToMillis))
     DatePickerDialog(
         onDismissRequest = onDismiss,

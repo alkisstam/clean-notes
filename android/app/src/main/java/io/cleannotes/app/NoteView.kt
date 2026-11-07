@@ -71,6 +71,22 @@ class NoteViewState {
         internal set
     /** The page asked for a note to link the selection to; the screen shows its picker while set. */
     var linking by mutableStateOf(false)
+    /** The selection already links to a note, so the picker offers to remove it. */
+    var linked by mutableStateOf(false)
+        internal set
+
+    fun unlinkNote() {
+        linking = false
+        web?.evaluateJavascript("cnUnlinkNote()", null)
+    }
+    /** A to-do's date button was tapped: its current due date, or "" for none. The screen shows its date dialog while set. */
+    var dating by mutableStateOf<String?>(null)
+
+    fun setDue(due: String?) {
+        dating = null
+        web?.evaluateJavascript("cnSetDue(${due?.let(JSONObject::quote) ?: "null"})", null)
+    }
+
     /** Called when a note link in the page is tapped. */
     var onOpenNote: ((String) -> Unit)? = null
 
@@ -235,7 +251,11 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
                         "save" -> app.enqueue { app.saveNote(msg.getJSONObject("note")) }
                         "pdf" -> state.pdfOpen = msg.getBoolean("open")
                         "viewer" -> state.imageOpen = msg.getBoolean("open")
-                        "linkNote" -> state.linking = true
+                        "linkNote" -> {
+                            state.linked = msg.optBoolean("linked")
+                            state.linking = true
+                        }
+                        "due" -> state.dating = if (msg.isNull("due")) "" else msg.getString("due")
                         "openNote" -> state.onOpenNote?.invoke(msg.getString("id"))
                         "history" -> {
                             state.canUndo = msg.getBoolean("undo")
