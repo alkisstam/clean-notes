@@ -112,6 +112,30 @@ fun CleanTheme(app: App, content: @Composable () -> Unit) {
     }
 }
 
+class NoteHue(val id: String, val label: String, val h: Float, val gray: Boolean = false)
+class NotePalette(val id: String, val label: String, val lightS: Float, val lightL: Float, val darkS: Float, val darkL: Float)
+
+// From src/lib/colors.ts.
+val NoteHues = listOf(
+    NoteHue("rose", "Rose", 345f), NoteHue("red", "Red", 5f), NoteHue("orange", "Orange", 24f), NoteHue("amber", "Amber", 42f),
+    NoteHue("lime", "Lime", 80f), NoteHue("green", "Green", 130f), NoteHue("teal", "Teal", 172f), NoteHue("cyan", "Cyan", 195f),
+    NoteHue("blue", "Blue", 215f), NoteHue("indigo", "Indigo", 240f), NoteHue("violet", "Violet", 268f), NoteHue("gray", "Gray", 40f, gray = true),
+)
+val NotePalettes = listOf(
+    NotePalette("soft", "Soft", .70f, .92f, .25f, .18f),
+    NotePalette("vivid", "Vivid", .80f, .82f, .45f, .24f),
+    NotePalette("deep", "Deep", .65f, .70f, .55f, .28f),
+)
+
+/** The shade of a preset for the current theme; null for no color or an id this version doesn't know. */
+fun noteColor(id: String?, dark: Boolean): Color? {
+    if (id == null) return null
+    val palette = NotePalettes.find { id.startsWith("${it.id}-") } ?: return null
+    val hue = NoteHues.find { it.id == id.removePrefix("${palette.id}-") } ?: return null
+    val s = (if (dark) palette.darkS else palette.lightS) * (if (hue.gray) .15f else 1f)
+    return Color.hsl(hue.h, s, if (dark) palette.darkL else palette.lightL)
+}
+
 val MenuShape = RoundedCornerShape(24.dp)
 
 /** Every menu in the app: large rounded corners and roomy rows. */

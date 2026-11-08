@@ -237,6 +237,7 @@ export async function duplicateNote(id: string) {
     content,
     notebookId: src.notebookId,
     parentId: src.parentId,
+    color: src.color,
     tags: [...src.tags],
   });
   await db.notes.add(copy);

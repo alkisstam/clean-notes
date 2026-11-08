@@ -14,6 +14,12 @@ class ListTest {
         },
     )
 
+    @Test fun unknownColorsAreNone() {
+        assertNull(noteColor("soft-nope", false))
+        assertNull(noteColor("null", true))
+        assertNull(noteColor(null, false))
+    }
+
     @Test fun parsesTagsAndParent() {
         val n = note("a", ""","tags":["work","work/client-a"],"parentId":"p"""")
         assertEquals(listOf("work", "work/client-a"), n.tagList)

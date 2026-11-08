@@ -37,6 +37,8 @@ export type DialogState =
   | { kind: 'confirm'; title: string; body?: string; confirm: string; danger?: boolean; onConfirm: () => void }
   | { kind: 'prompt'; title: string; label: string; value: string; confirm: string; hint?: string; allowEmpty?: boolean; onConfirm: (value: string) => void }
   | { kind: 'settings' }
+  | { kind: 'noteColor'; noteId: string }
+  | { kind: 'export'; noteId: string }
   | { kind: 'pickNote'; onPick: (id: string, title: string) => void; onUnlink?: () => void };
 
 interface State {

@@ -9,7 +9,7 @@ const FORMAT = 'clean-notes-backup';
 // Restore reads the file as one string, and Chrome strings stop at about 512 million characters.
 const MAX_RESTORE_BYTES = 500 * 1024 * 1024;
 
-const toBase64 = (blob: Blob) =>
+export const toBase64 = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(String(r.result).split(',')[1] ?? '');

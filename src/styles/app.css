@@ -202,6 +202,16 @@ kbd { font: 500 10.5px var(--font-mono); color: var(--ink-3); }
 .note-row:hover { background: var(--hover); }
 .note-row[data-drop='true'] { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
 .note-row[data-active='true'] { background: var(--raised); box-shadow: 0 0 0 1px var(--line), 0 2px 8px -3px rgb(40 30 15 / 0.14); }
+[data-color] {
+  --ink-2: color-mix(in srgb, var(--ink) 85%, transparent);
+  --ink-3: color-mix(in srgb, var(--ink) 72%, transparent);
+  --accent: var(--ink);
+  --accent-ink: var(--paper);
+}
+.note-row[data-color]:not([data-drop='true']) { background: var(--note-bg); }
+.note-row[data-color]:not([data-drop='true']):hover { background: linear-gradient(var(--hover), var(--hover)), var(--note-bg); }
+.note-row[data-color] .note-row-actions { background: var(--note-bg); }
+.note-rail { position: absolute; top: 0; bottom: -1px; width: 3px; border-radius: 2px; pointer-events: none; }
 .note-row-main { width: 100%; padding: 10px 10px 9px; display: flex; flex-direction: column; gap: 3px; text-align: left; border-radius: 9px; }
 .note-row-title { display: flex; align-items: center; gap: 5px; font-weight: 600; font-size: 13.5px; min-width: 0; }
 .note-row-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -328,6 +338,7 @@ kbd { font: 500 10.5px var(--font-mono); color: var(--ink-3); }
 }
 .editor-split { display: flex; height: 100%; position: relative; }
 .doc-pane { flex: 1 1 50%; min-width: 0; display: flex; flex-direction: column; height: 100%; }
+.doc-pane[data-color], .doc-scroll[data-color] { background: var(--note-bg); }
 .doc-bar { height: 52px; flex: none; padding: 0 12px; display: flex; align-items: center; gap: 3px; }
 .doc-spacer { flex: 1; }
 .doc-daily-nav { display: flex; align-items: center; gap: 2px; }
@@ -396,6 +407,11 @@ kbd { font: 500 10.5px var(--font-mono); color: var(--ink-3); }
 .field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 500; color: var(--ink-2); }
 .field input, .settings-row input { height: 36px; padding: 0 10px; font-size: 14px; font-weight: 400; color: var(--ink); background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--radius); }
 .field input:focus-visible, .settings-row input:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.color-row { margin-top: 12px; }
+.color-row h3 { font-size: 12px; font-weight: 500; color: var(--ink-2); margin-bottom: 6px; }
+.color-swatches { display: flex; gap: 8px; overflow-x: auto; padding: 3px; scrollbar-width: thin; }
+.color-swatches button { flex: none; width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line-strong); }
+.color-swatches button[aria-pressed='true'] { outline: 2px solid var(--ink); outline-offset: 1px; }
 .pick-note-list { display: flex; flex-direction: column; max-height: 50vh; overflow-y: auto; margin-top: 10px; }
 .pick-note-list button { flex: none; padding: 9px 10px; text-align: left; border-radius: var(--radius); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pick-note-list small { display: block; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--ink-3); }

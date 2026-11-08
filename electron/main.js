@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, net, protocol, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, session, shell } from 'electron';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -67,6 +68,27 @@ app.whenReady().then(() => {
 const roles = new Set(['cut', 'copy', 'paste', 'undo', 'redo', 'selectAll']);
 ipcMain.on('edit', (e, role) => {
   if (roles.has(role)) e.sender[role]();
+});
+
+// A temp file, not a data: URL, because notes with images pass Chromium's URL size limit.
+ipcMain.handle('print-pdf', async (e, html, name) => {
+  const tmp = path.join(app.getPath('temp'), `clean-notes-${randomUUID()}.html`);
+  const hidden = new BrowserWindow({ show: false, webPreferences: { javascript: false, sandbox: true } });
+  try {
+    fs.writeFileSync(tmp, html, { mode: 0o600 });
+    await hidden.loadFile(tmp);
+    const pdf = await hidden.webContents.printToPDF({ printBackground: true });
+    const { canceled, filePath } = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender), {
+      defaultPath: name,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    });
+    if (canceled || !filePath) return false;
+    fs.writeFileSync(filePath, pdf);
+    return true;
+  } finally {
+    hidden.destroy();
+    fs.rmSync(tmp, { force: true });
+  }
 });
 
 app.on('window-all-closed', () => app.quit());

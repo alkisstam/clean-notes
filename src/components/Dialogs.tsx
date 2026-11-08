@@ -8,6 +8,10 @@ import { formatBytes } from '../lib/pdf';
 import { foldQuery } from '../lib/search';
 import { useStore, type DialogState, type ThemePref } from '../lib/store';
 import { disableServerSync, enableServerSync, syncNow } from '../lib/sync';
+import { patchNote } from '../lib/actions';
+import { HUES, noteBg, PALETTES } from '../lib/colors';
+import { EXPORT_FORMATS, exportNote } from '../lib/export';
+import { currentEditor } from '../editor/NoteEditor';
 
 export const THEMES: { id: ThemePref; label: string; icon: typeof Sun }[] = [
   { id: 'system', label: 'System', icon: Laptop },
@@ -406,12 +410,68 @@ function Settings({ close }: { close: () => void }) {
   );
 }
 
+function NoteColor({ noteId, close }: { noteId: string; close: () => void }) {
+  const current = useLiveQuery(() => db.notes.get(noteId), [noteId])?.color;
+  return (
+    <Modal title="Background color" onClose={close}>
+      {PALETTES.map((p) => (
+        <section key={p.id} className="color-row">
+          <h3>{p.label}</h3>
+          <div className="color-swatches">
+            {HUES.map((h) => {
+              const id = `${p.id}-${h.id}`;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  aria-label={`${p.label} ${h.label}`}
+                  title={h.label}
+                  aria-pressed={current === id}
+                  style={{ background: noteBg(id) }}
+                  onClick={() => void patchNote(noteId, { color: id })}
+                />
+              );
+            })}
+          </div>
+        </section>
+      ))}
+      <footer>
+        <button type="button" className="btn" disabled={!current} onClick={() => void patchNote(noteId, { color: null })}>No color</button>
+      </footer>
+    </Modal>
+  );
+}
+
+function ExportNote({ noteId, close }: { noteId: string; close: () => void }) {
+  return (
+    <Modal title="Export note" onClose={close}>
+      <div className="pick-note-list">
+        {EXPORT_FORMATS.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            onClick={() => {
+              const html = currentEditor()?.getHTML() ?? '';
+              close();
+              void exportNote(noteId, f.id, html);
+            }}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
 export function Dialogs() {
   const dialog = useStore((s) => s.dialog);
   const setDialog = useStore((s) => s.setDialog);
   const close = () => setDialog(null);
   if (!dialog) return null;
   if (dialog.kind === 'settings') return <Settings close={close} />;
+  if (dialog.kind === 'noteColor') return <NoteColor noteId={dialog.noteId} close={close} />;
+  if (dialog.kind === 'export') return <ExportNote noteId={dialog.noteId} close={close} />;
   if (dialog.kind === 'pickNote') return <PickNote dialog={dialog} close={close} />;
   if (dialog.kind === 'prompt') return <Prompt key={dialog.title} dialog={dialog} close={close} />;
   return (

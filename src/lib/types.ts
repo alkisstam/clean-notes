@@ -19,6 +19,8 @@ export interface Note {
   trashedAt: number | null;
   /** Hidden from lists and Tasks, still searchable. Absent on notes made before archiving existed. */
   archivedAt?: number | null;
+  /** Preset id from colors.ts, like "soft-rose", so each theme can pick its own shade. */
+  color?: string | null;
   /** Which editor instance wrote last, so an editor ignores its own echoes. */
   writer?: string;
 }

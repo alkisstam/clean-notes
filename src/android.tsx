@@ -13,6 +13,8 @@ import { flushEditor, patchNote } from './lib/actions';
 import { db, uid, writeListeners } from './lib/db';
 import { imageIdsIn, pdfIdsIn } from './lib/doc';
 import { blobSaver } from './lib/pdf';
+import { noteBg } from './lib/colors';
+import { exportHost, exportNote, type ExportFormat } from './lib/export';
 import { currentEditor, editorHooks, formatMenu, insertIntoEditor, linkToNote, NoteEditor, noteLinks } from './editor/NoteEditor';
 import { viewerHooks } from './editor/ImageBlock';
 import { dueHooks } from './editor/TaskItemDue';
@@ -61,6 +63,11 @@ const sendBytes = (id: string, blob: Blob) =>
 blobSaver.save = (blob, name) => {
   const id = `open-${uid()}`;
   void sendBytes(id, blob).then(() => CleanNotes.postMessage(JSON.stringify({ type: 'open', id, name, mime: blob.type })));
+};
+
+exportHost.save = (blob, name, print) => {
+  const id = `export-${uid()}`;
+  void sendBytes(id, blob).then(() => CleanNotes.postMessage(JSON.stringify({ type: 'export', id, name, mime: blob.type, print })));
 };
 
 async function send() {
@@ -141,9 +148,10 @@ function Page({ id }: { id: string }) {
     if (note && pendingTitle === null) setTitle(note.title);
   }, [note?.title]);
   if (!note) return null;
+  const bg = noteBg(note.color);
   return (
     // The body never scrolls (the web app scrolls inside its panes), so this needs the full height to scroll itself.
-    <div className="doc-scroll" style={{ height: '100%' }}>
+    <div className="doc-scroll" data-color={bg ? '' : undefined} style={{ height: '100%', ...(bg && { '--note-bg': bg }) } as React.CSSProperties}>
       <article className="doc">
         <textarea
           className="doc-title"
@@ -202,6 +210,7 @@ const w = window as unknown as {
   cnLinkNote: (id: string, title: string) => void;
   cnCloseViewer: () => void;
   cnInsertPicked: (picked: { url: string; name: string; type: string }[]) => Promise<void>;
+  cnExport: (format: ExportFormat) => Promise<void>;
 };
 
 formatMenu.placement = 'bottom';
@@ -270,6 +279,14 @@ addEventListener('resize', () => {
 w.cnInsertPicked = async (picked) => {
   const files = await Promise.all(picked.map(async ({ url, name, type }) => new File([await (await fetch(url)).blob()], name, { type })));
   await insertIntoEditor(files);
+};
+
+w.cnExport = async (format) => {
+  flushTitle();
+  flushEditor();
+  // Queues behind the saves just started, as in cnFlush.
+  await db.transaction('rw', db.notes, () => db.notes.get(noteId));
+  await exportNote(noteId, format, currentEditor()?.getHTML() ?? '');
 };
 
 w.cnClosePdf = () => store.getState().setPdf(null);

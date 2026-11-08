@@ -8,6 +8,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.net.Uri
+import android.print.PrintAttributes
+import android.print.PrintManager
+import android.webkit.WebViewClient
 import android.graphics.Rect
 import android.view.ActionMode
 import android.view.Menu
@@ -58,6 +61,20 @@ private fun shareable(context: Context, name: String, bytes: File): Uri {
     return FileProvider.getUriForFile(context, "${context.packageName}.files", file)
 }
 
+/** Renders the exported page offscreen, with nothing but the page itself reachable, and opens the system print dialog. */
+private fun printHtml(context: Context, html: String, name: String, state: NoteViewState) {
+    state.printing = WebView(context).apply {
+        settings.allowFileAccess = false
+        settings.allowContentAccess = false
+        webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String) {
+                context.getSystemService(PrintManager::class.java).print(name, view.createPrintDocumentAdapter(name), PrintAttributes.Builder().build())
+            }
+        }
+        loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+    }
+}
+
 /** Lets the screen save the page's pending edits before it closes the note. */
 class NoteViewState {
     internal var web: WebView? = null
@@ -91,6 +108,17 @@ class NoteViewState {
 
     /** Called when a note link in the page is tapped. */
     var onOpenNote: ((String) -> Unit)? = null
+
+    /** Held so the offscreen page outlives the print dialog. */
+    internal var printing: WebView? = null
+    /** The export waiting for the system's save dialog. */
+    internal var exportFile: File? = null
+    internal var exportMime = "*/*"
+
+    /** `format` is pdf, txt, json or html. */
+    fun export(format: String) {
+        web?.evaluateJavascript("cnExport(${JSONObject.quote(format)})", null)
+    }
 
     fun closeViewer() {
         web?.evaluateJavascript("cnCloseViewer()", null)
@@ -196,6 +224,22 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
         if (uris.isNotEmpty()) state.web?.evaluateJavascript("cnInsertPicked($list)", null)
     }
     state.launchPicker = { pick.launch(it) }
+    val saver = rememberLauncherForActivityResult(object : ActivityResultContracts.CreateDocument("*/*") {
+        override fun createIntent(context: Context, input: String) = super.createIntent(context, input).setType(state.exportMime)
+    }) { uri ->
+        val file = state.exportFile ?: return@rememberLauncherForActivityResult
+        state.exportFile = null
+        if (uri == null) return@rememberLauncherForActivityResult run { file.delete() }
+        app.enqueue {
+            val saved = runCatching {
+                context.contentResolver.openOutputStream(uri)!!.use { out -> file.inputStream().use { it.copyTo(out) } }
+            }.isSuccess
+            file.delete()
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, if (saved) "Note exported" else "That note could not be exported.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     LaunchedEffect(note.raw, dark, deviceFonts) {
         // Ids are UUIDs, so a substring match finds exactly the attachments this note uses.
@@ -272,6 +316,19 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
                                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             withContext(Dispatchers.Main) {
                                 runCatching { ctx.startActivity(Intent.createChooser(view, "Open with")) }
+                            }
+                        }
+                        // Queued, so the bytes sent just before it are on disk.
+                        "export" -> app.enqueue {
+                            val file = app.incomingFile(msg.getString("id"))
+                            val html = if (msg.optBoolean("print")) file.readText().also { file.delete() } else null
+                            withContext(Dispatchers.Main) {
+                                if (html != null) printHtml(ctx, html, msg.getString("name"), state)
+                                else {
+                                    state.exportFile = file
+                                    state.exportMime = msg.getString("mime")
+                                    saver.launch(msg.getString("name"))
+                                }
                             }
                         }
                         // Queued too, so a note is only closed once its last save is stored.

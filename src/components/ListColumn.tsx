@@ -5,6 +5,7 @@ import {
 import { memo, useMemo, useState, type ReactNode } from 'react';
 import { createNote, createSubNote, deleteForever, duplicateNote, nestNote, patchNote, trashNote, flushEditor, openDaily, quickAddTask, restoreNote, setTaskAttrs } from '../lib/actions';
 import { db } from '../lib/db';
+import { noteBg } from '../lib/colors';
 import { dateKey, dueLabel, relativeTime, shortDate } from '../lib/dates';
 import { Calendar } from './Calendar';
 import { imageIdsIn, pdfIdsIn } from '../lib/doc';
@@ -27,7 +28,7 @@ const Hit = ({ s }: { s: Snippet }) => (
 
 const preview = (text: string) => text.replace(/\n/g, ' ').slice(0, 170);
 
-const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, actions, depth = 0, hasKids, collapsed, nestable }: {
+const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, actions, depth = 0, hasKids, collapsed, nestable, rails }: {
   note: Note;
   active: boolean;
   notebook?: string;
@@ -38,6 +39,8 @@ const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, acti
   hasKids?: boolean;
   collapsed?: boolean;
   nestable?: boolean;
+  /** One line per ancestor, outermost first, in that ancestor's color. */
+  rails?: string[];
 }) {
   const tasks = useMemo(() => extractTasks(note), [note]);
   const done = tasks.filter((t) => t.done).length;
@@ -45,6 +48,7 @@ const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, acti
   const hasImage = useMemo(() => imageIdsIn(note.content).length > 0, [note.content]);
   const [ctx, setCtx] = useState<DOMRect | null>(null);
   const isDaily = note.kind === 'daily';
+  const bg = noteBg(note.color);
   const ctxItems: MenuItem[] = ctx
     ? [
         { label: 'New note', icon: <Plus size={14} />, run: () => void createNote() },
@@ -71,12 +75,13 @@ const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, acti
     <div
       className="note-row"
       data-active={active}
+      data-color={bg ? '' : undefined}
       onContextMenu={(e) => {
         if (import.meta.env.MODE !== 'desktop' || note.trashedAt) return;
         e.preventDefault();
         setCtx(new DOMRect(e.clientX, e.clientY, 0, 0));
       }}
-      style={{ '--i': Math.min(index, 12), '--depth': depth } as React.CSSProperties}
+      style={{ '--i': Math.min(index, 12), '--depth': depth, ...(bg && { '--note-bg': bg }) } as React.CSSProperties}
       draggable={!note.trashedAt}
       onDragStart={(e) => {
         e.dataTransfer.setData(NOTE_DRAG, note.id);
@@ -84,6 +89,9 @@ const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, acti
       }}
       {...(nestable ? dropProps((id) => void nestNote(id, note.id)) : {})}
     >
+      {rails?.map((color, i) => (
+        <span key={i} className="note-rail" style={{ left: (i - rails.length) * 16 + 6, background: color }} />
+      ))}
       {hasKids && (
         <button
           type="button"
@@ -324,12 +332,19 @@ export function ListColumn({ notes, notebooks }: { notes: Note[]; notebooks: Not
     return [...out].sort((a, b) => Number(b.pinned) - Number(a.pinned) || cmp[sort](a, b));
   }, [view, live, notes, sort, dailyDate]);
 
-  const rows = useMemo(
-    () => (['all', 'notebook', 'tag'].includes(view.type)
-      ? nestNotes(listed, collapsedNotes)
-      : listed.map((note) => ({ note, depth: 0, hasKids: false }))),
-    [view.type, listed, collapsedNotes],
-  );
+  const rows = useMemo(() => {
+    if (!['all', 'notebook', 'tag'].includes(view.type)) return listed.map((note) => ({ note, depth: 0, hasKids: false, rails: undefined }));
+    const byId = new Map(notes.map((n) => [n.id, n]));
+    return nestNotes(listed, collapsedNotes).map((row) => {
+      const rails: string[] = [];
+      let up = byId.get(row.note.parentId ?? '');
+      for (let i = 0; i < row.depth; i++) {
+        rails.unshift(noteBg(up?.color) ?? 'var(--line-strong)');
+        up = byId.get(up?.parentId ?? '');
+      }
+      return { ...row, rails };
+    });
+  }, [view.type, listed, collapsedNotes, notes]);
 
   const hits = useMemo<SearchHit[]>(() => {
     const q = foldQuery(query);
@@ -444,12 +459,13 @@ export function ListColumn({ notes, notebooks }: { notes: Note[]; notebooks: Not
         )}
         {listed.length ? (
           <div className="list-scroll">
-            {rows.map(({ note: n, depth, hasKids }, i) => (
+            {rows.map(({ note: n, depth, hasKids, rails }, i) => (
               <NoteRow
                 key={n.id}
                 note={n}
                 index={i}
                 depth={depth}
+                rails={rails}
                 hasKids={hasKids}
                 collapsed={collapsedNotes.includes(n.id)}
                 nestable={['all', 'notebook', 'tag'].includes(view.type)}

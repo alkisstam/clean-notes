@@ -24,6 +24,7 @@ declare global {
       onEditMenu: (cb: (p: { x: number; y: number; flags: EditFlags }) => void) => void;
       syncServer: () => Promise<string>;
       setSyncServer: (url: string) => Promise<void>;
+      printPdf: (html: string, name: string) => Promise<boolean>;
     };
   }
 }

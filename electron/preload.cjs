@@ -5,4 +5,5 @@ contextBridge.exposeInMainWorld('desktop', {
   onEditMenu: (cb) => ipcRenderer.on('edit-menu', (_e, p) => cb(p)),
   syncServer: () => ipcRenderer.invoke('sync-server'),
   setSyncServer: (url) => ipcRenderer.invoke('set-sync-server', url),
+  printPdf: (html, name) => ipcRenderer.invoke('print-pdf', html, name),
 });

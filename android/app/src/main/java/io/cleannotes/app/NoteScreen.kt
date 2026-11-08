@@ -55,6 +55,17 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -81,6 +92,8 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
     val back = { if (view.imageOpen) view.closeViewer() else if (view.pdfOpen) view.closePdf() else view.flush { discard(); onClose() } }
     val viewing = view.pdfOpen || view.imageOpen
     val context = LocalContext.current
+    val dark = LocalDark.current
+    val bg = remember(note?.raw, dark) { note?.let { noteColor(JSONObject(it.raw).optString("color"), dark) } }
     view.onOpenNote = { target ->
         if (live.any { it.id == target }) view.flush { onFollowLink(target) }
         else Toast.makeText(context, "That note was deleted", Toast.LENGTH_SHORT).show()
@@ -95,9 +108,11 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
     // Pending keystrokes are saved and sent when the app goes to the background.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { view.flush { app.sync.runInBackground() } }
     Scaffold(
+        containerColor = bg ?: MaterialTheme.colorScheme.background,
         topBar = {
             // The PDF viewer has its own toolbar, and an image fills the screen; back still closes them.
             if (!viewing) TopAppBar(
+                colors = if (bg != null) TopAppBarDefaults.topAppBarColors(containerColor = bg) else TopAppBarDefaults.topAppBarColors(),
                 title = {
                     // Daily notes step to the day before or after, creating it if needed, as on the web.
                     val date = note?.date?.takeIf { note?.kind == "daily" }
@@ -131,7 +146,7 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
                         MenuItem("Add PDF", { adding = false; view.pick("pdf") }, R.drawable.ic_file_text)
                     }
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
-                    note?.let { n -> NoteMenu(app, n, live, menu, { menu = false }, view::flush, onClose, onLinkNote = view::startLink) }
+                    note?.let { n -> NoteMenu(app, n, live, menu, { menu = false }, view::flush, onClose, onLinkNote = view::startLink, onExport = view::export) }
                 },
             )
         },
@@ -150,11 +165,14 @@ fun NoteMenu(
     app: App, note: NoteRow, live: List<NoteRow>, expanded: Boolean, onDismiss: () -> Unit, before: (() -> Unit) -> Unit, onTrashed: () -> Unit,
     centered: Boolean = false,
     onLinkNote: (() -> Unit)? = null,
+    onExport: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val id = note.id
     var nesting by remember { mutableStateOf(false) }
     var moving by remember { mutableStateOf(false) }
+    var coloring by remember { mutableStateOf(false) }
+    var exporting by remember { mutableStateOf(false) }
     val notebooks by app.db.dao().liveNotebooks().collectAsStateWithLifecycle(emptyList())
     val act = { block: suspend () -> Unit -> onDismiss(); before { app.scope.launch { block() } } }
     val items: @Composable () -> Unit = {
@@ -173,6 +191,8 @@ fun NoteMenu(
             })
         }
         MenuItem("Move to notebook", { onDismiss(); moving = true })
+        MenuItem("Background color", { onDismiss(); coloring = true })
+        if (onExport != null) MenuItem("Export", { onDismiss(); exporting = true })
         MenuItem("Move to Trash", {
             onDismiss()
             before { app.scope.launch { app.trashNote(id) }; onTrashed() }
@@ -186,6 +206,21 @@ fun NoteMenu(
             }
         }
     } else Menu(expanded, onDismiss) { items() }
+    if (coloring) ColorPicker(JSONObject(note.raw).optString("color"), { color ->
+        before { app.scope.launch { app.updateNote(id) { j, _ -> j.put("color", color ?: JSONObject.NULL) } } }
+    }) { coloring = false }
+    if (exporting && onExport != null) AlertDialog(
+        onDismissRequest = { exporting = false },
+        title = { Text("Export note") },
+        text = {
+            Column {
+                listOf("pdf" to "PDF", "txt" to "Text", "json" to "JSON", "html" to "HTML").forEach { (format, label) ->
+                    Text(label, Modifier.fillMaxWidth().clickable { exporting = false; onExport(format) }.padding(vertical = 12.dp))
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { exporting = false }) { Text("Cancel") } },
+    )
     if (nesting) {
         // The note itself and its own sub-notes cannot hold it; nestNote() also refuses them.
         val inside = mutableSetOf(id)
@@ -221,6 +256,40 @@ fun NoteMenu(
             confirmButton = { TextButton(onClick = { moving = false }) { Text("Cancel") } },
         )
     }
+}
+
+/** Three rows of presets, each scrolling sideways. A tap applies at once, so the dialog stays open to try others. */
+@Composable
+private fun ColorPicker(initial: String, onPick: (String?) -> Unit, onDismiss: () -> Unit) {
+    var current by remember { mutableStateOf<String?>(initial) }
+    val dark = LocalDark.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Background color") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                NotePalettes.forEach { p ->
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(p.label, style = MaterialTheme.typography.labelMedium)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(2.dp)) {
+                            items(NoteHues, key = { it.id }) { h ->
+                                val color = "${p.id}-${h.id}"
+                                val on = color == current
+                                Box(
+                                    Modifier.size(42.dp).clip(CircleShape).background(noteColor(color, dark)!!)
+                                        .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline, CircleShape)
+                                        .clickable { current = color; onPick(color) }
+                                        .semantics { contentDescription = "${p.label} ${h.label}"; selected = on },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+        dismissButton = { TextButton(onClick = { current = null; onPick(null) }, enabled = noteColor(current, dark) != null) { Text("No color") } },
+    )
 }
 
 /** A list of notes by title to pick one from, with a search field behind the icon at the top right. */

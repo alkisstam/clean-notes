@@ -1,6 +1,11 @@
 package io.cleannotes.app
 
 import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -120,6 +125,9 @@ fun NoteList(
     var grid by remember { mutableStateOf(ui.getBoolean("grid", false)) }
     // Not a column, so read from each note's JSON once per change to the notes.
     val created = remember(all) { all.associate { it.id to JSONObject(it.raw).optLong("createdAt") } }
+    val colors = remember(all) { all.associate { it.id to JSONObject(it.raw).optString("color") } }
+    val byId = remember(all) { all.associateBy { it.id } }
+    val dark = LocalDark.current
     var shutNotes by remember { mutableStateOf(ui.getStringSet("collapsedNotes", emptySet())!!.toSet()) }
     val tag = view.removePrefix("tag:").takeIf { view.startsWith("tag:") }
     var searching by rememberSaveable { mutableStateOf(false) }
@@ -343,6 +351,14 @@ fun NoteList(
                                 group = g
                             }
                         }
+                        // Sub-note lines go in the left column only, or they would also run between the two cards.
+                        val left = BooleanArray(cells.size).also {
+                            var col = 0
+                            cells.forEachIndexed { i, c ->
+                                if (c?.hasKids == true) { it[i] = true; col = 0 } else { it[i] = col == 0; col = 1 - col }
+                            }
+                        }
+                        val neutral = MaterialTheme.colorScheme.outline
                         LazyVerticalGrid(
                             GridCells.Fixed(2), Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(12.dp),
@@ -353,8 +369,16 @@ fun NoteList(
                                 val (note, depth, hasKids) = cells[i] ?: return@items
                                 var pressed by remember { mutableStateOf(false) }
                                 val sub = depth > 0
-                                Box(Modifier.padding(start = (depth * 12).dp)) {
-                                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+                                val bg = noteColor(colors[note.id], dark)
+                                val rails = if (left[i]) railColors(note, depth, byId, colors, dark, neutral) else emptyList()
+                                val nextDepth = (i + 1 until cells.size).firstOrNull { left[it] && cells[it] != null }?.let { cells[it]!!.depth } ?: 0
+                                Box(Modifier.drawBehind {
+                                    rails.forEachIndexed { k, c ->
+                                        val bottom = size.height + if (nextDepth > k) 8.dp.toPx() else 0f
+                                        drawRect(c, Offset((k * 12 + 4).dp.toPx(), 0f), Size(3.dp.toPx(), bottom))
+                                    }
+                                }.padding(start = (depth * 12).dp)) {
+                                    Surface(shape = RoundedCornerShape(16.dp), color = bg ?: MaterialTheme.colorScheme.surfaceContainer) {
                                         Column(Modifier.fillMaxWidth().combinedClickable(onClick = { onOpen(note.id) }, onLongClick = {
                                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                             pressed = true
@@ -363,7 +387,7 @@ fun NoteList(
                                             Text(
                                                 note.text.take(400).ifBlank { "No content yet" },
                                                 style = if (sub) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                color = if (bg != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                                                 minLines = if (sub) 4 else 6,
                                                 maxLines = if (sub) 4 else 6,
                                                 overflow = TextOverflow.Ellipsis,
@@ -377,8 +401,15 @@ fun NoteList(
                     } else LazyColumn(Modifier.fillMaxSize()) {
                     items(rows, key = { it.note.id }) { (note, depth, hasKids) ->
                         var pressed by remember { mutableStateOf(false) }
+                        val bg = noteColor(colors[note.id], dark)
+                        val rails = railColors(note, depth, byId, colors, dark, MaterialTheme.colorScheme.outline)
+                        // Drawn over the whole item so the line crosses the divider too.
+                        Column(Modifier.drawWithContent {
+                            drawContent()
+                            rails.forEachIndexed { k, c -> drawRect(c, Offset((k * 20 + 22).dp.toPx(), 0f), Size(3.dp.toPx(), size.height)) }
+                        }) {
                         Box {
-                        Column(Modifier.fillMaxWidth().combinedClickable(onClick = { onOpen(note.id) }, onLongClick = {
+                        Column(Modifier.fillMaxWidth().background(bg ?: Color.Transparent).combinedClickable(onClick = { onOpen(note.id) }, onLongClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             pressed = true
                         }).padding(start = (16 + depth * 20).dp, top = 12.dp, end = 16.dp, bottom = 12.dp)) {
@@ -386,7 +417,7 @@ fun NoteList(
                             Text(
                                 note.text.replace('\n', ' ').take(170).ifBlank { "No content yet" },
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (bg != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -394,6 +425,7 @@ fun NoteList(
                         NoteMenu(app, note, all, pressed, { pressed = false }, { it() }, {}, centered = true)
                         }
                         HorizontalDivider()
+                        }
                     }
                     }
                 }
@@ -448,6 +480,17 @@ fun NoteList(
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
         )
     }
+}
+
+/** One color per ancestor, outermost first; a parent without a color gets `neutral`. */
+private fun railColors(note: NoteRow, depth: Int, byId: Map<String, NoteRow>, colors: Map<String, String>, dark: Boolean, neutral: Color): List<Color> {
+    val out = ArrayList<Color>(depth)
+    var up = note.parentId?.let(byId::get)
+    repeat(depth) {
+        out += up?.let { noteColor(colors[it.id], dark) } ?: neutral
+        up = up?.parentId?.let(byId::get)
+    }
+    return out.asReversed()
 }
 
 @Composable

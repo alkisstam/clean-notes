@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { addDays, dateKey, monthGrid } from '../src/lib/dates';
+import { HUES, noteBg, noteShades, PALETTES } from '../src/lib/colors';
 import { docText } from '../src/lib/doc';
+import { exportName, exportPage } from '../src/lib/export';
 import { findRanges, includesFolded, snippet } from '../src/lib/search';
 import { buildTagTree, nestNotes, normalizeTag, noteHasTag, renameTagIn } from '../src/lib/tags';
 import { appendTask, extractTasks, groupTasks, patchTask } from '../src/lib/tasks';
@@ -132,5 +134,49 @@ describe('nestNotes', () => {
   });
   it('shows notes caught in a parent loop', () => {
     expect(shape(nestNotes([n('p', 'q'), n('q', 'p'), n('s', 's')], []))).toEqual(['s:0', 'p:0', 'q:0']);
+  });
+});
+
+describe('note colors', () => {
+  const luminance = (h: number, s: number, l: number) => {
+    const a = (s / 100) * Math.min(l / 100, 1 - l / 100);
+    const channel = (n: number) => {
+      const k = (n + h / 30) % 12;
+      const v = l / 100 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * channel(0) + 0.7152 * channel(8) + 0.0722 * channel(4);
+  };
+  const contrast = (a: number, b: number) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  const DAY_INK = 0.0131;
+  const NIGHT_INK = 0.8;
+
+  it('keeps every shade readable under its theme ink', () => {
+    for (const p of PALETTES) {
+      for (const h of HUES) {
+        const shades = noteShades(`${p.id}-${h.id}`)!;
+        expect(contrast(luminance(...shades.light), DAY_INK), `${p.id}-${h.id} light`).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(luminance(...shades.dark), NIGHT_INK), `${p.id}-${h.id} dark`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+  it('ignores unknown ids', () => {
+    expect(noteBg('soft-nope')).toBeUndefined();
+    expect(noteBg('nope-rose')).toBeUndefined();
+    expect(noteBg(null)).toBeUndefined();
+    expect(noteBg('soft-rose')).toContain('light-dark(');
+  });
+});
+
+describe('export', () => {
+  it('escapes the title in the page', () => {
+    const page = exportPage('<img src=x onerror=alert(1)>', '<p>body</p>');
+    expect(page).not.toContain('<img src=x');
+    expect(page).toContain('&lt;img src=x');
+    expect(page).toContain('<p>body</p>');
+  });
+  it('strips characters files cannot have', () => {
+    expect(exportName('a/b:c?', 'pdf')).toBe('abc.pdf');
+    expect(exportName(' / ', 'txt')).toBe('Untitled.txt');
   });
 });
