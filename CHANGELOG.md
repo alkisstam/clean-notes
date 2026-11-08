@@ -11,6 +11,9 @@
 - Search moved from the sidebar to the top of the note list, so it stays open when the sidebar is floating.
 - New app icon.
 
+### Fixed
+- Links, highlights and the active buttons in the text and image toolbars stay visible on colored notes, with their colors chosen to suit the note's color.
+
 ## 1.0.4 — 2026-11-07
 
 ### Added

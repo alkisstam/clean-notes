@@ -13,6 +13,11 @@
 - Back from a linked note returns to the note that linked to it.
 - New app icon.
 
+### Fixed
+- Opening a colored note no longer flashes another color first.
+- Links, highlights and the active buttons in the text and image toolbars stay visible on colored notes, with their colors chosen to suit the note's color.
+- Sub-notes in the list keep a gap between their colored card and the vertical line.
+
 ## 1.0.3 — 2026-11-07
 
 ### Added
