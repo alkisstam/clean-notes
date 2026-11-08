@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Background color for notes, from the note's … menu: three rows of presets (Soft, Vivid, Deep) that adjust for dark mode. The color shows on the note page and its card in the list.
+- A vertical line beside sub-notes in the list, in the parent note's color.
+- Export a note as PDF, text, JSON or HTML from the note's … menu.
+
+### Changed
+- Search moved from the sidebar to the top of the note list, so it stays open when the sidebar is floating.
+- New app icon.
+
 ## 1.0.4 — 2026-11-07
 
 ### Added

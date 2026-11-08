@@ -1,5 +1,18 @@
 # Changelog — Android app
 
+## Unreleased
+
+### Added
+- Background color for notes, from the note's ⋮ menu or a long press: three rows of presets (Soft, Vivid, Deep) that adjust for dark mode. The color shows on the note page and its card in the list and grid.
+- A vertical line beside sub-notes in the list and grid, in the parent note's color.
+- Export a note as PDF, text, JSON or HTML from the note's ⋮ menu.
+- Grid view for the notes list, with a toggle that is remembered.
+
+### Changed
+- Tags on a note are set from an "Add tags" popup under the title.
+- Back from a linked note returns to the note that linked to it.
+- New app icon.
+
 ## 1.0.3 — 2026-11-07
 
 ### Added
