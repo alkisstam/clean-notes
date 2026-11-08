@@ -12,7 +12,7 @@ import { StarterKit } from '@tiptap/starter-kit';
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
 import {
   BetweenHorizontalEnd, BetweenVerticalEnd, Bold, CalendarPlus, Check, ChevronsLeftRight, ClipboardPaste, Code, Copy, ExternalLink, FileSymlink, FileText,
-  Grid2x2, Heading2, Highlighter, ImagePlus, Italic, Link2, List, ListOrdered, ListTodo, Minus, Quote, Scissors, SquareCode, Strikethrough,
+  Ellipsis, EllipsisVertical, Grid2x2, Heading2, Highlighter, ImagePlus, Italic, Link2, List, ListOrdered, ListTodo, Minus, Paintbrush, Quote, Scissors, SquareCode, Strikethrough,
   Table, Table2, Trash2, Underline, X,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
@@ -26,6 +26,7 @@ import type { Note } from '../lib/types';
 import { ImageBlock } from './ImageBlock';
 import { PdfAttachment } from './PdfAttachment';
 import { SlashCommands, slashItems, type SlashHandlers, type SlashItem } from './slash';
+import { FONT_SIZES, PREVIEW, styleTargets, TableStyle, TableStyleSheet, type Styling } from './TableStyle';
 import { dueHooks, TaskItemDue } from './TaskItemDue';
 import { Calendar } from '../components/Calendar';
 import { db } from '../lib/db';
@@ -226,8 +227,6 @@ const formatButtons = (editor: Editor) => [
   { label: 'Highlight', icon: Highlighter, active: 'highlight', run: () => editor.chain().focus().toggleHighlight().run() },
 ];
 
-const FONT_SIZES = ['12px', '14px', '16px', '18px', '20px', '24px', '30px', '36px'];
-
 /** The screen area below the formatting toolbar, read fresh each time Floating UI positions a menu. */
 const toolbarEdge = (editor: Editor) => ({
   x: 0,
@@ -393,17 +392,35 @@ async function pasteClipboard(editor: Editor) {
   else if (text) editor.view.pasteText(text);
 }
 
-type TableMenu = { kind: 'row' | 'col' | 'table'; rect: DOMRect };
+type TableMenu = { kind: 'row' | 'col' | 'table'; rect: DOMRect; anchor: HTMLElement };
+
+const hasSoftKeyboard = () => matchMedia('(hover: none)').matches;
+
+// Below the table, as the selection the menu acts on stays in view.
+const belowTable = (el: HTMLElement, table: DOMRect) => {
+  const r = el.getBoundingClientRect();
+  return new DOMRect(r.left, r.top, r.width, table.bottom - r.top);
+};
+
+// Android's WebView scrolls to the selection's head cell, which is otherwise the last one.
+const headFirst = (sel: CellSelection) => new CellSelection(sel.$headCell, sel.$anchorCell);
 
 // Controls around the table holding the cursor: a handle beside its row and above its column,
 // a resize pill on every column border (the extension's own resize is mouse-only), and a table menu at the corner.
 function TableControls({ editor }: { editor: Editor }) {
-  const [box, setBox] = useState<{ pos: number; rect: DOMRect; cellPos: number; cell: DOMRect | null; handles: Handle[] } | null>(null);
+  const [box, setBox] = useState<{ pos: number; rect: DOMRect; cellPos: number; cell: DOMRect | null; handles: Handle[]; picked: DOMRect | null } | null>(null);
+  // The row or column chosen by a first tap on its handle.
+  const picked = useRef<'row' | 'col' | null>(null);
+  const growFrom = useRef<number | null>(null);
+  const cornerOpen = useRef(false);
+  const styleOpen = useRef(false);
   const [menu, setMenu] = useState<TableMenu | null>(null);
+  const [styling, setStyling] = useState<Styling | null>(null);
   const drag = useRef<{ cellPos: number; startX: number; startWidth: number } | null>(null);
   useEffect(() => {
     const update = () => {
       const { $from } = editor.state.selection;
+      if (!(editor.state.selection instanceof CellSelection)) picked.current = null;
       let pos = -1;
       let cellPos = -1;
       for (let d = $from.depth; d > 0; d--) {
@@ -411,9 +428,11 @@ function TableControls({ editor }: { editor: Editor }) {
         if (name === 'table') pos = $from.before(d);
         if (cellPos < 0 && (name === 'tableCell' || name === 'tableHeader')) cellPos = $from.before(d);
       }
-      const dom = pos >= 0 && (editor.isFocused || drag.current) ? (editor.view.nodeDOM(pos) as HTMLElement | null) : null;
+      // Selecting and the table menu blur the editor on purpose, to put the keyboard away.
+      const dom = pos >= 0 && (editor.isFocused || drag.current || picked.current || cornerOpen.current) ? (editor.view.nodeDOM(pos) as HTMLElement | null) : null;
       if (!dom) {
         setMenu(null);
+        cornerOpen.current = false;
         return setBox(null);
       }
       const rect = dom.getBoundingClientRect();
@@ -425,24 +444,63 @@ function TableControls({ editor }: { editor: Editor }) {
         handles.push({ cellPos: editor.view.posAtDOM(cell, 0) - 1, x: r.right, width: cell.offsetWidth });
       }
       const cell = cellPos >= 0 ? (editor.view.nodeDOM(cellPos) as HTMLElement | null)?.getBoundingClientRect() ?? null : null;
-      setBox({ pos, rect, cellPos, cell, handles });
+      let chosen: DOMRect | null = null;
+      if (picked.current) {
+        const rects = [...dom.querySelectorAll('.selectedCell')].map((c) => c.getBoundingClientRect());
+        const left = Math.max(rect.left, Math.min(...rects.map((r) => r.left)));
+        const right = Math.min(rect.right, Math.max(...rects.map((r) => r.right)));
+        const top = Math.min(...rects.map((r) => r.top));
+        chosen = new DOMRect(left, top, right - left, Math.max(...rects.map((r) => r.bottom)) - top);
+      }
+      setBox({ pos, rect, cellPos, cell, handles, picked: chosen });
     };
+    // A tap away from the note ends selecting, which the blur no longer does.
+    const outside = (e: PointerEvent) => {
+      if (!picked.current || (e.target as Element).closest('.prose, .editor-toolbar, .table-handle, .table-grip, .table-corner, .menu, .sheet-backdrop')) return;
+      const { tr, selection } = editor.state;
+      editor.view.dispatch(tr.setSelection(Selection.near(selection.$from)));
+    };
+    document.addEventListener('pointerdown', outside);
     editor.on('transaction', update);
     editor.on('blur', update);
     window.addEventListener('scroll', update, true);
     window.addEventListener('resize', update);
     return () => {
+      document.removeEventListener('pointerdown', outside);
       editor.off('transaction', update);
       editor.off('blur', update);
       window.removeEventListener('scroll', update, true);
       window.removeEventListener('resize', update);
     };
   }, [editor]);
-  if (!box) return null;
+  // The keyboard going away after the menu opened changes where it fits.
+  useEffect(() => {
+    if (box) setMenu((m) => m && { ...m, rect: belowTable(m.anchor, box.rect) });
+  }, [box]);
+
+  // Outside the early returns: the editor blurs while the sheet is open, which clears the box.
+  const sheet = styling && (
+    <TableStyleSheet
+      editor={editor} styling={styling}
+      onClose={() => {
+        styleOpen.current = false;
+        setStyling(null);
+      }}
+    />
+  );
+  if (!box) return sheet;
 
   const table = editor.state.doc.nodeAt(box.pos);
-  if (!table) return null;
-  const select = (kind: TableMenu['kind']) => {
+  if (!table) return sheet;
+  const startStyle = (kind: Styling['kind']) => {
+    const next = styleTargets(editor, kind, box.pos);
+    if (!next.targets.length) return;
+    styleOpen.current = true;
+    setStyling(next);
+    (editor.view.nodeDOM(box.pos) as HTMLElement).scrollIntoView({ block: 'start' });
+    editor.commands.blur();
+  };
+  const select =(kind: TableMenu['kind']) => {
     const { doc } = editor.state;
     let sel: CellSelection;
     if (kind === 'table') {
@@ -452,14 +510,46 @@ function TableControls({ editor }: { editor: Editor }) {
       const $cell = doc.resolve(box.cellPos);
       sel = kind === 'row' ? CellSelection.rowSelection($cell) : CellSelection.colSelection($cell);
     }
-    editor.view.dispatch(editor.state.tr.setSelection(sel));
+    editor.view.dispatch(editor.state.tr.setSelection(headFirst(sel)));
   };
-  const open = (kind: TableMenu['kind'], el: HTMLElement) => {
-    if (menu?.kind === kind) return setMenu(null);
+  const open =(kind: TableMenu['kind'], el: HTMLElement) => {
+    if (menu?.kind === kind) return closeMenu();
+    setMenu({ kind, rect: belowTable(el, box.rect), anchor: el });
+  };
+  const closeMenu = () => {
+    setMenu(null);
+    cornerOpen.current = false;
+    // Deferred so a menu item that keeps the keyboard away, run right after this, is seen.
+    queueMicrotask(() => {
+      if (hasSoftKeyboard() && !picked.current && !styleOpen.current) editor.view.focus();
+    });
+  };
+  const hideKeyboard = () => {
+    if (hasSoftKeyboard()) editor.commands.blur();
+  };
+  const tapHandle = (kind: 'row' | 'col', el: HTMLElement) => {
+    hideKeyboard();
+    if (picked.current === kind) return open(kind, el);
+    picked.current = kind;
     select(kind);
-    // Below the table, as the selection it acts on stays in view.
-    const r = el.getBoundingClientRect();
-    setMenu({ kind, rect: new DOMRect(r.left, r.top, r.width, box.rect.bottom - r.top) });
+  };
+  // The cell in the line that stays put while the opposite grip is dragged.
+  const fixedCell = (kind: 'row' | 'col', end: boolean) => {
+    const { $anchorCell, $headCell } = editor.state.selection as CellSelection;
+    const map = TableMap.get(table);
+    const start = box.pos + 1;
+    const r = map.rectBetween($anchorCell.pos - start, $headCell.pos - start);
+    return start + map.map[kind === 'col' ? (end ? r.left : r.right - 1) : (end ? r.top : r.bottom - 1) * map.width];
+  };
+  const growTo = (kind: 'row' | 'col', x: number, y: number) => {
+    if (growFrom.current === null) return;
+    const el = document.elementsFromPoint(x, y).map((n) => n.closest('td, th')).find(Boolean);
+    if (!el || !(editor.view.nodeDOM(box.pos) as HTMLElement).contains(el)) return;
+    const { doc, selection } = editor.state;
+    const $fixed = doc.resolve(growFrom.current);
+    const $head = doc.resolve(editor.view.posAtDOM(el, 0) - 1);
+    const next = headFirst(kind === 'col' ? CellSelection.colSelection($fixed, $head) : CellSelection.rowSelection($fixed, $head));
+    if (!next.eq(selection)) editor.view.dispatch(editor.state.tr.setSelection(next));
   };
   const add = (where: 'row' | 'col') => {
     // Inside the last cell of the last row: just before its closing tokens.
@@ -483,44 +573,79 @@ function TableControls({ editor }: { editor: Editor }) {
   const items = !menu ? [] : menu.kind === 'row'
     ? [
       { label: 'Add row', icon: <BetweenHorizontalEnd size={16} />, run: () => editor.chain().focus().addRowAfter().run() },
+      { label: 'Cell style', icon: <Paintbrush size={16} />, run: () => startStyle('cell') },
       { label: 'Delete row', icon: <Trash2 size={16} />, danger: true, run: () => remove('row') },
     ]
     : menu.kind === 'col'
       ? [
         { label: 'Add column', icon: <BetweenVerticalEnd size={16} />, run: () => editor.chain().focus().addColumnAfter().run() },
+        { label: 'Cell style', icon: <Paintbrush size={16} />, run: () => startStyle('cell') },
         { label: 'Delete column', icon: <Trash2 size={16} />, danger: true, run: () => remove('col') },
       ]
       : [
         { label: 'Add row', icon: <BetweenHorizontalEnd size={16} />, run: () => add('row') },
         { label: 'Add column', icon: <BetweenVerticalEnd size={16} />, run: () => add('col') },
+        { label: 'Table style', icon: <Paintbrush size={16} />, run: () => startStyle('table') },
         { label: 'Delete table', icon: <Trash2 size={16} />, danger: true, run: () => remove('table') },
       ];
 
   const { rect, cell } = box;
   const above = rect.top - 13;
   const keep = (e: React.MouseEvent) => e.preventDefault();
+  const chosen = box.picked;
+  const kind = chosen && picked.current;
+  const grip = (end: boolean) => kind && chosen && (
+    <span
+      className="table-grip" data-axis={kind} aria-hidden="true"
+      style={kind === 'col'
+        ? { left: end ? chosen.right : chosen.left, top: chosen.top + chosen.height / 2 }
+        : { left: chosen.left + chosen.width / 2, top: end ? chosen.bottom : chosen.top }}
+      onMouseDown={keep}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        growFrom.current = fixedCell(kind, end);
+      }}
+      onPointerMove={(e) => growTo(kind, e.clientX, e.clientY)}
+      onPointerUp={() => (growFrom.current = null)}
+      onPointerCancel={() => (growFrom.current = null)}
+    />
+  );
   return createPortal(
     <>
+      {sheet}
       <button
         type="button" className="table-corner" aria-label="Table options" title="Table options" data-open={menu?.kind === 'table'}
         style={{ left: Math.max(14, rect.left - 12), top: Math.max(14, rect.top - 14) }}
-        onMouseDown={keep} onClick={(e) => open('table', e.currentTarget)}
+        onMouseDown={keep}
+        onClick={(e) => {
+          if (menu?.kind !== 'table') {
+            picked.current = null;
+            cornerOpen.current = true;
+            select('table');
+            hideKeyboard();
+          }
+          open('table', e.currentTarget);
+        }}
       ><Grid2x2 size={16} /></button>
+      {chosen && <div className="table-selection" style={{ left: chosen.left, top: chosen.top, width: chosen.width, height: chosen.height }} />}
+      {grip(false)}
+      {grip(true)}
       {cell && (
         <>
-          {menu?.kind !== 'col' && <button
-            type="button" className="table-handle" data-axis="row" aria-label="Row options" title="Row options" data-open={menu?.kind === 'row'}
-            style={{ left: Math.max(6, rect.left - 10), top: cell.top + cell.height / 2 }}
-            onMouseDown={keep} onClick={(e) => open('row', e.currentTarget)}
-          />}
-          {menu?.kind !== 'row' && <button
-            type="button" className="table-handle" data-axis="col" aria-label="Column options" title="Column options" data-open={menu?.kind === 'col'}
-            style={{ left: cell.left + cell.width / 2, top: above }}
-            onMouseDown={keep} onClick={(e) => open('col', e.currentTarget)}
-          />}
+          {(kind ? kind === 'row' : menu?.kind !== 'col') && <button
+            type="button" className="table-handle" data-axis="row" aria-label="Row options" title="Row options" data-open={menu?.kind === 'row'} data-picked={kind ? '' : undefined}
+            style={{ left: Math.max(kind ? 9 : 6, rect.left - 10), top: chosen ? chosen.top + chosen.height / 2 : cell.top + cell.height / 2 }}
+            onMouseDown={keep} onClick={(e) => tapHandle('row', e.currentTarget)}
+          >{kind && <EllipsisVertical size={14} />}</button>}
+          {(kind ? kind === 'col' : menu?.kind !== 'row') && <button
+            type="button" className="table-handle" data-axis="col" aria-label="Column options" title="Column options" data-open={menu?.kind === 'col'} data-picked={kind ? '' : undefined}
+            style={{ left: chosen ? chosen.left + chosen.width / 2 : cell.left + cell.width / 2, top: above }}
+            onMouseDown={keep} onClick={(e) => tapHandle('col', e.currentTarget)}
+          >{kind && <Ellipsis size={14} />}</button>}
         </>
       )}
-      {box.handles.map((h) => (
+      {!kind && box.handles.map((h) => (
         <span
           key={h.cellPos} className="table-resize" aria-hidden="true"
           style={{ left: Math.min(h.x, innerWidth - 16), top: above }}
@@ -538,7 +663,7 @@ function TableControls({ editor }: { editor: Editor }) {
           onPointerCancel={() => (drag.current = null)}
         ><ChevronsLeftRight size={12} /></span>
       ))}
-      <MenuPopup items={items} tools={tools ?? undefined} rect={menu?.rect ?? null} keepFocus onClose={() => setMenu(null)} />
+      <MenuPopup items={items} tools={tools ?? undefined} rect={menu?.rect ?? null} anchor={menu?.anchor} keepFocus onClose={closeMenu} />
     </>,
     document.body,
   );
@@ -811,6 +936,7 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
       TaskList,
       TaskItemDue.configure({ nested: true }),
       TableKit.configure({ table: { resizable: true, cellMinWidth: CELL_MIN_WIDTH } }),
+      TableStyle,
       PdfAttachment,
       ImageBlock,
       Placeholder.configure({
@@ -865,7 +991,8 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
         return true;
       },
     },
-    onUpdate: ({ editor: e }) => {
+    onUpdate: ({ editor: e, transaction }) => {
+      if (transaction.getMeta(PREVIEW)) return;
       // Opening or re-rendering a note must never count as an edit.
       if (lastDoc.current?.eq(e.state.doc)) return;
       lastDoc.current = e.state.doc;

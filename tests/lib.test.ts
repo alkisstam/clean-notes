@@ -6,6 +6,39 @@ import { exportName, exportPage } from '../src/lib/export';
 import { findRanges, includesFolded, snippet } from '../src/lib/search';
 import { buildTagTree, nestNotes, normalizeTag, noteHasTag, renameTagIn } from '../src/lib/tags';
 import { appendTask, extractTasks, groupTasks, patchTask } from '../src/lib/tasks';
+import { cellOverrides, clearKeys, sanitizeStyle, styleAttrs } from '../src/editor/TableStyle';
+
+describe('table style', () => {
+  it('drops anything that could break out of a style attribute', () => {
+    expect(sanitizeStyle({ fill: 'red;background:url(x)', ink: '#12345g', size: '1px;x', align: 'evil', borders: 'x', bold: 'yes' })).toBeNull();
+    expect(sanitizeStyle('nope')).toBeNull();
+  });
+
+  it('keeps valid values', () => {
+    const look = { fill: 'soft-blue', ink: '#ff0000', size: '18px', align: 'center', borders: 'lines', bold: false, header: true };
+    expect(sanitizeStyle(look)).toEqual(look);
+  });
+
+  it('renders table and cell attributes', () => {
+    expect(styleAttrs(null, 'cell')).toEqual({});
+    const table = styleAttrs({ header: true, fill: '#112233' }, 'table');
+    expect(table['data-header']).toBe('');
+    expect(table.style).toContain('--table-bg:light-dark(#112233');
+    expect(styleAttrs({ underline: true, strike: false }, 'cell').style).toBe('text-decoration-line:underline');
+  });
+
+  it('clears from cells only what the table just set', () => {
+    expect(clearKeys({ fill: 'soft-blue', bold: true }, new Set(['fill']))).toEqual({ bold: true });
+    expect(clearKeys({ fill: 'soft-blue' }, new Set(['fill']))).toBeNull();
+    expect(clearKeys({ underline: true, strike: false, size: '18px' }, new Set(['strike']))).toEqual({ size: '18px' });
+  });
+
+  it('stores only what a cell changes from its table', () => {
+    expect(cellOverrides({ bold: true, size: '18px' }, { bold: true, size: '18px' })).toBeNull();
+    expect(cellOverrides({ bold: false }, { bold: true })).toEqual({ bold: false });
+    expect(cellOverrides({ underline: false, strike: true }, { strike: true, underline: true })).toEqual({ underline: false, strike: true });
+  });
+});
 
 describe('tags', () => {
   it('normalizes', () => {

@@ -24,7 +24,17 @@ pre { padding: 12px; background: #f3f1ec; overflow-x: auto; white-space: pre-wra
 code { font-family: ui-monospace, monospace; font-size: 0.9em; }
 blockquote { margin-left: 0; padding-left: 14px; border-left: 3px solid #ccc; }
 table { border-collapse: collapse; width: 100%; }
-td, th { border: 1px solid #ccc; padding: 5px 8px; text-align: left; vertical-align: top; }
+td, th { border: 1px solid #ccc; padding: 5px 8px; text-align: inherit; font-weight: inherit; vertical-align: top; background: var(--table-bg); text-decoration-line: var(--table-deco, none); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+table[data-header] tr:first-child > *, table[data-first-col] tr > :first-child { background: color-mix(in srgb, var(--table-bg, transparent) 88%, #211e1a) !important; }
+table[data-borders='rounded'] { border-collapse: separate; border-spacing: 0; border: 1px solid #ccc; border-radius: 10px; overflow: hidden; }
+table[data-borders='rounded'] :is(td, th) { border-width: 0 1px 1px 0; }
+table[data-borders='rounded'] tr > :last-child { border-right-width: 0; }
+table[data-borders='rounded'] tr:last-child > * { border-bottom-width: 0; }
+table[data-borders='lines'] :is(td, th) { border-width: 1px 0; }
+table[data-borders='outer'] :is(td, th) { border-width: 0; }
+table[data-borders='outer'] tr:first-child > * { border-top-width: 1px; }
+table[data-borders='outer'] tr:last-child > * { border-bottom-width: 1px; }
+table[data-borders='none'] :is(td, th) { border-width: 0; }
 ul[data-type='taskList'] { list-style: none; padding: 0; }
 ul[data-type='taskList'] li { display: flex; gap: 8px; }
 ul[data-type='taskList'] p { margin: 0; }
