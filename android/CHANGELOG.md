@@ -1,17 +1,22 @@
 # Changelog — Android app
 
-## Unreleased
+## 1.0.4 — 2026-11-08
 
 ### Added
 - Background color for notes, from the note's ⋮ menu or a long press: three rows of presets (Soft, Vivid, Deep) that adjust for dark mode. The color shows on the note page and its card in the list and grid.
 - A vertical line beside sub-notes in the list and grid, in the parent note's color.
 - Export a note as PDF, text, JSON or HTML from the note's ⋮ menu.
 - Grid view for the notes list, with a toggle that is remembered.
+- Table style, in the table options menu: highlight the header row or first column, and set the borders, color and text of the whole table, with a live preview.
+- Cell style, in the row and column menu: set the color and text of the selected cells, with a live preview.
+- The first tap on a row or column handle selects it, and dragging the round grips extends the selection. A second tap opens the menu.
 
 ### Changed
 - Tags on a note are set from an "Add tags" popup under the title.
 - Back from a linked note returns to the note that linked to it.
 - New app icon.
+- A table's header row is no longer shaded or bold unless its highlight is turned on.
+- The keyboard stays hidden while selecting table cells and in the table menus.
 
 ### Fixed
 - Opening a colored note no longer flashes another color first.

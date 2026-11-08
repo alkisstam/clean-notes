@@ -1,15 +1,19 @@
 # Changelog
 
-## Unreleased
+## 1.0.5 — 2026-11-08
 
 ### Added
 - Background color for notes, from the note's … menu: three rows of presets (Soft, Vivid, Deep) that adjust for dark mode. The color shows on the note page and its card in the list.
 - A vertical line beside sub-notes in the list, in the parent note's color.
 - Export a note as PDF, text, JSON or HTML from the note's … menu.
+- Table style, in the table options menu: highlight the header row or first column, and set the borders, color and text of the whole table, with a live preview.
+- Cell style, in the row and column menu: set the color and text of the selected cells, with a live preview.
+- The first click on a row or column handle selects it, and dragging the round grips extends the selection. A second click opens the menu.
 
 ### Changed
 - Search moved from the sidebar to the top of the note list, so it stays open when the sidebar is floating.
 - New app icon.
+- A table's header row is no longer shaded or bold unless its highlight is turned on.
 
 ### Fixed
 - Links, highlights and the active buttons in the text and image toolbars stay visible on colored notes, with their colors chosen to suit the note's color.
