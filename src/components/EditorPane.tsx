@@ -6,7 +6,7 @@ import { createNote, createSubNote, deleteForever, duplicateNote, editTags, jour
 import { addDays, dateKey, relativeTime } from '../lib/dates';
 import { currentEditor, editorHooks, linkToNote, NoteEditor } from '../editor/NoteEditor';
 import { store, useStore } from '../lib/store';
-import { noteBg } from '../lib/colors';
+import { noteBg, noteTone } from '../lib/colors';
 import { normalizeTag } from '../lib/tags';
 import type { Note, Notebook } from '../lib/types';
 import { Menu } from './Overlay';
@@ -341,7 +341,7 @@ export function EditorPane({ notes, notebooks, allTags }: { notes: Note[]; noteb
   return (
     <main className="editor-col" data-pdf={Boolean(pdf)}>
       <div className="editor-split">
-        <div className="doc-pane" data-color={bg ? '' : undefined} style={bg ? ({ '--note-bg': bg } as React.CSSProperties) : undefined}>
+        <div className="doc-pane" data-color={bg ? '' : undefined} data-tone={noteTone(note?.color)} style={bg ? ({ '--note-bg': bg } as React.CSSProperties) : undefined}>
           {note ? (
             <Document key={note.id} note={note} notebooks={notebooks} allTags={allTags} />
           ) : (
