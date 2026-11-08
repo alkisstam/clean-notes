@@ -208,6 +208,11 @@ kbd { font: 500 10.5px var(--font-mono); color: var(--ink-3); }
   --accent: var(--ink);
   --accent-ink: var(--paper);
 }
+[data-tone] { --mark-ink: #211e1a; }
+[data-tone='warm'] { --accent: light-dark(#0a2a7a, #c4e2ff); --accent-on-ink: light-dark(#c4e2ff, #0a2a7a); --mark: #8fe3f5; }
+[data-tone='green'] { --accent: light-dark(#7a0f4f, #ffe3f2); --accent-on-ink: light-dark(#ffe3f2, #7a0f4f); --mark: #ffb0d5; }
+[data-tone='cool'] { --accent: light-dark(#4a0e00, #ffdc94); --accent-on-ink: light-dark(#ffdc94, #4a0e00); --mark: #ffe066; }
+[data-tone] :is(.format-menu, .image-tools) { --accent: var(--accent-on-ink); --accent-ink: var(--ink); }
 .note-row[data-color]:not([data-drop='true']) { background: var(--note-bg); }
 .note-row[data-color]:not([data-drop='true']):hover { background: linear-gradient(var(--hover), var(--hover)), var(--note-bg); }
 .note-row[data-color] .note-row-actions { background: var(--note-bg); }

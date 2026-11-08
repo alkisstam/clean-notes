@@ -406,13 +406,13 @@ fun NoteList(
                         // Drawn over the whole item so the line crosses the divider too.
                         Column(Modifier.drawWithContent {
                             drawContent()
-                            rails.forEachIndexed { k, c -> drawRect(c, Offset((k * 20 + 22).dp.toPx(), 0f), Size(3.dp.toPx(), size.height)) }
-                        }) {
+                            rails.forEachIndexed { k, c -> drawRect(c, Offset((k * 20 + 10).dp.toPx(), 0f), Size(3.dp.toPx(), size.height)) }
+                        }.padding(start = (depth * 20).dp)) {
                         Box {
                         Column(Modifier.fillMaxWidth().background(bg ?: Color.Transparent).combinedClickable(onClick = { onOpen(note.id) }, onLongClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             pressed = true
-                        }).padding(start = (16 + depth * 20).dp, top = 12.dp, end = 16.dp, bottom = 12.dp)) {
+                        }).padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 12.dp)) {
                             NoteTitle(note, hasKids, note.id !in shutNotes, { toggle(note.id) }, MaterialTheme.typography.bodyLarge)
                             Text(
                                 note.text.replace('\n', ' ').take(170).ifBlank { "No content yet" },

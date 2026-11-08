@@ -32,6 +32,13 @@ export function noteShades(id: string | null | undefined): { light: Hsl; dark: H
   return { light: shade(palette.light), dark: shade(palette.dark) };
 }
 
+/** The family of link and highlight colors that stands out on this note color. */
+export function noteTone(id: string | null | undefined) {
+  const h = noteShades(id)?.light[0];
+  if (h === undefined) return undefined;
+  return h < 60 || h > 300 ? 'warm' : h < 190 ? 'green' : 'cool';
+}
+
 /** A CSS color that follows the page's color-scheme, so a theme switch needs no re-render. */
 export function noteBg(id: string | null | undefined) {
   const shades = noteShades(id);

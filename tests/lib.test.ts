@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { addDays, dateKey, monthGrid } from '../src/lib/dates';
-import { HUES, noteBg, noteShades, PALETTES } from '../src/lib/colors';
+import { HUES, noteBg, noteShades, noteTone, PALETTES } from '../src/lib/colors';
 import { docText } from '../src/lib/doc';
 import { exportName, exportPage } from '../src/lib/export';
 import { findRanges, includesFolded, snippet } from '../src/lib/search';
@@ -138,6 +138,16 @@ describe('nestNotes', () => {
 });
 
 describe('note colors', () => {
+  it('groups every hue into a tone', () => {
+    const tones = Object.fromEntries(HUES.map((h) => [h.id, noteTone(`soft-${h.id}`)]));
+    expect(tones).toEqual({
+      rose: 'warm', red: 'warm', orange: 'warm', amber: 'warm', gray: 'warm',
+      lime: 'green', green: 'green', teal: 'green',
+      cyan: 'cool', blue: 'cool', indigo: 'cool', violet: 'cool',
+    });
+    expect(noteTone(null)).toBeUndefined();
+  });
+
   const luminance = (h: number, s: number, l: number) => {
     const a = (s / 100) * Math.min(l / 100, 1 - l / 100);
     const channel = (n: number) => {

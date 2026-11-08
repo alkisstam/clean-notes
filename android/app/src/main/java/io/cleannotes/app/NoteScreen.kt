@@ -75,7 +75,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,7 +85,9 @@ import kotlinx.coroutines.launch
 fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> Unit, onOpenTag: (String) -> Unit, onOpenNote: (String) -> Unit, onFollowLink: (String) -> Unit) {
     val live by app.db.dao().liveNotes().collectAsStateWithLifecycle(emptyList())
     val allTags = remember(live) { allTagPaths(live.map { it.tagList }) }
-    val note by app.db.dao().note(id).collectAsStateWithLifecycle(null)
+    // Read up front so the first frame already has the note's color.
+    val first = remember(id) { runBlocking { app.db.dao().note(id).first() } }
+    val note by app.db.dao().note(id).collectAsStateWithLifecycle(first)
     val view = remember(id) { NoteViewState() }
     var menu by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }

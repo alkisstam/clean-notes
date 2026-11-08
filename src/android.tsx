@@ -13,7 +13,7 @@ import { flushEditor, patchNote } from './lib/actions';
 import { db, uid, writeListeners } from './lib/db';
 import { imageIdsIn, pdfIdsIn } from './lib/doc';
 import { blobSaver } from './lib/pdf';
-import { noteBg } from './lib/colors';
+import { noteBg, noteTone } from './lib/colors';
 import { exportHost, exportNote, type ExportFormat } from './lib/export';
 import { currentEditor, editorHooks, formatMenu, insertIntoEditor, linkToNote, NoteEditor, noteLinks } from './editor/NoteEditor';
 import { viewerHooks } from './editor/ImageBlock';
@@ -151,7 +151,7 @@ function Page({ id }: { id: string }) {
   const bg = noteBg(note.color);
   return (
     // The body never scrolls (the web app scrolls inside its panes), so this needs the full height to scroll itself.
-    <div className="doc-scroll" data-color={bg ? '' : undefined} style={{ height: '100%', ...(bg && { '--note-bg': bg }) } as React.CSSProperties}>
+    <div className="doc-scroll" data-color={bg ? '' : undefined} data-tone={noteTone(note.color)} style={{ height: '100%', ...(bg && { '--note-bg': bg }) } as React.CSSProperties}>
       <article className="doc">
         <textarea
           className="doc-title"
