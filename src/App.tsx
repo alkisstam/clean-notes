@@ -158,8 +158,7 @@ export function App() {
         e.preventDefault();
         const s = store.getState();
         if (s.focusMode) s.toggleFocus();
-        // On smaller windows the search box lives in the library drawer.
-        s.setPane(matchMedia('(max-width: 1099px)').matches ? 'sidebar' : 'list');
+        s.setPane('list');
         const go = () => {
           searchRef.current?.focus();
           searchRef.current?.select();
@@ -224,9 +223,9 @@ export function App() {
       data-pdf={Boolean(pdf)}
       style={{ '--w-sidebar': `${widths.sidebar}px`, '--w-list': `${widths.list}px` } as React.CSSProperties}
     >
-      <Sidebar notes={notes} notebooks={notebooks} searchRef={searchRef} />
+      <Sidebar notes={notes} notebooks={notebooks} />
       <Resizer target="sidebar" min={190} max={380} />
-      <ListColumn notes={notes} notebooks={notebooks} />
+      <ListColumn notes={notes} notebooks={notebooks} searchRef={searchRef} />
       <Resizer target="list" min={240} max={480} />
       <Boundary message="Reload the app to continue. Your saved notes are safe.">
         {ready ? <EditorPane notes={notes} notebooks={notebooks} allTags={allTags} /> : <main className="editor-col" />}

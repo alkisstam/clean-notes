@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  Archive, ArchiveRestore, ArrowDownUp, Copy, FilePlus, PinOff, FileText, Image as ImageIcon, Menu as MenuIcon, Pin, Plus, RotateCcw, SearchX, Trash2, ChevronDown,
+  Archive, ArchiveRestore, ArrowDownUp, Copy, FilePlus, PinOff, FileText, Image as ImageIcon, Menu as MenuIcon, Pin, Plus, RotateCcw, Search, SearchX, Trash2, ChevronDown,
 } from 'lucide-react';
 import { memo, useMemo, useState, type ReactNode } from 'react';
 import { createNote, createSubNote, deleteForever, duplicateNote, nestNote, patchNote, trashNote, flushEditor, openDaily, quickAddTask, restoreNote, setTaskAttrs } from '../lib/actions';
@@ -291,9 +291,10 @@ interface SearchHit {
   source?: string;
 }
 
-export function ListColumn({ notes, notebooks }: { notes: Note[]; notebooks: Notebook[] }) {
+export function ListColumn({ notes, notebooks, searchRef }: { notes: Note[]; notebooks: Notebook[]; searchRef: React.RefObject<HTMLInputElement | null> }) {
   const view = useStore((s) => s.view);
   const query = useStore((s) => s.query);
+  const setQuery = useStore((s) => s.setQuery);
   const noteId = useStore((s) => s.noteId);
   const sort = useStore((s) => s.sort);
   const setSort = useStore((s) => s.setSort);
@@ -537,6 +538,24 @@ export function ListColumn({ notes, notebooks }: { notes: Note[]; notebooks: Not
           </button>
         )}
       </header>
+      <label className="search">
+        <Search size={14} />
+        <input
+          ref={searchRef}
+          type="search"
+          placeholder="Search"
+          aria-label="Search notes and PDFs"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setQuery('');
+              e.currentTarget.blur();
+            }
+          }}
+        />
+        <kbd>Ctrl K</kbd>
+      </label>
       {body}
     </section>
   );

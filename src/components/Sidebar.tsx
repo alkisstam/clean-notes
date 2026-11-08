@@ -1,7 +1,7 @@
 import {
-  Archive, BookOpen, CalendarDays, ChevronRight, CircleCheck, FileText, Hash, Layers, Library, Moon, Pin, Plus, Search, Settings2, Sun, Trash2, Laptop,
+  Archive, BookOpen, CalendarDays, ChevronRight, CircleCheck, FileText, Hash, Layers, Library, Moon, Pin, Plus, Settings2, Sun, Trash2, Laptop,
 } from 'lucide-react';
-import { useMemo, useRef, type DragEvent, type ReactNode } from 'react';
+import { useMemo, type DragEvent, type ReactNode } from 'react';
 import { createNotebook, deleteNotebook, editTags, openDaily, patchNote, renameNotebook, retag } from '../lib/actions';
 import { store, useStore, type ThemePref } from '../lib/store';
 import { buildTagTree, normalizeTag, type TagNode } from '../lib/tags';
@@ -146,13 +146,10 @@ function TagRows({ nodes, depth }: { nodes: TagNode[]; depth: number }) {
 const THEME_NEXT: Record<ThemePref, ThemePref> = { system: 'light', light: 'dark', dark: 'system' };
 const THEME_ICON = { system: Laptop, light: Sun, dark: Moon };
 
-export function Sidebar({ notes, notebooks, searchRef }: { notes: Note[]; notebooks: Notebook[]; searchRef: React.RefObject<HTMLInputElement | null> }) {
-  const query = useStore((s) => s.query);
-  const setQuery = useStore((s) => s.setQuery);
+export function Sidebar({ notes, notebooks }: { notes: Note[]; notebooks: Notebook[] }) {
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
   const setDialog = useStore((s) => s.setDialog);
-  const composing = useRef(false);
 
   const live = useMemo(() => notes.filter((n) => !n.trashedAt), [notes]);
   const shelved = useMemo(() => live.filter((n) => !n.archivedAt), [live]);
@@ -169,26 +166,6 @@ export function Sidebar({ notes, notebooks, searchRef }: { notes: Note[]; notebo
       <div className="brand">
         <span className="brand-name">Clean Notes</span>
       </div>
-      <label className="search">
-        <Search size={14} />
-        <input
-          ref={searchRef}
-          type="search"
-          placeholder="Search"
-          aria-label="Search notes and PDFs"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onCompositionStart={() => (composing.current = true)}
-          onCompositionEnd={() => (composing.current = false)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              setQuery('');
-              e.currentTarget.blur();
-            }
-          }}
-        />
-        <kbd>Ctrl K</kbd>
-      </label>
 
       <div className="sidebar-scroll">
         <div className="nav-group">
