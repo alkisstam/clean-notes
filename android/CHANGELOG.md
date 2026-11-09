@@ -9,6 +9,13 @@
 - Sharing or exporting several notes makes one combined file.
 - "New note - Clean Notes" in the system share menu turns shared text, images and PDFs into a new note.
 - Icons on every entry in the ⋮, long-press and sort menus.
+- Tapping a website link in a note shows an "Open link" button under it.
+- A line under the note title shows when it was created and last edited.
+- An arrow at the end of the toolbar scrolls to the icons that don't fit.
+
+### Fixed
+- Links on colored notes in dark mode stand out from the text.
+- The to-do tick now adapts to the color of its box.
 
 ## 1.0.4 — 2026-11-08
 

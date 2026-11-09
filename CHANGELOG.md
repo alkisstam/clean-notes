@@ -9,9 +9,17 @@
 - Sharing or exporting several notes makes one combined file.
 - The installed web app appears in the device's share menu and turns shared text, images and PDFs into a new note.
 - Icons on every entry in the … menus and the table actions menu.
+- Clicking a website link in a note shows "Ctrl+click to open" under it.
+- A line under the note title shows when it was created and last edited.
+- An arrow at the end of the toolbar scrolls to the icons that don't fit.
 
 ### Changed
 - Sort options moved into the new … button in the note list.
+- The note page is wider.
+
+### Fixed
+- Links on colored notes in dark mode stand out from the text.
+- The to-do tick now adapts to the color of its box.
 
 ## 1.0.5 — 2026-11-08
 
