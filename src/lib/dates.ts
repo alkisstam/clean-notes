@@ -24,6 +24,12 @@ export const shortDate = (key: string, today = dateKey()) => {
   return d.toLocaleDateString(undefined, sameYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
+export const fullDate = (ts: number) =>
+  new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+
+export const fullDateTime = (ts: number) =>
+  new Date(ts).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
 export function dueLabel(key: string, today = dateKey()): string {
   if (key === today) return 'Today';
   if (key === addDays(today, 1)) return 'Tomorrow';

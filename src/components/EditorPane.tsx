@@ -3,7 +3,7 @@ import {
 } from 'lucide-react';
 import { lazy, Component, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createNote, createSubNote, deleteForever, duplicateNote, editTags, journalEdit, openDaily, patchNote, restoreNote, trashNote } from '../lib/actions';
-import { addDays, dateKey, relativeTime } from '../lib/dates';
+import { addDays, dateKey, fullDate, fullDateTime, relativeTime } from '../lib/dates';
 import { currentEditor, editorHooks, linkToNote, NoteEditor } from '../editor/NoteEditor';
 import { store, useStore } from '../lib/store';
 import { noteBg, noteTone } from '../lib/colors';
@@ -320,6 +320,7 @@ function Document({ note, notebooks, allTags }: { note: Note; notebooks: Noteboo
               }
             }}
           />
+          <div className="doc-dates">Created {fullDate(note.createdAt)} · Last edited {fullDateTime(note.updatedAt)}</div>
           {!inTrash && <TagInput note={note} allTags={allTags} />}
           <Boundary message="This note could not be displayed." resetKey={note.id}>
             <NoteEditor note={note} readOnly={inTrash} />

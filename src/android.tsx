@@ -14,6 +14,7 @@ import { db, uid, writeListeners } from './lib/db';
 import { imageIdsIn, pdfIdsIn } from './lib/doc';
 import { blobSaver } from './lib/pdf';
 import { noteBg, noteTone } from './lib/colors';
+import { fullDate, fullDateTime } from './lib/dates';
 import { exportHost, exportNotes, type ExportFormat } from './lib/export';
 import { currentEditor, editorHooks, formatMenu, insertIntoEditor, linkToNote, NoteEditor, noteLinks, sharedFiles } from './editor/NoteEditor';
 import { viewerHooks } from './editor/ImageBlock';
@@ -175,6 +176,7 @@ function Page({ id }: { id: string }) {
             }
           }}
         />
+        <div className="doc-dates">Created {fullDate(note.createdAt)} · Last edited {fullDateTime(note.updatedAt)}</div>
         <button
           type="button"
           className="doc-tags"

@@ -11,7 +11,7 @@ import { BubbleMenu } from '@tiptap/react/menus';
 import { StarterKit } from '@tiptap/starter-kit';
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
 import {
-  BetweenHorizontalEnd, BetweenVerticalEnd, Bold, CalendarPlus, Check, ChevronsLeftRight, ClipboardPaste, Code, Copy, ExternalLink, FileSymlink, FileText,
+  BetweenHorizontalEnd, BetweenVerticalEnd, Bold, CalendarPlus, Check, ChevronLeft, ChevronRight, ChevronsLeftRight, ClipboardPaste, Code, Copy, ExternalLink, FileSymlink, FileText,
   Ellipsis, EllipsisVertical, Grid2x2, Heading2, Highlighter, ImagePlus, Italic, Link2, List, ListOrdered, ListTodo, Minus, Paintbrush, Quote, Scissors, SquareCode, Strikethrough,
   Table, Table2, Trash2, Underline, X,
 } from 'lucide-react';
@@ -68,7 +68,7 @@ async function insertFiles(editor: Editor, files: File[], dropAt?: number) {
       } else {
         const image = await importImage(file);
         // Small pictures keep their own size rather than stretching to the column.
-        const width = Math.min(100, Math.max(15, Math.round((image.width / 620) * 100)));
+        const width = Math.min(100, Math.max(15, Math.round((image.width / 740) * 100)));
         node = { type: 'noteImage', attrs: { imageId: image.id, alt: '', width } };
       }
       if (editor.isDestroyed) continue;
@@ -268,6 +268,25 @@ function Toolbar({ editor, items }: { editor: Editor; items: SlashItem[] }) {
     };
   }, [editor]);
 
+  const bar = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState<'forward' | 'back' | null>(null);
+  const measure = () => {
+    const el = bar.current!;
+    setMore(el.scrollWidth <= el.clientWidth + 1 ? null : el.scrollLeft + el.clientWidth >= el.scrollWidth - 1 ? 'back' : 'forward');
+  };
+  // Every render, since the table menu appearing changes the width without resizing the bar.
+  useEffect(measure);
+  useEffect(() => {
+    const el = bar.current!;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    el.addEventListener('scroll', measure);
+    return () => {
+      observer.disconnect();
+      el.removeEventListener('scroll', measure);
+    };
+  }, []);
+
   // Slash items replace the typed "/query"; here there is none, so give them an empty range.
   const slash = (id: string) => {
     const at = editor.state.selection.from;
@@ -307,7 +326,7 @@ function Toolbar({ editor, items }: { editor: Editor; items: SlashItem[] }) {
   );
 
   return (
-    <div className="editor-toolbar" role="toolbar" aria-label="Formatting">
+    <div ref={bar} className="editor-toolbar" role="toolbar" aria-label="Formatting">
       <select
         aria-label="Text style"
         value={block ? `h${block}` : 'text'}
@@ -357,6 +376,22 @@ function Toolbar({ editor, items }: { editor: Editor; items: SlashItem[] }) {
             run: () => slash(i.id),
           }))}
         />
+      )}
+      {more && (
+        <button
+          type="button"
+          className="toolbar-more"
+          aria-label={more === 'forward' ? 'More tools' : 'Back to start'}
+          title={more === 'forward' ? 'More tools' : 'Back to start'}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            const el = bar.current!;
+            if (more === 'forward') el.scrollBy({ left: el.clientWidth * 0.7, behavior: 'smooth' });
+            else el.scrollTo({ left: 0, behavior: 'smooth' });
+          }}
+        >
+          {more === 'forward' ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+        </button>
       )}
     </div>
   );
@@ -847,6 +882,35 @@ function FormatMenu({ editor }: { editor: Editor }) {
   );
 }
 
+function LinkHint({ editor }: { editor: Editor }) {
+  const touch = matchMedia('(hover: none)').matches;
+  const [scroller, setScroller] = useState<HTMLElement | null>(null);
+  useEffect(() => setScroller(editor.view.dom.closest<HTMLElement>('.doc-scroll')), [editor]);
+  if (!scroller) return null;
+  return (
+    <BubbleMenu
+      editor={editor}
+      // On touch, clears the caret's drag handle.
+      options={{ placement: 'bottom', offset: touch ? 28 : 6, scrollTarget: scroller }}
+      shouldShow={({ editor: e, state }) => state.selection.empty && e.isFocused && e.isActive('link') && !noteIdOf(e.getAttributes('link').href)}
+    >
+      <div className="format-menu link-hint">
+        {touch ? (
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => window.open(editor.getAttributes('link').href, '_blank', 'noopener')}
+          >
+            Open link
+          </button>
+        ) : (
+          'Ctrl+click to open'
+        )}
+      </div>
+    </BubbleMenu>
+  );
+}
+
 interface Props {
   note: Note;
   readOnly?: boolean;
@@ -1089,6 +1153,7 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
       {!readOnly && showToolbar && <Toolbar editor={editor} items={items} />}
       <EditorContent editor={editor} />
       {!readOnly && <FormatMenu editor={editor} />}
+      {!readOnly && <LinkHint editor={editor} />}
       {!readOnly && <TableControls editor={editor} />}
       {picking && (
         <TablePicker

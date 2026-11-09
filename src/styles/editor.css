@@ -197,6 +197,9 @@ body[data-edit-menu] .format-menu { visibility: hidden; }
 .format-menu > button, .format-link button { width: 29px; height: 28px; display: grid; place-items: center; border-radius: 6px; opacity: 0.8; }
 .format-menu button:hover { opacity: 1; background: color-mix(in srgb, var(--paper) 16%, transparent); }
 .format-menu button[data-active='true'] { opacity: 1; background: var(--accent); color: var(--accent-ink); }
+.link-hint { padding: 5px 9px; font-size: 12px; white-space: nowrap; }
+.link-hint:has(button) { padding: 3px; }
+.format-menu.link-hint > button { width: auto; padding: 0 8px; opacity: 1; }
 .format-sep { width: 1px; height: 16px; margin: 0 3px; background: var(--paper); opacity: 0.2; }
 .format-link { display: flex; align-items: center; gap: 1px; }
 .format-link input { width: 220px; height: 28px; padding: 0 7px; background: none; border: 0; color: inherit; font-size: 13px; }
@@ -285,5 +288,11 @@ body[data-edit-menu] .format-menu { visibility: hidden; }
 .editor-toolbar select:hover { background: var(--hover); }
 .editor-toolbar select option { background: var(--raised); color: var(--ink); }
 .toolbar-sep { flex: none; width: 1px; height: 16px; margin: 0 4px; background: var(--line); }
+/* Pinned to the end while the icons scroll under it. */
+.editor-toolbar > .toolbar-more {
+  position: sticky; right: 0; z-index: 1; border-radius: 0;
+  background: var(--raised); box-shadow: -6px 0 6px var(--raised), 4px 0 0 var(--raised);
+}
+.editor-toolbar > .toolbar-more:hover { background: linear-gradient(var(--hover), var(--hover)), var(--raised); }
 /* The note text starts below a line, so the sticky toolbar reads as separate from it. */
 .editor-toolbar + * { border-top: 1px solid var(--line); padding-top: 14px; }
