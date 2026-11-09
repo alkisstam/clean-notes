@@ -2,6 +2,30 @@
 
 A local-first note-taking PWA with a three-column interface: notebooks, nested tags, daily notes, tasks, a rich-text editor with slash commands, images, and PDFs you can attach, read and search. Notes, images and PDFs are stored in the browser's IndexedDB. There is no account. An optional self-hosted server syncs devices (see [Sync](#sync)).
 
+## Install it
+
+### Desktop (Linux AppImage)
+
+1. Download `Clean-Notes-<version>.AppImage` from the [latest desktop release](https://github.com/alkisstam/clean-notes/releases/latest).
+2. Make it executable and run it:
+
+   ```bash
+   chmod +x Clean-Notes-*.AppImage
+   ./Clean-Notes-*.AppImage
+   ```
+
+3. Optional: use Gear Lever or AppImageLauncher to add it to the app menu.
+
+If it does not start, install FUSE 2 (`fuse2` on Arch, `libfuse2` on Debian and Ubuntu). To update, replace the file with a newer AppImage. Your notes are stored separately and stay in place.
+
+### Android (8.0 or later)
+
+1. Download `Clean-Notes-<version>.apk` on your phone from the newest [Android release](https://github.com/alkisstam/clean-notes/releases?q=android&expanded=true).
+2. Open the file. If Android asks, allow your browser or file manager to install unknown apps.
+3. Confirm **Install**. Google Play Protect may warn about an unrecognized app, because the app is not on Google Play.
+
+To update, install a newer APK over the current one. Your notes stay in place. Do not uninstall first, because uninstalling deletes the app's notes.
+
 ## Run it
 
 ```bash
