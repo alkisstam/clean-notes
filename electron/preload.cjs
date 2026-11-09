@@ -6,4 +6,6 @@ contextBridge.exposeInMainWorld('desktop', {
   syncServer: () => ipcRenderer.invoke('sync-server'),
   setSyncServer: (url) => ipcRenderer.invoke('set-sync-server', url),
   printPdf: (html, name) => ipcRenderer.invoke('print-pdf', html, name),
+  sharePdf: (html, name) => ipcRenderer.invoke('share-pdf', html, name),
+  shareFile: (bytes, name) => ipcRenderer.invoke('share-file', bytes, name),
 });

@@ -36,18 +36,19 @@ export function baseNote(patch: Partial<Note> = {}): Note {
   };
 }
 
-export async function createNote(view: View = store.getState().view) {
+export async function createNote(view: View = store.getState().view, patch: Partial<Note> = {}) {
   flushEditor();
   const note = baseNote({
     notebookId: view.type === 'notebook' ? view.id : null,
     tags: view.type === 'tag' ? [view.path] : [],
+    ...patch,
   });
   await db.notes.add(note);
   const s = store.getState();
   // A new note must be visible in the list, so leave views that cannot show it.
   if (!['all', 'notebook', 'tag'].includes(view.type)) s.setView({ type: 'all' });
   s.setQuery('');
-  s.openNote(note.id, { focusTitle: true });
+  s.openNote(note.id, { focusTitle: !patch.title });
   return note;
 }
 
@@ -100,6 +101,17 @@ export async function nestNote(id: string, parentId: string) {
 
 export async function patchNote(id: string, patch: Partial<Note>) {
   await db.notes.update(id, { ...patch, updatedAt: Date.now() });
+}
+
+export async function patchNotes(ids: string[], patch: Partial<Note>) {
+  await db.notes.where('id').anyOf(ids).modify({ ...patch, updatedAt: Date.now() });
+}
+
+export async function changeTags(ids: string[], add: string[], remove: string[]) {
+  await db.notes.where('id').anyOf(ids).modify((n) => {
+    n.tags = [...new Set([...n.tags.filter((t) => !remove.includes(t)), ...add])];
+    n.updatedAt = Date.now();
+  });
 }
 
 /**
@@ -162,19 +174,21 @@ export async function saveContent(id: string, content: JSONContent, writer: stri
   await db.notes.update(id, { content, text: docText(content), writer, updatedAt: Date.now() });
 }
 
-export async function trashNote(id: string) {
+export async function trashNotes(ids: string[]) {
   flushEditor();
-  await db.notes.update(id, { trashedAt: Date.now(), updatedAt: Date.now() });
+  await patchNotes(ids, { trashedAt: Date.now() });
   const s = store.getState();
-  if (s.noteId === id) s.openNote(null);
+  if (s.noteId && ids.includes(s.noteId)) s.openNote(null);
   s.showToast({
-    message: 'Moved to Trash',
+    message: ids.length === 1 ? 'Moved to Trash' : `${ids.length} notes moved to Trash`,
     action: {
       label: 'Undo',
-      run: () => void restoreNote(id),
+      run: () => ids.forEach((id) => void restoreNote(id)),
     },
   });
 }
+
+export const trashNote = (id: string) => trashNotes([id]);
 
 export async function restoreNote(id: string) {
   flushEditor();
@@ -221,7 +235,7 @@ export async function deleteForever(ids: string[]) {
   if (s.noteId && ids.includes(s.noteId)) s.openNote(null);
 }
 
-export async function duplicateNote(id: string) {
+export async function duplicateNote(id: string, open = true) {
   flushEditor();
   const src = await db.notes.get(id);
   if (!src) return;
@@ -241,7 +255,7 @@ export async function duplicateNote(id: string) {
     tags: [...src.tags],
   });
   await db.notes.add(copy);
-  store.getState().openNote(copy.id);
+  if (open) store.getState().openNote(copy.id);
 }
 
 export async function getOrCreateDaily(date: string): Promise<Note> {
@@ -279,10 +293,10 @@ export async function quickAddTask(text: string, due: string | null) {
   await db.notes.update(note.id, { content, text: docText(content), writer: `tasks:${uid()}`, updatedAt: Date.now() });
 }
 
-export async function createNotebook(name: string) {
+export async function createNotebook(name: string, open = true) {
   const id = uid();
   await db.notebooks.add({ id, name: name.trim(), createdAt: Date.now(), updatedAt: Date.now() });
-  store.getState().setView({ type: 'notebook', id });
+  if (open) store.getState().setView({ type: 'notebook', id });
   return id;
 }
 

@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Download, FileClock, HardDrive, Laptop, Moon, QrCode, RefreshCw, Sun, Upload, X } from 'lucide-react';
+import { Download, FileClock, FolderPlus, HardDrive, Laptop, Moon, QrCode, RefreshCw, Sun, Upload, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { autoBackupSupported, chooseBackupFile, exportBackup, importBackup, stopAutoBackup } from '../lib/backup';
 import { relativeTime } from '../lib/dates';
@@ -8,10 +8,10 @@ import { formatBytes } from '../lib/pdf';
 import { foldQuery } from '../lib/search';
 import { useStore, type DialogState, type ThemePref } from '../lib/store';
 import { disableServerSync, enableServerSync, syncNow } from '../lib/sync';
-import { patchNote } from '../lib/actions';
+import { changeTags, createNotebook, patchNotes } from '../lib/actions';
 import { HUES, noteBg, PALETTES } from '../lib/colors';
-import { EXPORT_FORMATS, exportNote } from '../lib/export';
-import { currentEditor } from '../editor/NoteEditor';
+import { EXPORT_FORMATS, exportNotes, shareFormats, type ExportMode } from '../lib/export';
+import { normalizeTag } from '../lib/tags';
 
 export const THEMES: { id: ThemePref; label: string; icon: typeof Sun }[] = [
   { id: 'system', label: 'System', icon: Laptop },
@@ -410,8 +410,10 @@ function Settings({ close }: { close: () => void }) {
   );
 }
 
-function NoteColor({ noteId, close }: { noteId: string; close: () => void }) {
-  const current = useLiveQuery(() => db.notes.get(noteId), [noteId])?.color;
+function NoteColor({ noteIds, close }: { noteIds: string[]; close: () => void }) {
+  const notes = useLiveQuery(() => db.notes.bulkGet(noteIds), [noteIds]);
+  const colors = new Set(notes?.map((n) => n?.color ?? null));
+  const current = colors.size === 1 ? [...colors][0] : null;
   return (
     <Modal title="Background color" onClose={close}>
       {PALETTES.map((p) => (
@@ -428,7 +430,7 @@ function NoteColor({ noteId, close }: { noteId: string; close: () => void }) {
                   title={h.label}
                   aria-pressed={current === id}
                   style={{ background: noteBg(id) }}
-                  onClick={() => void patchNote(noteId, { color: id })}
+                  onClick={() => void patchNotes(noteIds, { color: id })}
                 />
               );
             })}
@@ -436,24 +438,25 @@ function NoteColor({ noteId, close }: { noteId: string; close: () => void }) {
         </section>
       ))}
       <footer>
-        <button type="button" className="btn" disabled={!current} onClick={() => void patchNote(noteId, { color: null })}>No color</button>
+        <button type="button" className="btn" disabled={colors.size === 1 && !current} onClick={() => void patchNotes(noteIds, { color: null })}>No color</button>
       </footer>
     </Modal>
   );
 }
 
-function ExportNote({ noteId, close }: { noteId: string; close: () => void }) {
+function ExportNote({ noteIds, mode, close }: { noteIds: string[]; mode: ExportMode; close: () => void }) {
+  const setSelected = useStore((s) => s.setSelected);
   return (
-    <Modal title="Export note" onClose={close}>
+    <Modal title={`${mode === 'share' ? 'Share' : 'Export'} ${noteIds.length === 1 ? 'note' : `${noteIds.length} notes`}`} onClose={close}>
       <div className="pick-note-list">
-        {EXPORT_FORMATS.map((f) => (
+        {(mode === 'share' ? shareFormats() : EXPORT_FORMATS).map((f) => (
           <button
             key={f.id}
             type="button"
             onClick={() => {
-              const html = currentEditor()?.getHTML() ?? '';
               close();
-              void exportNote(noteId, f.id, html);
+              setSelected(null);
+              void exportNotes(noteIds, f.id, mode);
             }}
           >
             {f.label}
@@ -464,14 +467,91 @@ function ExportNote({ noteId, close }: { noteId: string; close: () => void }) {
   );
 }
 
+function PickNotebook({ dialog, close }: { dialog: Extract<DialogState, { kind: 'pickNotebook' }>; close: () => void }) {
+  const notebooks = useLiveQuery(() => db.notebooks.orderBy('createdAt').toArray(), [], []);
+  const setDialog = useStore((s) => s.setDialog);
+  const pick = (id: string | null) => {
+    close();
+    dialog.onPick(id);
+  };
+  return (
+    <Modal title="Select Notebook" onClose={close}>
+      <div className="pick-note-list">
+        <button type="button" onClick={() => pick(null)}>No notebook</button>
+        {notebooks.map((b) => <button key={b.id} type="button" onClick={() => pick(b.id)}>{b.name || 'Untitled'}</button>)}
+        <button
+          type="button"
+          className="pick-create"
+          onClick={() => setDialog({ kind: 'prompt', title: 'Create Notebook', label: 'Name', value: '', confirm: 'Create', onConfirm: (name) => void createNotebook(name, false).then(dialog.onPick) })}
+        >
+          <FolderPlus size={14} /> Create Notebook
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function BulkTags({ dialog, close }: { dialog: Extract<DialogState, { kind: 'bulkTags' }>; close: () => void }) {
+  const setSelected = useStore((s) => s.setSelected);
+  const [on, setOn] = useState(dialog.common);
+  const [created, setCreated] = useState<string[]>([]);
+  const [value, setValue] = useState('');
+  const shown = [...new Set([...dialog.allTags, ...created])].sort();
+  const add = () => {
+    const tag = normalizeTag(value);
+    if (tag) {
+      setCreated((c) => [...c, tag]);
+      setOn((o) => (o.includes(tag) ? o : [...o, tag]));
+    }
+    setValue('');
+  };
+  return (
+    <Modal title="Tags" onClose={close}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          add();
+        }}
+      >
+        <div className="tag-picks">
+          {shown.map((t) => (
+            <button key={t} type="button" aria-pressed={on.includes(t)} onClick={() => setOn(on.includes(t) ? on.filter((x) => x !== t) : [...on, t])}>{t}</button>
+          ))}
+        </div>
+        <label className="field">
+          <span>New tag</span>
+          <input value={value} placeholder="Like work/ideas" onChange={(e) => setValue(e.target.value)} />
+        </label>
+        <footer>
+          <button type="button" className="btn" onClick={close}>Cancel</button>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => {
+              void changeTags(dialog.noteIds, on.filter((t) => !dialog.common.includes(t)), dialog.common.filter((t) => !on.includes(t)));
+              setSelected(null);
+              close();
+            }}
+          >
+            Save
+          </button>
+        </footer>
+      </form>
+    </Modal>
+  );
+}
+
 export function Dialogs() {
   const dialog = useStore((s) => s.dialog);
   const setDialog = useStore((s) => s.setDialog);
+  const setSelected = useStore((s) => s.setSelected);
   const close = () => setDialog(null);
   if (!dialog) return null;
   if (dialog.kind === 'settings') return <Settings close={close} />;
-  if (dialog.kind === 'noteColor') return <NoteColor noteId={dialog.noteId} close={close} />;
-  if (dialog.kind === 'export') return <ExportNote noteId={dialog.noteId} close={close} />;
+  if (dialog.kind === 'noteColor') return <NoteColor noteIds={dialog.noteIds} close={() => { close(); setSelected(null); }} />;
+  if (dialog.kind === 'export') return <ExportNote noteIds={dialog.noteIds} mode={dialog.mode} close={close} />;
+  if (dialog.kind === 'pickNotebook') return <PickNotebook dialog={dialog} close={close} />;
+  if (dialog.kind === 'bulkTags') return <BulkTags dialog={dialog} close={close} />;
   if (dialog.kind === 'pickNote') return <PickNote dialog={dialog} close={close} />;
   if (dialog.kind === 'prompt') return <Prompt key={dialog.title} dialog={dialog} close={close} />;
   return (

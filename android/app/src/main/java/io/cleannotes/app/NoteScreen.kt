@@ -150,7 +150,7 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
                         MenuItem("Add PDF", { adding = false; view.pick("pdf") }, R.drawable.ic_file_text)
                     }
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
-                    note?.let { n -> NoteMenu(app, n, live, menu, { menu = false }, view::flush, onClose, onLinkNote = view::startLink, onExport = view::export) }
+                    note?.let { n -> NoteMenu(app, n, live, menu, { menu = false }, view::flush, onClose, onLinkNote = view::startLink, onExport = view::export, onShare = { f -> view.flush { shareNotes(app, context, listOf(id), f) } }) }
                 },
             )
         },
@@ -170,6 +170,8 @@ fun NoteMenu(
     centered: Boolean = false,
     onLinkNote: (() -> Unit)? = null,
     onExport: ((String) -> Unit)? = null,
+    onShare: ((String) -> Unit)? = null,
+    onSelect: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val id = note.id
@@ -177,30 +179,33 @@ fun NoteMenu(
     var moving by remember { mutableStateOf(false) }
     var coloring by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
+    var sharing by remember { mutableStateOf(false) }
     val notebooks by app.db.dao().liveNotebooks().collectAsStateWithLifecycle(emptyList())
     val act = { block: suspend () -> Unit -> onDismiss(); before { app.scope.launch { block() } } }
     val items: @Composable () -> Unit = {
+        if (onSelect != null) MenuItem("Select", { onDismiss(); onSelect() }, R.drawable.ic_square_check)
         // Same toggles as the web's note menu.
         MenuItem(if (note.pinned) "Unpin" else "Pin to top", {
             act { app.updateNote(id) { j, _ -> j.put("pinned", !note.pinned) } }
-        })
+        }, if (note.pinned) R.drawable.ic_pin_off else R.drawable.ic_pin)
         MenuItem(if (note.archivedAt != null) "Unarchive" else "Archive", {
             act { app.updateNote(id) { j, now -> j.put("archivedAt", if (note.archivedAt != null) JSONObject.NULL else now) } }
-        })
-        if (onLinkNote != null) MenuItem("Link to note", { onDismiss(); onLinkNote() })
-        MenuItem("Move into note…", { onDismiss(); nesting = true })
+        }, if (note.archivedAt != null) R.drawable.ic_archive_restore else R.drawable.ic_archive)
+        if (onLinkNote != null) MenuItem("Link to note", { onDismiss(); onLinkNote() }, R.drawable.ic_file_symlink)
+        MenuItem("Move into note…", { onDismiss(); nesting = true }, R.drawable.ic_file_input)
         if (note.parentId != null) {
             MenuItem("Move to top level", {
                 act { app.updateNote(id) { j, _ -> j.put("parentId", JSONObject.NULL) } }
-            })
+            }, R.drawable.ic_corner_left_up)
         }
-        MenuItem("Move to notebook", { onDismiss(); moving = true })
-        MenuItem("Background color", { onDismiss(); coloring = true })
-        if (onExport != null) MenuItem("Export", { onDismiss(); exporting = true })
+        MenuItem("Move to notebook", { onDismiss(); moving = true }, R.drawable.ic_folder_input)
+        MenuItem("Background color", { onDismiss(); coloring = true }, R.drawable.ic_palette)
+        if (onShare != null) MenuItem("Share", { onDismiss(); sharing = true }, R.drawable.ic_share_2)
+        if (onExport != null) MenuItem("Export", { onDismiss(); exporting = true }, R.drawable.ic_download)
         MenuItem("Move to Trash", {
             onDismiss()
             before { app.scope.launch { app.trashNote(id) }; onTrashed() }
-        })
+        }, R.drawable.ic_trash)
     }
     // A long press in the list opens it in the middle of the screen; the note page's ⋮ drops it from the corner.
     if (centered) {
@@ -213,18 +218,8 @@ fun NoteMenu(
     if (coloring) ColorPicker(JSONObject(note.raw).optString("color"), { color ->
         before { app.scope.launch { app.updateNote(id) { j, _ -> j.put("color", color ?: JSONObject.NULL) } } }
     }) { coloring = false }
-    if (exporting && onExport != null) AlertDialog(
-        onDismissRequest = { exporting = false },
-        title = { Text("Export note") },
-        text = {
-            Column {
-                listOf("pdf" to "PDF", "txt" to "Text", "json" to "JSON", "html" to "HTML").forEach { (format, label) ->
-                    Text(label, Modifier.fillMaxWidth().clickable { exporting = false; onExport(format) }.padding(vertical = 12.dp))
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = { exporting = false }) { Text("Cancel") } },
-    )
+    if (exporting && onExport != null) FormatDialog("Export note", { exporting = false; onExport(it) }) { exporting = false }
+    if (sharing && onShare != null) FormatDialog("Share note", { sharing = false; onShare(it) }) { sharing = false }
     if (nesting) {
         // The note itself and its own sub-notes cannot hold it; nestNote() also refuses them.
         val inside = mutableSetOf(id)
@@ -243,28 +238,49 @@ fun NoteMenu(
         }, { nesting = false })
     }
     if (moving) {
-        val pick = { target: String? -> moving = false; before { app.scope.launch { app.moveNote(id, target) } } }
-        AlertDialog(
-            onDismissRequest = { moving = false },
-            title = { Text("Move to notebook") },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    (listOf<NotebookRow?>(null) + notebooks).forEach { nb ->
-                        Row(Modifier.fillMaxWidth().clickable { pick(nb?.id) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = note.notebookId == nb?.id, onClick = { pick(nb?.id) })
-                            Text(nb?.name?.ifBlank { "Untitled" } ?: "No notebook")
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { moving = false }) { Text("Cancel") } },
-        )
+        NotebookPicker("Move to notebook", notebooks, { note.notebookId == it?.id }, { target -> moving = false; before { app.scope.launch { app.moveNote(id, target) } } }, { moving = false })
     }
 }
 
+@Composable
+fun FormatDialog(title: String, onPick: (String) -> Unit, onDismiss: () -> Unit) = AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(title) },
+    text = {
+        Column {
+            listOf("pdf" to "PDF", "txt" to "Text", "json" to "JSON", "html" to "HTML").forEach { (format, label) ->
+                Text(label, Modifier.fillMaxWidth().clickable { onPick(format) }.padding(vertical = 12.dp))
+            }
+        }
+    },
+    confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+)
+
+/** `onCreate` adds a last row for making a new notebook. */
+@Composable
+fun NotebookPicker(title: String, notebooks: List<NotebookRow>, selected: (NotebookRow?) -> Boolean, onPick: (String?) -> Unit, onDismiss: () -> Unit, onCreate: (() -> Unit)? = null) = AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(title) },
+    text = {
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            (listOf<NotebookRow?>(null) + notebooks).forEach { nb ->
+                Row(Modifier.fillMaxWidth().clickable { onPick(nb?.id) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = selected(nb), onClick = { onPick(nb?.id) })
+                    Text(nb?.name?.ifBlank { "Untitled" } ?: "No notebook")
+                }
+            }
+            if (onCreate != null) Row(Modifier.fillMaxWidth().clickable(onClick = onCreate).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(painterResource(R.drawable.ic_plus), null, Modifier.padding(horizontal = 12.dp).size(22.dp), tint = MaterialTheme.colorScheme.primary)
+                Text("Create Notebook", color = MaterialTheme.colorScheme.primary)
+            }
+        }
+    },
+    confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+)
+
 /** Three rows of presets, each scrolling sideways. A tap applies at once, so the dialog stays open to try others. */
 @Composable
-private fun ColorPicker(initial: String, onPick: (String?) -> Unit, onDismiss: () -> Unit) {
+fun ColorPicker(initial: String, onPick: (String?) -> Unit, onDismiss: () -> Unit) {
     var current by remember { mutableStateOf<String?>(initial) }
     val dark = LocalDark.current
     AlertDialog(
@@ -345,7 +361,7 @@ fun NotePicker(title: String, notes: List<NoteRow>, onPick: (NoteRow) -> Unit, o
 /** The note's tags as pills to toggle, with a field below to create one; nothing changes until Save. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TagPicker(tags: List<String>, allTags: List<String>, onSave: (List<String>) -> Unit, onDismiss: () -> Unit) {
+fun TagPicker(tags: List<String>, allTags: List<String>, onSave: (List<String>) -> Unit, onDismiss: () -> Unit) {
     var selected by remember { mutableStateOf(tags.toSet()) }
     var created by remember { mutableStateOf(emptySet<String>()) }
     var value by remember { mutableStateOf("") }

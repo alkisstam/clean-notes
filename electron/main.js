@@ -71,24 +71,39 @@ ipcMain.on('edit', (e, role) => {
 });
 
 // A temp file, not a data: URL, because notes with images pass Chromium's URL size limit.
-ipcMain.handle('print-pdf', async (e, html, name) => {
+async function renderPdf(html) {
   const tmp = path.join(app.getPath('temp'), `clean-notes-${randomUUID()}.html`);
   const hidden = new BrowserWindow({ show: false, webPreferences: { javascript: false, sandbox: true } });
   try {
     fs.writeFileSync(tmp, html, { mode: 0o600 });
     await hidden.loadFile(tmp);
-    const pdf = await hidden.webContents.printToPDF({ printBackground: true });
-    const { canceled, filePath } = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender), {
-      defaultPath: name,
-      filters: [{ name: 'PDF', extensions: ['pdf'] }],
-    });
-    if (canceled || !filePath) return false;
-    fs.writeFileSync(filePath, pdf);
-    return true;
+    return await hidden.webContents.printToPDF({ printBackground: true });
   } finally {
     hidden.destroy();
     fs.rmSync(tmp, { force: true });
   }
+}
+
+ipcMain.handle('print-pdf', async (e, html, name) => {
+  const pdf = await renderPdf(html);
+  const { canceled, filePath } = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender), {
+    defaultPath: name,
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+  if (canceled || !filePath) return false;
+  fs.writeFileSync(filePath, pdf);
+  return true;
 });
+
+// Linux has no share sheet, so the file is left where the user can drag it into any app.
+function revealShared(bytes, name) {
+  const dir = fs.mkdtempSync(path.join(app.getPath('temp'), 'clean-notes-share-'));
+  const file = path.join(dir, path.basename(String(name)));
+  fs.writeFileSync(file, bytes, { mode: 0o600 });
+  shell.showItemInFolder(file);
+}
+
+ipcMain.handle('share-pdf', async (_e, html, name) => revealShared(await renderPdf(html), name));
+ipcMain.handle('share-file', (_e, bytes, name) => revealShared(Buffer.from(bytes), name));
 
 app.on('window-all-closed', () => app.quit());

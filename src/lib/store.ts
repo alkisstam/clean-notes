@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { ExportMode } from './export';
 import type { View } from './types';
 import { dateKey } from './dates';
 
@@ -37,8 +38,10 @@ export type DialogState =
   | { kind: 'confirm'; title: string; body?: string; confirm: string; danger?: boolean; onConfirm: () => void }
   | { kind: 'prompt'; title: string; label: string; value: string; confirm: string; hint?: string; allowEmpty?: boolean; onConfirm: (value: string) => void }
   | { kind: 'settings' }
-  | { kind: 'noteColor'; noteId: string }
-  | { kind: 'export'; noteId: string }
+  | { kind: 'noteColor'; noteIds: string[] }
+  | { kind: 'export'; noteIds: string[]; mode: ExportMode }
+  | { kind: 'pickNotebook'; onPick: (id: string | null) => void }
+  | { kind: 'bulkTags'; noteIds: string[]; common: string[]; allTags: string[] }
   | { kind: 'pickNote'; onPick: (id: string, title: string) => void; onUnlink?: () => void };
 
 interface State {
@@ -59,6 +62,8 @@ interface State {
   focusTitle: boolean;
   toast: Toast | null;
   dialog: DialogState | null;
+  /** Null outside select mode. */
+  selected: string[] | null;
 
   setView: (view: View) => void;
   openNote: (id: string | null, opts?: { taskId?: string; focusTitle?: boolean }) => void;
@@ -77,6 +82,8 @@ interface State {
   showToast: (t: Omit<Toast, 'id'>) => void;
   dismissToast: () => void;
   setDialog: (d: DialogState | null) => void;
+  setSelected: (ids: string[] | null) => void;
+  toggleSelected: (id: string) => void;
 }
 
 let toastId = 0;
@@ -105,10 +112,11 @@ export const useStore = create<State>((set, get) => ({
   focusTitle: false,
   toast: null,
   dialog: null,
+  selected: null,
 
   setView: (view) => {
     write('cn.view', view);
-    set({ view, query: '', pane: 'list' });
+    set({ view, query: '', pane: 'list', selected: null });
   },
   openNote: (noteId, opts) => {
     write('cn.note', noteId);
@@ -121,7 +129,7 @@ export const useStore = create<State>((set, get) => ({
       pdf: samePdf ? get().pdf : null,
     });
   },
-  setQuery: (query) => set({ query, pane: 'list' }),
+  setQuery: (query) => set({ query, pane: 'list', selected: null }),
   setDailyDate: (dailyDate) => set({ dailyDate }),
   setPdf: (pdf) => set({ pdf }),
   setPane: (pane) => set({ pane }),
@@ -163,6 +171,8 @@ export const useStore = create<State>((set, get) => ({
   showToast: (t) => set({ toast: { ...t, id: ++toastId } }),
   dismissToast: () => set({ toast: null }),
   setDialog: (dialog) => set({ dialog }),
+  setSelected: (selected) => set({ selected }),
+  toggleSelected: (id) => set((s) => ({ selected: s.selected?.includes(id) ? s.selected.filter((x) => x !== id) : [...(s.selected ?? []), id] })),
 }));
 
 export const store = useStore;

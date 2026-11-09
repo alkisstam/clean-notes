@@ -14,7 +14,7 @@ import { ListColumn } from './components/ListColumn';
 import { Sidebar } from './components/Sidebar';
 import { MenuPopup, type MenuItem } from './components/Overlay';
 import { ClipboardPaste, Copy, FileSymlink, Redo2, Scissors, TextSelect, Undo2 } from 'lucide-react';
-import { currentEditor, linkToNote } from './editor/NoteEditor';
+import { currentEditor, linkToNote, sharedFiles } from './editor/NoteEditor';
 
 type EditFlags = { canCut: boolean; canCopy: boolean; canPaste: boolean; canSelectAll: boolean; canUndo: boolean; canRedo: boolean };
 declare global {
@@ -25,8 +25,25 @@ declare global {
       syncServer: () => Promise<string>;
       setSyncServer: (url: string) => Promise<void>;
       printPdf: (html: string, name: string) => Promise<boolean>;
+      sharePdf: (html: string, name: string) => Promise<void>;
+      shareFile: (bytes: ArrayBuffer, name: string) => Promise<void>;
     };
   }
+}
+
+/** Turns what public/share-target.js stored into a new note. */
+async function openShared() {
+  const cache = await caches.open('cn-share');
+  const key = new URL('share-pending', location.href).href;
+  const form = await (await cache.match(key))?.formData();
+  await cache.delete(key);
+  if (!form) return;
+  const files = form.getAll('files').filter((f): f is File => f instanceof File && f.size > 0);
+  const texts = await Promise.all(files.filter((f) => f.type.startsWith('text/')).map((f) => f.text()));
+  const body = [form.get('text'), form.get('url'), ...texts].filter((t): t is string => typeof t === 'string' && Boolean(t.trim())).join('\n');
+  const content = { type: 'doc', content: body ? body.split(/\r?\n/).map((line) => (line ? { type: 'paragraph', content: [{ type: 'text', text: line }] } : { type: 'paragraph' })) : [{ type: 'paragraph' }] };
+  sharedFiles.files.push(...files.filter((f) => !f.type.startsWith('text/')));
+  await createNote({ type: 'all' }, { title: String(form.get('title') ?? ''), content });
 }
 
 const THEME_COLORS = { light: '#f5f2eb', dark: '#191816' };
@@ -123,7 +140,8 @@ export function App() {
         if (open) history.replaceState(null, '', location.pathname);
         if (!live) return;
         const s = store.getState();
-        if (open === 'today') await openDaily();
+        if (open === 'shared') await openShared();
+        else if (open === 'today') await openDaily();
         else if (open === 'new') await createNote({ type: 'all' });
         else if (open === 'tasks') s.setView({ type: 'tasks' });
         else if (seeded) s.openNote(seeded);

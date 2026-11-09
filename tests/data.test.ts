@@ -1,8 +1,9 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { baseNote, deleteForever, deleteNotebook, getOrCreateDaily, journalEdit, nestNote, recoverJournal, renameNotebook, restoreNote, trashNote } from '../src/lib/actions';
+import { baseNote, changeTags, patchNotes, trashNotes, deleteForever, deleteNotebook, getOrCreateDaily, journalEdit, nestNote, recoverJournal, renameNotebook, restoreNote, trashNote } from '../src/lib/actions';
 import { importBackup, mergeSnapshot } from '../src/lib/backup';
 import { db } from '../src/lib/db';
+import { store } from '../src/lib/store';
 import type { Note } from '../src/lib/types';
 
 const withPdf = (fileId: string): Partial<Note> => ({
@@ -17,6 +18,36 @@ beforeEach(async () => {
 });
 
 describe('data', () => {
+  it('trashes several notes with one Undo that restores them all', async () => {
+    const a = baseNote();
+    const b = baseNote();
+    await db.notes.bulkAdd([a, b]);
+    await trashNotes([a.id, b.id]);
+    expect((await db.notes.get(a.id))?.trashedAt).toBeTruthy();
+    expect(store.getState().toast?.message).toBe('2 notes moved to Trash');
+    store.getState().toast!.action!.run();
+    await vi.waitFor(async () => expect((await db.notes.bulkGet([a.id, b.id])).every((n) => !n?.trashedAt)).toBe(true));
+  });
+
+  it('patches only the given notes and bumps their updatedAt', async () => {
+    const a = baseNote({ updatedAt: 1 });
+    const b = baseNote({ updatedAt: 1 });
+    await db.notes.bulkAdd([a, b]);
+    await patchNotes([a.id], { notebookId: 'nb' });
+    expect((await db.notes.get(a.id))?.notebookId).toBe('nb');
+    expect((await db.notes.get(a.id))?.updatedAt).toBeGreaterThan(1);
+    expect((await db.notes.get(b.id))?.notebookId).toBeNull();
+  });
+
+  it('adds and removes tags on every note and leaves the others alone', async () => {
+    const a = baseNote({ tags: ['x', 'keep'] });
+    const b = baseNote({ tags: ['x', 'new'] });
+    await db.notes.bulkAdd([a, b]);
+    await changeTags([a.id, b.id], ['new'], ['x']);
+    expect((await db.notes.get(a.id))?.tags).toEqual(['keep', 'new']);
+    expect((await db.notes.get(b.id))?.tags).toEqual(['new']);
+  });
+
   it('keeps a PDF until no note uses it', async () => {
     const a = baseNote(withPdf('f1'));
     const b = baseNote(withPdf('f1'));

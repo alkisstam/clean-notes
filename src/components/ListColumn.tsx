@@ -1,9 +1,10 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  Archive, ArchiveRestore, ArrowDownUp, Copy, FilePlus, PinOff, FileText, Image as ImageIcon, Menu as MenuIcon, Pin, Plus, RotateCcw, Search, SearchX, Trash2, ChevronDown,
+  Archive, ArchiveRestore, ArrowDownAZ, CalendarPlus, Check, Clock, Copy, Download, FilePlus, FolderInput, Palette, PinOff, Share2, SquareCheck, Tag, X, FileText, Image as ImageIcon, Menu as MenuIcon, Pin, Plus, RotateCcw, Search, SearchX, Trash2, ChevronDown,
 } from 'lucide-react';
 import { memo, useMemo, useState, type ReactNode } from 'react';
-import { createNote, createSubNote, deleteForever, duplicateNote, nestNote, patchNote, trashNote, flushEditor, openDaily, quickAddTask, restoreNote, setTaskAttrs } from '../lib/actions';
+import { createNote, createSubNote, deleteForever, duplicateNote, nestNote, patchNote, patchNotes, trashNote, trashNotes, flushEditor, openDaily, quickAddTask, restoreNote, setTaskAttrs } from '../lib/actions';
+import { shareFormats } from '../lib/export';
 import { db } from '../lib/db';
 import { noteBg } from '../lib/colors';
 import { dateKey, dueLabel, relativeTime, shortDate } from '../lib/dates';
@@ -12,7 +13,7 @@ import { imageIdsIn, pdfIdsIn } from '../lib/doc';
 import { formatBytes } from '../lib/pdf';
 import { foldQuery, includesFolded, snippet, type Snippet } from '../lib/search';
 import { store, useStore, type SortKey } from '../lib/store';
-import { nestNotes, noteHasTag } from '../lib/tags';
+import { allTagPaths, nestNotes, noteHasTag } from '../lib/tags';
 import { extractTasks, groupTasks } from '../lib/tasks';
 import type { Note, Notebook, PdfFile, TaskRef, View } from '../lib/types';
 import { Menu, MenuPopup, type MenuItem } from './Overlay';
@@ -28,7 +29,7 @@ const Hit = ({ s }: { s: Snippet }) => (
 
 const preview = (text: string) => text.replace(/\n/g, ' ').slice(0, 170);
 
-const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, actions, depth = 0, hasKids, collapsed, nestable, rails }: {
+const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, actions, depth = 0, hasKids, collapsed, nestable, rails, selectable, selecting, ticked }: {
   note: Note;
   active: boolean;
   notebook?: string;
@@ -41,6 +42,9 @@ const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, acti
   nestable?: boolean;
   /** One line per ancestor, outermost first, in that ancestor's color. */
   rails?: string[];
+  selectable?: boolean;
+  selecting?: boolean;
+  ticked?: boolean;
 }) {
   const tasks = useMemo(() => extractTasks(note), [note]);
   const done = tasks.filter((t) => t.done).length;
@@ -52,6 +56,7 @@ const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, acti
   const ctxItems: MenuItem[] = ctx
     ? [
         { label: 'New note', icon: <Plus size={14} />, run: () => void createNote() },
+        ...(selectable ? [{ label: 'Select', icon: <SquareCheck size={14} />, run: () => store.getState().setSelected([note.id]) }] : []),
         ...(!isDaily
           ? [
               { label: 'New sub-note', icon: <FilePlus size={14} />, run: () => void createSubNote(note.id) },
@@ -76,13 +81,15 @@ const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, acti
       className="note-row"
       data-active={active}
       data-color={bg ? '' : undefined}
+      data-selecting={selecting || undefined}
+      data-ticked={ticked || undefined}
       onContextMenu={(e) => {
         if (import.meta.env.MODE !== 'desktop' || note.trashedAt) return;
         e.preventDefault();
         setCtx(new DOMRect(e.clientX, e.clientY, 0, 0));
       }}
       style={{ '--i': Math.min(index, 12), '--depth': depth, ...(bg && { '--note-bg': bg }) } as React.CSSProperties}
-      draggable={!note.trashedAt}
+      draggable={!note.trashedAt && !selecting}
       onDragStart={(e) => {
         e.dataTransfer.setData(NOTE_DRAG, note.id);
         e.dataTransfer.effectAllowed = 'move';
@@ -103,7 +110,14 @@ const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, acti
           <ChevronDown size={12} data-open={!collapsed} />
         </button>
       )}
-      <button type="button" className="note-row-main" aria-current={active ? 'true' : undefined} onClick={() => store.getState().openNote(note.id)}>
+      <button
+        type="button"
+        className="note-row-main"
+        aria-current={active ? 'true' : undefined}
+        aria-pressed={selecting ? Boolean(ticked) : undefined}
+        onClick={() => (selecting ? store.getState().toggleSelected(note.id) : store.getState().openNote(note.id))}
+      >
+        {selecting && <span className="note-tick">{ticked && <Check size={12} strokeWidth={3} />}</span>}
         <span className="note-row-title">
           {note.pinned && !note.trashedAt && <Pin size={11} aria-label="Pinned" />}
           <span>{note.title || 'Untitled'}</span>
@@ -276,11 +290,48 @@ function viewTitle(view: View, notebooks: Notebook[], selectedDate: string) {
   }
 }
 
-const SORTS: { id: SortKey; label: string }[] = [
-  { id: 'updated', label: 'Last edited' },
-  { id: 'created', label: 'Date created' },
-  { id: 'title', label: 'Title' },
+const SORTS: { id: SortKey; label: string; icon: ReactNode }[] = [
+  { id: 'updated', label: 'Last edited', icon: <Clock size={14} /> },
+  { id: 'created', label: 'Date created', icon: <CalendarPlus size={14} /> },
+  { id: 'title', label: 'Title', icon: <ArrowDownAZ size={14} /> },
 ];
+
+function SelectionBar({ picked, all, inArchive, allTags }: { picked: Note[]; all: Note[]; inArchive: boolean; allTags: string[] }) {
+  const setSelected = useStore((s) => s.setSelected);
+  const setDialog = useStore((s) => s.setDialog);
+  const ids = picked.map((n) => n.id);
+  // Daily notes cannot be pinned, copied or archived, as in their right-click menu.
+  const plain = picked.filter((n) => n.kind !== 'daily');
+  const plainIds = plain.map((n) => n.id);
+  const allPinned = plain.length > 0 && plain.every((n) => n.pinned);
+  const allOn = picked.length === all.length && all.length > 0;
+  const done = () => setSelected(null);
+  const actions: { label: string; icon: ReactNode; run: () => void; off?: boolean }[] = [
+    { label: 'Move', icon: <FolderInput size={15} />, run: () => setDialog({ kind: 'pickNotebook', onPick: (id) => { void patchNotes(ids, { notebookId: id }); done(); } }) },
+    ...(shareFormats().length ? [{ label: 'Share', icon: <Share2 size={15} />, run: () => setDialog({ kind: 'export', noteIds: ids, mode: 'share' }) }] : []),
+    { label: 'Export', icon: <Download size={15} />, run: () => setDialog({ kind: 'export', noteIds: ids, mode: 'save' }) },
+    { label: allPinned ? 'Unpin' : 'Pin', icon: allPinned ? <PinOff size={15} /> : <Pin size={15} />, off: !plain.length, run: () => { void patchNotes(plainIds, { pinned: !allPinned }); done(); } },
+    { label: 'Duplicate', icon: <Copy size={15} />, off: !plain.length, run: () => { void (async () => { for (const id of plainIds) await duplicateNote(id, false); })(); done(); } },
+    { label: inArchive ? 'Unarchive' : 'Archive', icon: inArchive ? <ArchiveRestore size={15} /> : <Archive size={15} />, off: !plain.length, run: () => { void patchNotes(plainIds, { archivedAt: inArchive ? null : Date.now() }); done(); } },
+    { label: 'Tags', icon: <Tag size={15} />, run: () => setDialog({ kind: 'bulkTags', noteIds: ids, allTags, common: picked[0].tags.filter((t) => picked.every((n) => n.tags.includes(t))) }) },
+    { label: 'Color', icon: <Palette size={15} />, run: () => setDialog({ kind: 'noteColor', noteIds: ids }) },
+    { label: 'Delete', icon: <Trash2 size={15} />, run: () => { void trashNotes(ids); done(); } },
+  ];
+  return (
+    <div className="select-bar" role="toolbar" aria-label="Selected notes">
+      <div className="select-bar-top">
+        <strong>{picked.length} selected</strong>
+        <button type="button" className="link-btn" onClick={() => setSelected(allOn ? [] : all.map((n) => n.id))}>{allOn ? 'Deselect all' : 'Select all'}</button>
+        <button type="button" className="icon-btn small" aria-label="Leave select mode" title="Done" onClick={done}><X size={14} /></button>
+      </div>
+      <div className="select-bar-actions">
+        {actions.map((a) => (
+          <button key={a.label} type="button" className="icon-btn small" aria-label={a.label} title={a.label} disabled={!picked.length || a.off} onClick={a.run}>{a.icon}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 interface SearchHit {
   note?: Note;
@@ -302,6 +353,7 @@ export function ListColumn({ notes, notebooks, searchRef }: { notes: Note[]; not
   const activePdf = useStore((s) => s.pdf?.fileId);
   const collapsedNotes = useStore((s) => s.collapsedNotes);
   const setPane = useStore((s) => s.setPane);
+  const selected = useStore((s) => s.selected);
   const files = useLiveQuery(() => db.files.toArray(), [], [] as PdfFile[]);
 
   const live = useMemo(() => notes.filter((n) => !n.trashedAt), [notes]);
@@ -382,6 +434,10 @@ export function ListColumn({ notes, notebooks, searchRef }: { notes: Note[]; not
   const title = searching ? 'Search' : viewTitle(view, notebooks, dailyDate);
   const canCreate = !searching && ['all', 'notebook', 'tag'].includes(view.type);
   const canSort = !searching && ['all', 'notebook', 'tag', 'pinned', 'archive', 'trash'].includes(view.type);
+  const canSelect = canSort && view.type !== 'trash';
+  const shownNotes = useMemo(() => rows.map((r) => r.note), [rows]);
+  const picked = useMemo(() => shownNotes.filter((n) => selected?.includes(n.id)), [shownNotes, selected]);
+  const tagPaths = useMemo(() => allTagPaths(live.map((n) => n.tags)), [live]);
   const trashEmpty = view.type === 'trash' && listed.length === 0;
   const pdfFiles = useMemo(() => [...files].sort((a, b) => b.createdAt - a.createdAt), [files]);
 
@@ -471,6 +527,9 @@ export function ListColumn({ notes, notebooks, searchRef }: { notes: Note[]; not
                 collapsed={collapsedNotes.includes(n.id)}
                 nestable={['all', 'notebook', 'tag'].includes(view.type)}
                 active={n.id === noteId}
+                selectable={canSelect}
+                selecting={selected !== null}
+                ticked={selected?.includes(n.id)}
                 notebook={view.type !== 'notebook' && n.notebookId ? nbName.get(n.notebookId) : undefined}
                 actions={
                   view.type === 'trash' ? (
@@ -525,17 +584,19 @@ export function ListColumn({ notes, notebooks, searchRef }: { notes: Note[]; not
           <MenuIcon size={18} />
         </button>
         <h1 title={title}>{title}</h1>
-        {canSort && (
-          <Menu
-            label="Sort notes"
-            trigger={<ArrowDownUp size={15} />}
-            items={SORTS.map((s) => ({ label: s.label, checked: sort === s.id, run: () => setSort(s.id) }))}
-          />
-        )}
         {canCreate && (
           <button type="button" className="icon-btn accent" aria-label="New note" title="New note (Alt N)" onClick={() => void createNote()}>
             <Plus size={17} />
           </button>
+        )}
+        {canSort && (
+          <Menu
+            label="More"
+            items={[
+              ...(canSelect ? [{ label: 'Select', icon: <SquareCheck size={14} />, run: () => store.getState().setSelected([]) }] : []),
+              ...SORTS.map((s) => ({ label: s.label, icon: s.icon, checked: sort === s.id, run: () => setSort(s.id) })),
+            ]}
+          />
         )}
       </header>
       <label className="search">
@@ -556,6 +617,7 @@ export function ListColumn({ notes, notebooks, searchRef }: { notes: Note[]; not
         />
         <kbd>Ctrl K</kbd>
       </label>
+      {selected !== null && <SelectionBar picked={picked} all={shownNotes} inArchive={view.type === 'archive'} allTags={tagPaths} />}
       {body}
     </section>
   );

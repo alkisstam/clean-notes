@@ -101,15 +101,16 @@ class App : Application() {
     }
 
     /** Same shape as baseNote() in src/lib/actions.ts. */
-    suspend fun newNote(notebookId: String? = null, tag: String? = null, parentId: String? = null): String {
+    suspend fun newNote(notebookId: String? = null, tag: String? = null, parentId: String? = null, title: String = "", body: String = ""): String {
         val now = System.currentTimeMillis()
         val id = UUID.randomUUID().toString()
+        val content = textDoc(body)
         saveNote(
             JSONObject()
                 .put("id", id)
-                .put("title", "")
-                .put("content", JSONObject().put("type", "doc").put("content", JSONArray().put(JSONObject().put("type", "paragraph"))))
-                .put("text", "")
+                .put("title", title)
+                .put("content", content)
+                .put("text", docText(content))
                 .put("notebookId", notebookId ?: JSONObject.NULL)
                 .put("tags", JSONArray(listOfNotNull(tag)))
                 .put("kind", "note")
@@ -121,6 +122,14 @@ class App : Application() {
         )
         fresh.add(id)
         return id
+    }
+
+    /** Files shared into the app, added by the next note to open. */
+    @Volatile var sharedFiles: List<android.net.Uri> = emptyList()
+
+    suspend fun duplicateNote(id: String) {
+        val src = JSONObject((db.dao().noteOnce(id) ?: return).raw)
+        saveNote(duplicated(src, UUID.randomUUID().toString(), System.currentTimeMillis()) { UUID.randomUUID().toString() })
     }
 
     /** Port of getOrCreateDaily(): one daily note per date. */

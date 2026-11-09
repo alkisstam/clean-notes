@@ -2,6 +2,15 @@ package io.cleannotes.app
 
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -152,8 +161,26 @@ fun NoteList(
         ),
     )
 
+    // Sub-notes nest where the web nests them: All, notebooks and tags.
+    val rows = if (view == "all" || view.startsWith("nb:") || tag != null) nestNotes(notes, shutNotes, { it.id }, { it.parentId })
+    else notes.map { Nested(it, 0, false) }
+    var selected by rememberSaveable { mutableStateOf<List<String>?>(null) }
+    val selecting = selected != null
+    val toggleSelected = { id: String -> selected = selected.orEmpty().let { if (id in it) it - id else it + id } }
+    LaunchedEffect(view) { selected = null }
+    val context = LocalContext.current
+    val exportNotes = rememberNoteExporter(app)
+    var bulkFormat by remember { mutableStateOf<String?>(null) }
+    var bulkMoving by remember { mutableStateOf(false) }
+    var bulkNaming by remember { mutableStateOf(false) }
+    var bulkTags by remember { mutableStateOf(false) }
+    var bulkColor by remember { mutableStateOf(false) }
+    val picked = rows.map { it.note }.filter { it.id in selected.orEmpty() }
+    val pickedIds = picked.map { it.id }
+
     BackHandler(drawer.isOpen) { scope.launch { drawer.close() } }
     BackHandler(searching && !drawer.isOpen) { closeSearch() }
+    BackHandler(selecting && !drawer.isOpen) { selected = null }
     ModalNavigationDrawer(
         drawerState = drawer,
         drawerContent = {
@@ -233,7 +260,8 @@ fun NoteList(
             topBar = {
                 TopAppBar(
                     title = {
-                        if (searching) {
+                        if (selecting) Text("${picked.size} selected")
+                        else if (searching) {
                             val focus = remember { FocusRequester() }
                             LaunchedEffect(Unit) { focus.requestFocus() }
                             TextField(
@@ -271,10 +299,16 @@ fun NoteList(
                         }
                     },
                     navigationIcon = {
-                        if (searching) IconButton(onClick = closeSearch) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Close search") }
+                        if (selecting) IconButton(onClick = { selected = null }) { Icon(Icons.Default.Close, "Leave select mode") }
+                        else if (searching) IconButton(onClick = closeSearch) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Close search") }
                         else IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(Icons.Default.Menu, "Notebooks") }
                     },
                     actions = {
+                        if (selecting) {
+                            val allOn = rows.isNotEmpty() && picked.size == rows.size
+                            TextButton(onClick = { selected = if (allOn) emptyList() else rows.map { it.note.id } }) { Text(if (allOn) "Deselect all" else "Select all") }
+                            return@TopAppBar
+                        }
                         if (searching) {
                             if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, "Clear search") }
                             return@TopAppBar
@@ -289,26 +323,27 @@ fun NoteList(
                         if (view != "daily" && view != "tasks" && view != "pdfs") Box {
                             IconButton(onClick = { sorting = true }) { Icon(painterResource(R.drawable.ic_arrow_down_up), "Sort by", Modifier.size(22.dp)) }
                             Menu(sorting, { sorting = false }) {
-                                listOf("updated" to "Last edited", "created" to "Date created", "title" to "Title").forEach { (key, label) ->
+                                listOf(Triple("updated", "Last edited", R.drawable.ic_clock), Triple("created", "Date created", R.drawable.ic_calendar_plus), Triple("title", "Title", R.drawable.ic_arrow_down_a_z)).forEach { (key, label, icon) ->
                                     MenuItem(label, {
                                         sorting = false
                                         sort = key
                                         ui.edit { putString("sort", key) }
-                                    }, checked = sort == key)
+                                    }, icon, checked = sort == key)
                                 }
                             }
                         }
                         IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
                         Menu(menu, { menu = false }) {
                             if (tag != null) {
-                                MenuItem("Rename tag", { menu = false; renamingTag = true })
-                                MenuItem("Delete tag", { menu = false; deletingTag = true })
+                                MenuItem("Rename tag", { menu = false; renamingTag = true }, R.drawable.ic_pencil)
+                                MenuItem("Delete tag", { menu = false; deletingTag = true }, R.drawable.ic_trash)
                             }
                             if (current != null) {
-                                MenuItem("Rename notebook", { menu = false; naming = current })
-                                MenuItem("Delete notebook", { menu = false; deleting = current })
+                                MenuItem("Rename notebook", { menu = false; naming = current }, R.drawable.ic_pencil)
+                                MenuItem("Delete notebook", { menu = false; deleting = current }, R.drawable.ic_trash)
                             }
-                            MenuItem("Settings", { menu = false; onView("settings") })
+                            if (view != "daily" && view != "tasks" && view != "pdfs") MenuItem("Select", { menu = false; selected = emptyList() }, R.drawable.ic_square_check)
+                            MenuItem("Settings", { menu = false; onView("settings") }, R.drawable.ic_settings_2)
                         }
                     },
                 )
@@ -316,7 +351,7 @@ fun NoteList(
             snackbarHost = { SnackbarHost(snackbar) },
             floatingActionButton = {
                 // New notes only where they would show up, as on the web.
-                if (!searching && (view == "all" || current != null || tag != null)) {
+                if (!searching && !selecting && (view == "all" || current != null || tag != null)) {
                     FloatingActionButton(onClick = { onNew(current?.id, tag) }) { Icon(Icons.Default.Add, "New note") }
                 }
             },
@@ -328,9 +363,6 @@ fun NoteList(
                 else if (view == "tasks") TasksBody(app, tasks, onOpen)
                 else if (view == "pdfs") PdfsBody(app, all, onOpenPdf)
                 else {
-                    // Sub-notes nest where the web nests them: All, notebooks and tags.
-                    val rows = if (view == "all" || view.startsWith("nb:") || tag != null) nestNotes(notes, shutNotes, { it.id }, { it.parentId })
-                    else notes.map { Nested(it, 0, false) }
                     val toggle = { id: String ->
                         shutNotes = if (id in shutNotes) shutNotes - id else shutNotes + id
                         ui.edit { putStringSet("collapsedNotes", shutNotes) }
@@ -361,7 +393,7 @@ fun NoteList(
                         val neutral = MaterialTheme.colorScheme.outline
                         LazyVerticalGrid(
                             GridCells.Fixed(2), Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(12.dp),
+                            contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = if (selecting) PILL_ROOM else 12.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
@@ -379,10 +411,12 @@ fun NoteList(
                                     }
                                 }.padding(start = (depth * 12).dp)) {
                                     Surface(shape = RoundedCornerShape(16.dp), color = bg ?: MaterialTheme.colorScheme.surfaceContainer) {
-                                        Column(Modifier.fillMaxWidth().combinedClickable(onClick = { onOpen(note.id) }, onLongClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            pressed = true
-                                        }).padding(if (sub) 12.dp else 14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Column(Modifier.fillMaxWidth().combinedClickable(onClick = { if (selecting) toggleSelected(note.id) else onOpen(note.id) }, onLongClick = {
+                                            if (!selecting) {
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                pressed = true
+                                            }
+                                        }).padding(if (sub) 12.dp else 14.dp).padding(end = if (selecting) 26.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                             NoteTitle(note, hasKids, note.id !in shutNotes, { toggle(note.id) }, if (sub) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium)
                                             Text(
                                                 note.text.take(400).ifBlank { "No content yet" },
@@ -394,11 +428,12 @@ fun NoteList(
                                             )
                                         }
                                     }
-                                    NoteMenu(app, note, all, pressed, { pressed = false }, { it() }, {}, centered = true)
+                                    if (selecting) Tick(note.id in selected.orEmpty())
+                                    NoteMenu(app, note, all, pressed, { pressed = false }, { it() }, {}, centered = true, onSelect = { selected = listOf(note.id) })
                                 }
                             }
                         }
-                    } else LazyColumn(Modifier.fillMaxSize()) {
+                    } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = if (selecting) PILL_ROOM else 0.dp)) {
                     items(rows, key = { it.note.id }) { (note, depth, hasKids) ->
                         var pressed by remember { mutableStateOf(false) }
                         val bg = noteColor(colors[note.id], dark)
@@ -409,10 +444,12 @@ fun NoteList(
                             rails.forEachIndexed { k, c -> drawRect(c, Offset((k * 20 + 10).dp.toPx(), 0f), Size(3.dp.toPx(), size.height)) }
                         }.padding(start = (depth * 20).dp)) {
                         Box {
-                        Column(Modifier.fillMaxWidth().background(bg ?: Color.Transparent).combinedClickable(onClick = { onOpen(note.id) }, onLongClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            pressed = true
-                        }).padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 12.dp)) {
+                        Column(Modifier.fillMaxWidth().background(bg ?: Color.Transparent).combinedClickable(onClick = { if (selecting) toggleSelected(note.id) else onOpen(note.id) }, onLongClick = {
+                            if (!selecting) {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                pressed = true
+                            }
+                        }).padding(start = 16.dp, top = 12.dp, end = if (selecting) 44.dp else 16.dp, bottom = 12.dp)) {
                             NoteTitle(note, hasKids, note.id !in shutNotes, { toggle(note.id) }, MaterialTheme.typography.bodyLarge)
                             Text(
                                 note.text.replace('\n', ' ').take(170).ifBlank { "No content yet" },
@@ -422,17 +459,112 @@ fun NoteList(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        NoteMenu(app, note, all, pressed, { pressed = false }, { it() }, {}, centered = true)
+                        if (selecting) Tick(note.id in selected.orEmpty())
+                        NoteMenu(app, note, all, pressed, { pressed = false }, { it() }, {}, centered = true, onSelect = { selected = listOf(note.id) })
                         }
                         HorizontalDivider()
                         }
                     }
+                    }
+                    if (selecting) {
+                        // Daily notes cannot be pinned, copied or archived, as on the web.
+                        val plain = picked.filter { it.kind != "daily" }
+                        val plainIds = plain.map { it.id }
+                        val allPinned = plain.isNotEmpty() && plain.all { it.pinned }
+                        val inArchive = view == "archive"
+                        val done = { selected = null }
+                        var more by remember { mutableStateOf(false) }
+                        Surface(
+                            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp),
+                            shape = RoundedCornerShape(36.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shadowElevation = 6.dp,
+                        ) {
+                            Row(Modifier.padding(horizontal = 8.dp, vertical = 10.dp)) {
+                                val on = picked.isNotEmpty()
+                                PillAction("Move", R.drawable.ic_folder_input, on) { bulkMoving = true }
+                                PillAction("Share", R.drawable.ic_share_2, on) { bulkFormat = "share" }
+                                PillAction(if (allPinned) "Unpin" else "Pin", R.drawable.ic_pin, plain.isNotEmpty()) {
+                                    app.scope.launch { plainIds.forEach { id -> app.updateNote(id) { j, _ -> j.put("pinned", !allPinned) } } }
+                                    done()
+                                }
+                                PillAction("Delete", R.drawable.ic_trash, on) {
+                                    val ids = pickedIds
+                                    app.scope.launch { ids.forEach { app.trashNote(it) } }
+                                    done()
+                                    scope.launch {
+                                        val label = if (ids.size == 1) "Moved to Trash" else "${ids.size} notes moved to Trash"
+                                        if (snackbar.showSnackbar(label, "Undo") == SnackbarResult.ActionPerformed) app.scope.launch { ids.forEach { app.restoreNote(it) } }
+                                    }
+                                }
+                                Box(Modifier.weight(1f)) {
+                                    Row { PillAction("More", null, on) { more = true } }
+                                    Menu(more, { more = false }) {
+                                        MenuItem("Export", { more = false; bulkFormat = "export" }, R.drawable.ic_download)
+                                        if (plain.isNotEmpty()) {
+                                            MenuItem("Duplicate", {
+                                                more = false
+                                                app.scope.launch { plainIds.forEach { app.duplicateNote(it) } }
+                                                done()
+                                            }, R.drawable.ic_copy)
+                                            MenuItem(if (inArchive) "Unarchive" else "Archive", {
+                                                more = false
+                                                app.scope.launch { plainIds.forEach { id -> app.updateNote(id) { j, now -> j.put("archivedAt", if (inArchive) JSONObject.NULL else now) } } }
+                                                done()
+                                            }, R.drawable.ic_archive)
+                                        }
+                                        MenuItem("Tags", { more = false; bulkTags = true }, R.drawable.ic_tag)
+                                        MenuItem("Color", { more = false; bulkColor = true }, R.drawable.ic_palette)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
+    bulkFormat?.let { mode ->
+        val noun = if (pickedIds.size == 1) "note" else "${pickedIds.size} notes"
+        FormatDialog("${if (mode == "share") "Share" else "Export"} $noun", { format ->
+            bulkFormat = null
+            if (mode == "share") shareNotes(app, context, pickedIds, format) else exportNotes(pickedIds, format)
+            selected = null
+        }) { bulkFormat = null }
+    }
+    if (bulkMoving) NotebookPicker("Select Notebook", notebooks, { false }, { target ->
+        bulkMoving = false
+        val ids = pickedIds
+        app.scope.launch { ids.forEach { app.moveNote(it, target) } }
+        selected = null
+    }, { bulkMoving = false }, onCreate = { bulkMoving = false; bulkNaming = true })
+    if (bulkNaming) NameDialog("Create Notebook", "", "Create") { name ->
+        bulkNaming = false
+        if (name != null) {
+            val ids = pickedIds
+            app.scope.launch { app.createNotebook(name).let { nb -> ids.forEach { app.moveNote(it, nb) } } }
+            selected = null
+        }
+    }
+    if (bulkTags && picked.isNotEmpty()) {
+        val common = picked[0].tagList.filter { t -> picked.all { t in it.tagList } }
+        TagPicker(common, remember(all) { allTagPaths(all.map { it.tagList }) }, { sel ->
+            bulkTags = false
+            val ids = pickedIds
+            val add = sel - common.toSet()
+            val remove = common - sel.toSet()
+            app.scope.launch { ids.forEach { id -> app.editTags(id) { tags -> (tags - remove.toSet() + add).distinct() } } }
+            selected = null
+        }) { bulkTags = false }
+    }
+    if (bulkColor) {
+        val ids = pickedIds
+        val common = picked.map { JSONObject(it.raw).optString("color") }.distinct().singleOrNull().orEmpty()
+        ColorPicker(common, { color ->
+            app.scope.launch { ids.forEach { id -> app.updateNote(id) { j, _ -> j.put("color", color ?: JSONObject.NULL) } } }
+        }) { bulkColor = false; selected = null }
+    }
     if (creating) NameDialog("New notebook", "", "Create") { name ->
         creating = false
         if (name != null) scope.launch { onView("nb:" + app.createNotebook(name)) }
@@ -480,6 +612,29 @@ fun NoteList(
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
         )
     }
+}
+
+private val PILL_ROOM = 112.dp
+
+@Composable
+private fun BoxScope.Tick(on: Boolean) = Box(
+    Modifier.align(Alignment.TopEnd).padding(12.dp).size(22.dp).clip(CircleShape)
+        .background(if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface)
+        .border(1.5.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, CircleShape),
+    contentAlignment = Alignment.Center,
+) {
+    if (on) Icon(Icons.Default.Check, "Selected", Modifier.size(15.dp), tint = MaterialTheme.colorScheme.onPrimary)
+}
+
+/** `icon` null is the three dots. */
+@Composable
+private fun androidx.compose.foundation.layout.RowScope.PillAction(label: String, icon: Int?, enabled: Boolean, onClick: () -> Unit) = Column(
+    Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).clickable(enabled = enabled, onClick = onClick).alpha(if (enabled) 1f else .38f).padding(vertical = 6.dp),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.spacedBy(4.dp),
+) {
+    if (icon != null) Icon(painterResource(icon), null, Modifier.size(24.dp)) else Icon(Icons.Default.MoreVert, null, Modifier.size(24.dp))
+    Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
 }
 
 /** One color per ancestor, outermost first; a parent without a color gets `neutral`. */

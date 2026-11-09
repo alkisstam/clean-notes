@@ -100,3 +100,26 @@ fun groupTasks(tasks: List<TaskRef>, today: String): TaskGroups {
         done = tasks.filter { it.done },
     )
 }
+
+/** Port of duplicateNote(): copies are separate tasks, so they get ids of their own. */
+fun duplicated(src: JSONObject, id: String, now: Long, uid: () -> String): JSONObject {
+    val content = JSONObject(src.getJSONObject("content").toString())
+    walkDoc(content) { n -> if (n.optString("type") == "taskItem") n.getJSONObject("attrs").put("id", uid()) }
+    val title = src.text("title")
+    return JSONObject()
+        .put("id", id)
+        .put("title", if (title.isNotEmpty()) "$title copy" else "")
+        .put("content", content)
+        .put("text", docText(content))
+        .put("notebookId", src.opt("notebookId") ?: JSONObject.NULL)
+        .put("tags", src.optJSONArray("tags") ?: JSONArray())
+        .put("kind", "note")
+        .put("pinned", false)
+        .put("createdAt", now)
+        .put("updatedAt", now)
+        .put("trashedAt", JSONObject.NULL)
+        .apply {
+            if (!src.isNull("parentId")) put("parentId", src.getString("parentId"))
+            if (!src.isNull("color")) put("color", src.getString("color"))
+        }
+}

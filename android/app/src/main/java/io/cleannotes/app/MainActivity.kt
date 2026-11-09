@@ -1,6 +1,10 @@
 package io.cleannotes.app
 
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.SystemBarStyle
+import androidx.compose.runtime.MutableState
+import androidx.core.content.IntentCompat
 import android.graphics.Color
 import androidx.compose.runtime.key
 import androidx.compose.runtime.setValue
@@ -28,8 +32,21 @@ fun ago(time: Long): CharSequence =
     else DateUtils.getRelativeTimeSpanString(time, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
 
 class MainActivity : ComponentActivity() {
+    private val shared = mutableStateOf<Intent?>(null)
+
+    private fun receive(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_SEND || intent?.action == Intent.ACTION_SEND_MULTIPLE) shared.value = intent
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        receive(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // A rotation or a return from Recents replays the original intent, which must not make a second note.
+        if (savedInstanceState == null && intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0) receive(intent)
         enableEdgeToEdge()
         val app = application as App
         setContent {
@@ -40,14 +57,14 @@ class MainActivity : ComponentActivity() {
                     val bars = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) { dark }
                     enableEdgeToEdge(bars, bars)
                 }
-                NotesApp(app)
+                NotesApp(app, shared)
             }
         }
     }
 }
 
 @Composable
-fun NotesApp(app: App) {
+fun NotesApp(app: App, shared: MutableState<Intent?>) {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var syncing by remember { mutableStateOf(false) }
@@ -80,6 +97,21 @@ fun NotesApp(app: App) {
             connecting = false
             runSync()
         }
+    }
+
+    LaunchedEffect(shared.value) {
+        val intent = shared.value ?: return@LaunchedEffect
+        app.sharedFiles = if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+            IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+        } else listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
+        val note = app.newNote(title = intent.getStringExtra(Intent.EXTRA_SUBJECT).orEmpty(), body = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty())
+        connecting = false
+        view = "all"
+        trail = emptyList()
+        openPdf = null
+        openId = note
+        // Last, because changing the key cancels this effect.
+        shared.value = null
     }
 
     val id = openId

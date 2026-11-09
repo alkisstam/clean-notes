@@ -1,5 +1,5 @@
 import {
-  Archive, BookOpen, CalendarDays, ChevronRight, CircleCheck, FileText, Hash, Layers, Library, Moon, Pin, Plus, Settings2, Sun, Trash2, Laptop,
+  Archive, BookOpen, CalendarDays, ChevronRight, CircleCheck, FileText, Hash, Layers, Library, Moon, Pencil, Pin, Plus, Settings2, Sun, Trash2, Laptop,
 } from 'lucide-react';
 import { useMemo, type DragEvent, type ReactNode } from 'react';
 import { createNotebook, deleteNotebook, editTags, openDaily, patchNote, renameNotebook, retag } from '../lib/actions';
@@ -116,9 +116,10 @@ function TagRows({ nodes, depth }: { nodes: TagNode[]; depth: number }) {
                 <Menu
                   label={`Actions for tag ${n.path}`}
                   items={[
-                    { label: 'Rename or move', run: () => tagPrompt(n) },
+                    { label: 'Rename or move', icon: <Pencil size={14} />, run: () => tagPrompt(n) },
                     {
                       label: 'Delete tag',
+                      icon: <Trash2 size={14} />,
                       danger: true,
                       run: () =>
                         store.getState().setDialog({
@@ -220,6 +221,7 @@ export function Sidebar({ notes, notebooks }: { notes: Note[]; notebooks: Notebo
                   items={[
                     {
                       label: 'Rename',
+                      icon: <Pencil size={14} />,
                       run: () =>
                         setDialog({
                           kind: 'prompt',
@@ -232,6 +234,7 @@ export function Sidebar({ notes, notebooks }: { notes: Note[]; notebooks: Notebo
                     },
                     {
                       label: 'Delete notebook',
+                      icon: <Trash2 size={14} />,
                       danger: true,
                       run: () =>
                         setDialog({

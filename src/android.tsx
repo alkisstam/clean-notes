@@ -14,8 +14,8 @@ import { db, uid, writeListeners } from './lib/db';
 import { imageIdsIn, pdfIdsIn } from './lib/doc';
 import { blobSaver } from './lib/pdf';
 import { noteBg, noteTone } from './lib/colors';
-import { exportHost, exportNote, type ExportFormat } from './lib/export';
-import { currentEditor, editorHooks, formatMenu, insertIntoEditor, linkToNote, NoteEditor, noteLinks } from './editor/NoteEditor';
+import { exportHost, exportNotes, type ExportFormat } from './lib/export';
+import { currentEditor, editorHooks, formatMenu, insertIntoEditor, linkToNote, NoteEditor, noteLinks, sharedFiles } from './editor/NoteEditor';
 import { viewerHooks } from './editor/ImageBlock';
 import { dueHooks } from './editor/TaskItemDue';
 import { Boundary } from './components/EditorPane';
@@ -278,7 +278,9 @@ addEventListener('resize', () => {
 // The app's + menu picks files natively, since a page may only open its own file chooser from a tap inside it.
 w.cnInsertPicked = async (picked) => {
   const files = await Promise.all(picked.map(async ({ url, name, type }) => new File([await (await fetch(url)).blob()], name, { type })));
-  await insertIntoEditor(files);
+  // A note just shared into the app has no editor until the app's first cnLoad renders it.
+  if (currentEditor()) await insertIntoEditor(files);
+  else sharedFiles.files.push(...files);
 };
 
 w.cnExport = async (format) => {
@@ -286,7 +288,7 @@ w.cnExport = async (format) => {
   flushEditor();
   // Queues behind the saves just started, as in cnFlush.
   await db.transaction('rw', db.notes, () => db.notes.get(noteId));
-  await exportNote(noteId, format, currentEditor()?.getHTML() ?? '');
+  await exportNotes([noteId], format);
 };
 
 w.cnClosePdf = () => store.getState().setPdf(null);

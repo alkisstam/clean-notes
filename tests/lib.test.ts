@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { addDays, dateKey, monthGrid } from '../src/lib/dates';
 import { HUES, noteBg, noteShades, noteTone, PALETTES } from '../src/lib/colors';
 import { docText } from '../src/lib/doc';
-import { exportName, exportPage } from '../src/lib/export';
+import { exportJson, exportName, exportPage, exportPages, exportText } from '../src/lib/export';
+import type { Note } from '../src/lib/types';
 import { findRanges, includesFolded, snippet } from '../src/lib/search';
 import { buildTagTree, nestNotes, normalizeTag, noteHasTag, renameTagIn } from '../src/lib/tags';
 import { appendTask, extractTasks, groupTasks, patchTask } from '../src/lib/tasks';
@@ -212,6 +213,18 @@ describe('note colors', () => {
 });
 
 describe('export', () => {
+  it('combines several notes into one file', () => {
+    const notes = [{ title: 'A', text: 'one' }, { title: '', text: 'two' }];
+    expect(exportText(notes)).toBe('A\n\none\n\n---\n\nUntitled\n\ntwo\n');
+    const page = exportPages([{ title: 'A', body: '<p>1</p>' }, { title: 'B', body: '<p>2</p>' }]);
+    expect(page).toContain('<title>Clean Notes (2 notes)</title>');
+    expect(page).toContain('<h1>A</h1><p>1</p><h1 style="break-before:page">B</h1><p>2</p>');
+  });
+  it('keeps JSON an object for one note and an array for several', () => {
+    const note = { id: 'a', writer: 'w' } as Note;
+    expect(JSON.parse(exportJson([note]))).toEqual({ id: 'a' });
+    expect(JSON.parse(exportJson([note, note]))).toEqual([{ id: 'a' }, { id: 'a' }]);
+  });
   it('escapes the title in the page', () => {
     const page = exportPage('<img src=x onerror=alert(1)>', '<p>body</p>');
     expect(page).not.toContain('<img src=x');

@@ -32,8 +32,26 @@ import { Calendar } from '../components/Calendar';
 import { db } from '../lib/db';
 import { dateKey } from '../lib/dates';
 
-const SAVE_DELAY = 350;
 const CELL_MIN_WIDTH = 80;
+
+/** Everything that decides how a note's document turns into HTML. */
+export const noteExtensions = [
+  StarterKit.configure({
+    heading: { levels: [1, 2, 3] },
+    link: { openOnClick: false, autolink: true, defaultProtocol: 'https' },
+  }),
+  Highlight,
+  TextStyle,
+  FontSize,
+  TaskList,
+  TaskItemDue.configure({ nested: true }),
+  TableKit.configure({ table: { resizable: true, cellMinWidth: CELL_MIN_WIDTH } }),
+  TableStyle,
+  PdfAttachment,
+  ImageBlock,
+];
+
+const SAVE_DELAY = 350;
 
 const canInsert = (file: File) => looksLikePdf(file) || looksLikeImage(file);
 
@@ -77,6 +95,8 @@ async function insertFiles(editor: Editor, files: File[], dropAt?: number) {
 // The editor that commands from outside the page, such as the Android app's + menu, act on.
 let current: Editor | null = null;
 export const insertIntoEditor = (files: File[]) => current && insertFiles(current, files);
+/** Files shared into the app, added by the next editor to open. */
+export const sharedFiles = { files: [] as File[] };
 export const currentEditor = () => current;
 /** Hosts listen here for every change to the open editor, as the Android app does for its undo and redo buttons. */
 export const editorHooks = { onChange: null as ((editor: Editor) => void) | null };
@@ -330,7 +350,12 @@ function Toolbar({ editor, items }: { editor: Editor; items: SlashItem[] }) {
           label="Table actions"
           className="menu-trigger"
           trigger={<Table2 size={15} />}
-          items={items.filter((i) => i.inTable).map((i) => ({ label: i.title, danger: i.id.startsWith('del'), run: () => slash(i.id) }))}
+          items={items.filter((i) => i.inTable).map((i) => ({
+            label: i.title,
+            icon: i.id.startsWith('del') ? <Trash2 size={14} /> : i.id === 'row' ? <BetweenHorizontalEnd size={14} /> : <BetweenVerticalEnd size={14} />,
+            danger: i.id.startsWith('del'),
+            run: () => slash(i.id),
+          }))}
         />
       )}
     </div>
@@ -923,22 +948,11 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
     editable: !readOnly,
     onCreate: ({ editor: e }) => {
       lastDoc.current = e.state.doc;
+      void insertFiles(e, sharedFiles.files.splice(0));
     },
     content: note.content,
     extensions: [
-      StarterKit.configure({
-        heading: { levels: [1, 2, 3] },
-        link: { openOnClick: false, autolink: true, defaultProtocol: 'https' },
-      }),
-      Highlight,
-      TextStyle,
-      FontSize,
-      TaskList,
-      TaskItemDue.configure({ nested: true }),
-      TableKit.configure({ table: { resizable: true, cellMinWidth: CELL_MIN_WIDTH } }),
-      TableStyle,
-      PdfAttachment,
-      ImageBlock,
+      ...noteExtensions,
       Placeholder.configure({
         includeChildren: false,
         placeholder: ({ node }) => {

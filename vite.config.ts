@@ -30,6 +30,12 @@ export default defineConfig(({ mode }) => ({
           { src: 'icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
           { src: 'icons/icon.svg', sizes: 'any', type: 'image/svg+xml' },
         ],
+        share_target: {
+          action: './?open=share',
+          method: 'POST',
+          enctype: 'multipart/form-data',
+          params: { title: 'title', text: 'text', url: 'url', files: [{ name: 'files', accept: ['image/*', 'application/pdf', 'text/plain'] }] },
+        },
         shortcuts: [
           { name: "Today's note", url: './?open=today', icons: [{ src: 'icons/icon-192.png', sizes: '192x192' }] },
           { name: 'New note', url: './?open=new', icons: [{ src: 'icons/icon-192.png', sizes: '192x192' }] },
@@ -40,6 +46,7 @@ export default defineConfig(({ mode }) => ({
         globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2,wasm,bcmap,pfb,ttf,icc}'],
         maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
         navigateFallback: 'index.html',
+        importScripts: ['share-target.js'],
       },
     }),
   ],

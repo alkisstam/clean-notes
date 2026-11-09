@@ -3,14 +3,10 @@ package io.cleannotes.app
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
-import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.net.Uri
-import android.print.PrintAttributes
-import android.print.PrintManager
-import android.webkit.WebViewClient
 import android.graphics.Rect
 import android.view.ActionMode
 import android.view.Menu
@@ -50,30 +46,6 @@ import androidx.compose.ui.platform.LocalContext
 
 private const val ORIGIN = "https://appassets.androidplatform.net"
 private const val PAGE = "$ORIGIN/assets/editor/android.html"
-
-/** Moves the received bytes to a file other apps may read, replacing the last one, and returns its content URI. */
-private fun shareable(context: Context, name: String, bytes: File): Uri {
-    val dir = File(context.cacheDir, "open").apply { deleteRecursively(); mkdirs() }
-    val file = File(dir, name.replace(Regex("[/\\\\]"), "_").ifBlank { "file" })
-    // copyTo, not renameTo: cacheDir and filesDir may sit on different file systems.
-    bytes.copyTo(file, overwrite = true)
-    bytes.delete()
-    return FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-}
-
-/** Renders the exported page offscreen, with nothing but the page itself reachable, and opens the system print dialog. */
-private fun printHtml(context: Context, html: String, name: String, state: NoteViewState) {
-    state.printing = WebView(context).apply {
-        settings.allowFileAccess = false
-        settings.allowContentAccess = false
-        webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView, url: String) {
-                context.getSystemService(PrintManager::class.java).print(name, view.createPrintDocumentAdapter(name), PrintAttributes.Builder().build())
-            }
-        }
-        loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
-    }
-}
 
 /** Lets the screen save the page's pending edits before it closes the note. */
 class NoteViewState {
@@ -203,17 +175,17 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
     val context = LocalContext.current
     // Files picked from the + menu, served once to the page at /picked/<key>.
     val picked = remember { mutableMapOf<String, Uri>() }
-    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { all ->
+    val allowed = { all: List<Uri> ->
         val size = { uri: Uri ->
             context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)
                 ?.use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else 0L } ?: 0L
         }
         // The editor holds the whole file to read a PDF's text, and the sync server refuses more.
-        val uris = all.filter { size(it) <= MAX_UPLOAD }
-        if (uris.size < all.size) Toast.makeText(context, "Files over 200 MB cannot be added.", Toast.LENGTH_LONG).show()
-        val cb = chooser
-        chooser = null
-        if (cb != null) return@rememberLauncherForActivityResult cb.onReceiveValue(uris.toTypedArray())
+        all.filter { size(it) <= MAX_UPLOAD }.also {
+            if (it.size < all.size) Toast.makeText(context, "Files over 200 MB cannot be added.", Toast.LENGTH_LONG).show()
+        }
+    }
+    val insert = { uris: List<Uri> ->
         val list = JSONArray(uris.map { uri ->
             val key = UUID.randomUUID().toString()
             picked[key] = uri
@@ -223,7 +195,22 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
         })
         if (uris.isNotEmpty()) state.web?.evaluateJavascript("cnInsertPicked($list)", null)
     }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { all ->
+        val uris = allowed(all)
+        val cb = chooser
+        chooser = null
+        if (cb != null) return@rememberLauncherForActivityResult cb.onReceiveValue(uris.toTypedArray())
+        insert(uris)
+    }
     state.launchPicker = { pick.launch(it) }
+    LaunchedEffect(ready) {
+        if (ready && app.sharedFiles.isNotEmpty()) {
+            // Any app can send these. Only content URIs it can actually grant are read, never a file:// path into this app's own storage.
+            val uris = app.sharedFiles.filter { uri -> uri.scheme == "content" && runCatching { context.contentResolver.openFileDescriptor(uri, "r")?.close() }.isSuccess }
+            app.sharedFiles = emptyList()
+            insert(allowed(uris))
+        }
+    }
     val saver = rememberLauncherForActivityResult(object : ActivityResultContracts.CreateDocument("*/*") {
         override fun createIntent(context: Context, input: String) = super.createIntent(context, input).setType(state.exportMime)
     }) { uri ->
@@ -323,7 +310,7 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
                             val file = app.incomingFile(msg.getString("id"))
                             val html = if (msg.optBoolean("print")) file.readText().also { file.delete() } else null
                             withContext(Dispatchers.Main) {
-                                if (html != null) printHtml(ctx, html, msg.getString("name"), state)
+                                if (html != null) printHtml(ctx, html, msg.getString("name")) { state.printing = it }
                                 else {
                                     state.exportFile = file
                                     state.exportMime = msg.getString("mime")

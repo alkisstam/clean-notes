@@ -49,4 +49,18 @@ class TasksTest {
         "a\nx.pdf",
         docText(JSONObject("""{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"a"}]},{"type":"pdfAttachment","attrs":{"name":"x.pdf"}}]}""")),
     )
+
+    @Test fun duplicateGetsNewTaskIdsAndResets() {
+        val src = JSONObject().put("title", "A").put("content", doc).put("notebookId", "nb").put("tags", JSONArray().put("x")).put("pinned", true).put("parentId", JSONObject.NULL).put("color", "soft-rose")
+        var n = 0
+        val copy = duplicated(src, "new", 5L) { "t${n++}" }
+        assertEquals("A copy", copy.getString("title"))
+        assertEquals(listOf("t0", "t1"), tasksOf(copy).map { it.id })
+        assertEquals(3, n)
+        assertEquals("a", tasks(doc)[0].id)
+        assertEquals(false, copy.getBoolean("pinned"))
+        assertEquals("soft-rose", copy.getString("color"))
+        assertEquals(false, copy.has("parentId"))
+    }
+    private fun tasksOf(n: JSONObject) = tasks(n.getJSONObject("content"))
 }

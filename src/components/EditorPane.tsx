@@ -1,5 +1,5 @@
 import {
-  Archive, ArchiveRestore, ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Copy, CornerLeftUp, Download, PanelTop, Palette, Feather, FilePlus, FileSymlink, Redo2, Undo2, Maximize2, Minimize2, Pin, PinOff, RotateCcw, Trash2, X,
+  Archive, ArchiveRestore, ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Copy, CornerLeftUp, Download, PanelTop, Palette, Feather, FilePlus, FileSymlink, Redo2, Undo2, Maximize2, Minimize2, Pin, PinOff, RotateCcw, Share2, Trash2, X,
 } from 'lucide-react';
 import { lazy, Component, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createNote, createSubNote, deleteForever, duplicateNote, editTags, journalEdit, openDaily, patchNote, restoreNote, trashNote } from '../lib/actions';
@@ -8,6 +8,7 @@ import { currentEditor, editorHooks, linkToNote, NoteEditor } from '../editor/No
 import { store, useStore } from '../lib/store';
 import { noteBg, noteTone } from '../lib/colors';
 import { normalizeTag } from '../lib/tags';
+import { shareFormats } from '../lib/export';
 import type { Note, Notebook } from '../lib/types';
 import { Menu } from './Overlay';
 
@@ -279,8 +280,9 @@ function Document({ note, notebooks, allTags }: { note: Note; notebooks: Noteboo
                 ...(!isDaily ? [{ label: 'Duplicate', icon: <Copy size={14} />, run: () => void duplicateNote(note.id) }] : []),
                 ...(editor ? [{ label: 'Link to note', icon: <FileSymlink size={14} />, run: () => linkToNote(editor) }] : []),
                 { label: showToolbar ? 'Hide toolbar' : 'Show toolbar', icon: <PanelTop size={14} />, run: () => store.getState().toggleToolbar() },
-                { label: 'Background color', icon: <Palette size={14} />, run: () => store.getState().setDialog({ kind: 'noteColor', noteId: note.id }) },
-                { label: 'Export', icon: <Download size={14} />, run: () => store.getState().setDialog({ kind: 'export', noteId: note.id }) },
+                { label: 'Background color', icon: <Palette size={14} />, run: () => store.getState().setDialog({ kind: 'noteColor', noteIds: [note.id] }) },
+                ...(shareFormats().length ? [{ label: 'Share', icon: <Share2 size={14} />, run: () => store.getState().setDialog({ kind: 'export', noteIds: [note.id], mode: 'share' }) }] : []),
+                { label: 'Export', icon: <Download size={14} />, run: () => store.getState().setDialog({ kind: 'export', noteIds: [note.id], mode: 'save' }) },
                 ...(!isDaily
                   ? [{
                       label: note.archivedAt ? 'Unarchive' : 'Archive',

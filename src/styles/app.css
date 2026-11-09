@@ -215,6 +215,15 @@ kbd { font: 500 10.5px var(--font-mono); color: var(--ink-3); }
 [data-tone] :is(.format-menu, .image-tools) { --accent: var(--accent-on-ink); --accent-ink: var(--ink); }
 .note-row[data-color]:not([data-drop='true']) { background: var(--note-bg); }
 .note-row[data-color]:not([data-drop='true']):hover { background: linear-gradient(var(--hover), var(--hover)), var(--note-bg); }
+.note-row[data-ticked]:not([data-drop='true']) { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.note-row[data-selecting] .note-row-title { padding-right: 24px; }
+.note-tick { position: absolute; top: 10px; right: 10px; width: 17px; height: 17px; display: grid; place-items: center; border: 1.5px solid var(--line-strong); border-radius: 50%; color: var(--accent-ink); background: var(--paper); }
+.note-row[data-ticked] .note-tick { background: var(--accent); border-color: var(--accent); }
+.select-bar { flex: none; margin: 0 10px 8px; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); }
+.select-bar-top { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.select-bar-top strong { flex: 1; font-weight: 600; }
+.select-bar-actions { display: flex; justify-content: space-between; }
+.select-bar-actions button:disabled { opacity: 0.4; }
 .note-row[data-color] .note-row-actions { background: var(--note-bg); }
 .note-rail { position: absolute; top: 0; bottom: -1px; width: 3px; border-radius: 2px; pointer-events: none; }
 .note-row-main { width: 100%; padding: 10px 10px 9px; display: flex; flex-direction: column; gap: 3px; text-align: left; border-radius: 9px; }
@@ -419,6 +428,10 @@ kbd { font: 500 10.5px var(--font-mono); color: var(--ink-3); }
 .color-swatches button[aria-pressed='true'] { outline: 2px solid var(--ink); outline-offset: 1px; }
 .pick-note-list { display: flex; flex-direction: column; max-height: 50vh; overflow-y: auto; margin-top: 10px; }
 .pick-note-list button { flex: none; padding: 9px 10px; text-align: left; border-radius: var(--radius); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pick-create { display: flex; align-items: center; gap: 7px; color: var(--accent); }
+.tag-picks { display: flex; flex-wrap: wrap; gap: 5px; max-height: 40vh; overflow-y: auto; margin: 10px 0 14px; }
+.tag-picks button { height: 26px; padding: 0 10px; font-size: 12px; background: var(--hover); border-radius: 13px; }
+.tag-picks button[aria-pressed='true'] { background: var(--accent); color: var(--accent-ink); }
 .pick-note-list small { display: block; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--ink-3); }
 .pick-note-list button:hover, .pick-note-list button:focus-visible { background: var(--hover); }
 .settings-section { padding: 13px 0; border-top: 1px solid var(--line); }
