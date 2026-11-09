@@ -1,5 +1,15 @@
 # Changelog — Android app
 
+## 1.0.5 — 2026-11-09
+
+### Added
+- Share a note from its ⋮ menu: pick PDF, Text, JSON or HTML and the system share menu opens.
+- Select mode for notes, from the list's ⋮ menu or a long press, with a tick-box on each note and Select all. A floating bar offers Move, Share, Pin and Delete, and More has Export, Duplicate, Archive, Tags and Color.
+- Moving notes opens a Select Notebook popup with a Create Notebook option at the end.
+- Sharing or exporting several notes makes one combined file.
+- "New note - Clean Notes" in the system share menu turns shared text, images and PDFs into a new note.
+- Icons on every entry in the ⋮, long-press and sort menus.
+
 ## 1.0.4 — 2026-11-08
 
 ### Added

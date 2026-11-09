@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.6 — 2026-11-09
+
+### Added
+- Share a note from its … menu: pick a format and it opens the share menu. The desktop app saves the file and shows it in your file manager. Browsers offer the formats they can share, and PDF is left out there.
+- Select mode for notes, from the new … button after New note or the desktop right-click menu. A bar under the search field acts on the ticked notes: Move, Share, Export, Pin, Duplicate, Archive, Tags, Color and Delete, plus Select all.
+- Moving notes opens a Select Notebook popup with a Create Notebook option at the end.
+- Sharing or exporting several notes makes one combined file.
+- The installed web app appears in the device's share menu and turns shared text, images and PDFs into a new note.
+- Icons on every entry in the … menus and the table actions menu.
+
+### Changed
+- Sort options moved into the new … button in the note list.
+
 ## 1.0.5 — 2026-11-08
 
 ### Added
