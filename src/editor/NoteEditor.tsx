@@ -15,7 +15,7 @@ import {
   Ellipsis, EllipsisVertical, Grid2x2, Heading2, Highlighter, ImagePlus, Italic, Link2, List, ListOrdered, ListTodo, Minus, Paintbrush, Quote, Scissors, SquareCode, Strikethrough,
   Table, Table2, Trash2, Underline, X,
 } from 'lucide-react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { journalEdit, registerFlusher, saveContent } from '../lib/actions';
 import { importImage, looksLikeImage } from '../lib/images';
@@ -172,6 +172,7 @@ function DuePopover({ state, onClose }: { state: DueState; onClose: () => void }
 
 /** Hosts override placement, as the Android app does to keep clear of the system's own selection bar above. */
 export const formatMenu = { placement: 'top' as 'top' | 'bottom' };
+type ShouldShow = NonNullable<ComponentProps<typeof BubbleMenu>['shouldShow']>;
 
 function pickFiles(editor: Editor, accept: string) {
   const input = document.createElement('input');
@@ -799,18 +800,21 @@ function FormatMenu({ editor }: { editor: Editor }) {
 
   const buttons = formatButtons(editor);
 
+  // BubbleMenu dispatches a transaction when these change identity, and transactions re-render this, so they must be stable.
+  // Flip below the selection before the toolbar would cover it, wherever the toolbar sits on screen.
+  const options = useMemo(
+    () => ({ placement: formatMenu.placement, offset: formatMenu.placement === 'bottom' ? 28 : 8, flip: { boundary: toolbarEdge(editor), padding: { top: 8 } } }),
+    [editor, formatMenu.placement],
+  );
+  const shouldShow = useCallback<ShouldShow>(({ editor: e, state, from, to }) => {
+    if (linking) return true;
+    if (from === to || !e.isEditable || !e.isFocused || state.selection instanceof CellSelection) return false;
+    if (e.isActive('codeBlock') || e.isActive('pdfAttachment') || e.isActive('noteImage')) return false;
+    return state.doc.textBetween(from, to).length > 0;
+  }, [linking]);
+
   return (
-    <BubbleMenu
-      editor={editor}
-      // Flip below the selection before the toolbar would cover it, wherever the toolbar sits on screen.
-      options={{ placement: formatMenu.placement, offset: formatMenu.placement === 'bottom' ? 28 : 8, flip: { boundary: toolbarEdge(editor), padding: { top: 8 } } }}
-      shouldShow={({ editor: e, state, from, to }) => {
-        if (linking) return true;
-        if (from === to || !e.isEditable || !e.isFocused || state.selection instanceof CellSelection) return false;
-        if (e.isActive('codeBlock') || e.isActive('pdfAttachment') || e.isActive('noteImage')) return false;
-        return state.doc.textBetween(from, to).length > 0;
-      }}
-    >
+    <BubbleMenu editor={editor} options={options} shouldShow={shouldShow}>
       <div className="format-menu" role="toolbar" aria-label="Text formatting">
         {linking ? (
           <form
@@ -882,18 +886,17 @@ function FormatMenu({ editor }: { editor: Editor }) {
   );
 }
 
+const showLinkHint: ShouldShow = ({ editor: e, state }) => state.selection.empty && e.isFocused && e.isActive('link') && !noteIdOf(e.getAttributes('link').href);
+
 function LinkHint({ editor }: { editor: Editor }) {
   const touch = matchMedia('(hover: none)').matches;
   const [scroller, setScroller] = useState<HTMLElement | null>(null);
   useEffect(() => setScroller(editor.view.dom.closest<HTMLElement>('.doc-scroll')), [editor]);
+  // On touch, clears the caret's drag handle. Stable for the same reason as in FormatMenu.
+  const options = useMemo(() => ({ placement: 'bottom' as const, offset: touch ? 28 : 6, scrollTarget: scroller ?? undefined }), [touch, scroller]);
   if (!scroller) return null;
   return (
-    <BubbleMenu
-      editor={editor}
-      // On touch, clears the caret's drag handle.
-      options={{ placement: 'bottom', offset: touch ? 28 : 6, scrollTarget: scroller }}
-      shouldShow={({ editor: e, state }) => state.selection.empty && e.isFocused && e.isActive('link') && !noteIdOf(e.getAttributes('link').href)}
-    >
+    <BubbleMenu editor={editor} options={options} shouldShow={showLinkHint}>
       <div className="format-menu link-hint">
         {touch ? (
           <button
