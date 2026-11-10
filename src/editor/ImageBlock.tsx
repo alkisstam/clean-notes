@@ -61,7 +61,8 @@ function Lightbox({ src, alt, close }: { src: string; alt: string; close: () => 
       onClick={close}
     >
       <img src={src} alt={alt} />
-      <button type="button" className="lightbox-close" aria-label="Close image" autoFocus onClick={close}>
+      {/* No autoFocus: it runs before showModal and scrolls the note to the dialog. showModal focuses this button itself. */}
+      <button type="button" className="lightbox-close" aria-label="Close image" onClick={close}>
         <X size={18} />
       </button>
     </dialog>

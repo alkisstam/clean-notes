@@ -27,6 +27,7 @@ export interface PdfTarget {
   fileId: string;
   page?: number;
   query?: string;
+  focus?: boolean;
 }
 export interface Toast {
   id: number;
@@ -57,6 +58,8 @@ interface State {
   widths: { sidebar: number; list: number };
   collapsedTags: string[];
   collapsedNotes: string[];
+  tagsOpen: boolean;
+  sidebarCompact: boolean;
   showToolbar: boolean;
   focusTaskId: string | null;
   focusTitle: boolean;
@@ -78,6 +81,8 @@ interface State {
   toggleTag: (path: string) => void;
   toggleNote: (id: string) => void;
   toggleToolbar: () => void;
+  toggleTagsOpen: () => void;
+  toggleSidebarCompact: () => void;
   clearFocusRequests: () => void;
   showToast: (t: Omit<Toast, 'id'>) => void;
   dismissToast: () => void;
@@ -107,6 +112,8 @@ export const useStore = create<State>((set, get) => ({
   widths: read('cn.widths', { sidebar: 244, list: 320 }),
   collapsedTags: read<string[]>('cn.collapsedTags', []),
   collapsedNotes: read<string[]>('cn.collapsedNotes', []),
+  tagsOpen: read('cn.tagsOpen', true),
+  sidebarCompact: read('cn.sidebarCompact', false),
   showToolbar: read('cn.toolbar', true),
   focusTaskId: null,
   focusTitle: false,
@@ -154,6 +161,14 @@ export const useStore = create<State>((set, get) => ({
   toggleToolbar: () => {
     write('cn.toolbar', !get().showToolbar);
     set({ showToolbar: !get().showToolbar });
+  },
+  toggleTagsOpen: () => {
+    write('cn.tagsOpen', !get().tagsOpen);
+    set({ tagsOpen: !get().tagsOpen });
+  },
+  toggleSidebarCompact: () => {
+    write('cn.sidebarCompact', !get().sidebarCompact);
+    set({ sidebarCompact: !get().sidebarCompact });
   },
   toggleNote: (id) => {
     const cur = get().collapsedNotes;

@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  ChevronDown, ChevronUp, Contrast, Download, Lock, Minus, Plus, Search, X,
+  ChevronDown, ChevronUp, Contrast, Download, Lock, Maximize2, Minimize2, Minus, Plus, Search, X,
 } from 'lucide-react';
 import { TextLayer, type PDFDocumentProxy, type PDFPageProxy, type RenderTask } from 'pdfjs-dist';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -387,6 +387,16 @@ export function PdfViewer({ target }: { target: PdfTarget }) {
               <Search size={15} />
             </button>
             <button type="button" className="icon-btn" aria-label="Dim pages for dark reading" title="Dim pages" aria-pressed={dim} onClick={() => setDim(!dim)}><Contrast size={15} /></button>
+            <button
+              type="button"
+              className="icon-btn desktop-only pdf-focus-btn"
+              aria-label={target.focus ? 'Show all columns' : 'Focus mode'}
+              aria-pressed={Boolean(target.focus)}
+              title="Focus mode"
+              onClick={() => close({ ...target, focus: !target.focus })}
+            >
+              {target.focus ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            </button>
             <button
               type="button"
               className="icon-btn"

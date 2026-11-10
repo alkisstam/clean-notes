@@ -170,6 +170,21 @@ kbd { font: 500 10.5px var(--font-mono); color: var(--ink-3); }
 }
 .foot-spacer { flex: 1; }
 .foot-note { display: inline-flex; gap: 5px; align-items: center; color: var(--ink-3); font-size: 11px; padding-right: 5px; white-space: nowrap; }
+.nav-head-toggle { flex: 1; min-width: 0; height: 28px; display: flex; align-items: center; justify-content: space-between; font-weight: inherit; }
+.nav-head-toggle:hover .tag-chevron { background: var(--hover); color: var(--ink); }
+.sidebar-compact-btn { display: none; }
+@media (min-width: 1100px) {
+  .sidebar-compact-btn { display: inline-grid; }
+  .app[data-compact='true'] :is(.brand, .nav-label, .nav-count, .nav-extra, .nav-head, .nav-empty, .nav-tags, .foot-note, .foot-spacer),
+  .app[data-compact='true'] .nav-row:hover .nav-extra { display: none; }
+  /* Still a grid item, so the columns after it keep their place. */
+  .app[data-compact='true'] .resizer:first-of-type { visibility: hidden; }
+  .app[data-compact='true'] .sidebar-scroll { padding: 10px 6px 12px; }
+  .app[data-compact='true'] .nav-group { border-bottom: 1px solid var(--line); margin-bottom: 8px; padding-bottom: 8px; }
+  .app[data-compact='true'] .nav-group:has(+ .nav-tags) { border-bottom: 0; }
+  .app[data-compact='true'] .nav-main { justify-content: center; }
+  .app[data-compact='true'] .sidebar-foot { height: auto; padding: 6px 0; flex-direction: column; }
+}
 
 .resizer { position: relative; z-index: 5; width: 0; }
 .resizer::before {

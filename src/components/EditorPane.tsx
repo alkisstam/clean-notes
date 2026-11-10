@@ -342,7 +342,7 @@ export function EditorPane({ notes, notebooks, allTags }: { notes: Note[]; noteb
   const bg = noteBg(note?.color);
 
   return (
-    <main className="editor-col" data-pdf={Boolean(pdf)}>
+    <main className="editor-col" data-pdf={Boolean(pdf)} data-pdf-focus={Boolean(pdf?.focus)}>
       <div className="editor-split">
         <div className="doc-pane" data-color={bg ? '' : undefined} data-tone={noteTone(note?.color)} style={bg ? ({ '--note-bg': bg } as React.CSSProperties) : undefined}>
           {note ? (

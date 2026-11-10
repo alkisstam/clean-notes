@@ -124,6 +124,7 @@ export function App() {
   const focusMode = useStore((s) => s.focusMode);
   const pane = useStore((s) => s.pane);
   const pdf = useStore((s) => s.pdf);
+  const compact = useStore((s) => s.sidebarCompact);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const allTags = useMemo(() => allTagPaths(notes.filter((n) => !n.trashedAt).map((n) => n.tags)), [notes]);
@@ -176,6 +177,7 @@ export function App() {
         e.preventDefault();
         const s = store.getState();
         if (s.focusMode) s.toggleFocus();
+        if (s.pdf?.focus) s.setPdf({ ...s.pdf, focus: false });
         s.setPane('list');
         const go = () => {
           searchRef.current?.focus();
@@ -237,9 +239,10 @@ export function App() {
       className="app"
       data-ready={ready}
       data-pane={pane}
-      data-focus={focusMode}
+      data-focus={focusMode || Boolean(pdf?.focus)}
       data-pdf={Boolean(pdf)}
-      style={{ '--w-sidebar': `${widths.sidebar}px`, '--w-list': `${widths.list}px` } as React.CSSProperties}
+      data-compact={compact}
+      style={{ '--w-sidebar': compact ? '52px' : `${widths.sidebar}px`, '--w-list': `${widths.list}px` } as React.CSSProperties}
     >
       <Sidebar notes={notes} notebooks={notebooks} />
       <Resizer target="sidebar" min={190} max={380} />

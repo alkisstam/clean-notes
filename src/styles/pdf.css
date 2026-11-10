@@ -2,6 +2,10 @@
 @container (max-width: 819px) {
   .pdf-pane { position: absolute; inset: 0; z-index: 8; flex: none; border-left: 0; animation: fade 0.16s var(--ease); }
 }
+.editor-col[data-pdf-focus='true'] .doc-pane { display: none; }
+.editor-col[data-pdf-focus='true'] .pdf-pane { border-left: 0; }
+/* The Android app shows PDFs full screen, so there is nothing to focus. */
+.pdf-focus-btn:not(.editor-col *) { display: none; }
 .pdf-viewer { display: flex; flex-direction: column; height: 100%; }
 .pdf-viewer:focus { outline: none; }
 .pdf-bar {

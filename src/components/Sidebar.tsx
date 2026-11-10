@@ -1,5 +1,5 @@
 import {
-  Archive, BookOpen, CalendarDays, ChevronRight, CircleCheck, FileText, Hash, Layers, Library, Moon, Pencil, Pin, Plus, Settings2, Sun, Trash2, Laptop,
+  Archive, BookOpen, CalendarDays, ChevronRight, CircleCheck, FileText, Hash, Layers, Library, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Pin, Plus, Settings2, Sun, Trash2, Laptop,
 } from 'lucide-react';
 import { useMemo, type DragEvent, type ReactNode } from 'react';
 import { createNotebook, deleteNotebook, editTags, openDaily, patchNote, renameNotebook, retag } from '../lib/actions';
@@ -55,6 +55,7 @@ function NavRow({ view, icon, label, count, onClick, extra, indent, leading, ...
       <button
         type="button"
         className="nav-main"
+        title={label}
         aria-current={active ? 'page' : undefined}
         onClick={onClick ?? (() => view && store.getState().setView(view))}
       >
@@ -151,6 +152,10 @@ export function Sidebar({ notes, notebooks }: { notes: Note[]; notebooks: Notebo
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
   const setDialog = useStore((s) => s.setDialog);
+  const tagsOpen = useStore((s) => s.tagsOpen);
+  const toggleTagsOpen = useStore((s) => s.toggleTagsOpen);
+  const compact = useStore((s) => s.sidebarCompact);
+  const toggleCompact = useStore((s) => s.toggleSidebarCompact);
 
   const live = useMemo(() => notes.filter((n) => !n.trashedAt), [notes]);
   const shelved = useMemo(() => live.filter((n) => !n.archivedAt), [live]);
@@ -253,13 +258,18 @@ export function Sidebar({ notes, notebooks }: { notes: Note[]; notebooks: Notebo
           ))}
         </div>
 
-        <div className="nav-group">
-          <div className="nav-head"><span>Tags</span></div>
-          {tree.length === 0 ? (
+        <div className="nav-group nav-tags">
+          <div className="nav-head">
+            <button type="button" className="nav-head-toggle" aria-expanded={tagsOpen} onClick={toggleTagsOpen}>
+              <span>Tags</span>
+              <span className="tag-chevron" data-open={tagsOpen}><ChevronRight size={13} /></span>
+            </button>
+          </div>
+          {tagsOpen && (tree.length === 0 ? (
             <p className="nav-empty">Tag a note with work/ideas to start a tree.</p>
           ) : (
             <TagRows nodes={tree} depth={0} />
-          )}
+          ))}
         </div>
       </div>
 
@@ -275,6 +285,16 @@ export function Sidebar({ notes, notebooks }: { notes: Note[]; notebooks: Notebo
           onClick={() => setTheme(THEME_NEXT[theme])}
         >
           <ThemeIcon size={16} />
+        </button>
+        <button
+          type="button"
+          className="icon-btn sidebar-compact-btn"
+          aria-label={compact ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-pressed={compact}
+          title={compact ? 'Expand sidebar' : 'Collapse sidebar'}
+          onClick={toggleCompact}
+        >
+          {compact ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
         </button>
         <span className="foot-spacer" />
         <span className="foot-note"><Layers size={12} /> On this device</span>
