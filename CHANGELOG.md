@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.6 — 2026-11-09
+## 1.0.6 — 2026-11-10
 
 ### Added
 - Share a note from its … menu: pick a format and it opens the share menu. The desktop app saves the file and shows it in your file manager. Browsers offer the formats they can share, and PDF is left out there.
@@ -12,14 +12,21 @@
 - Clicking a website link in a note shows "Ctrl+click to open" under it.
 - A line under the note title shows when it was created and last edited.
 - An arrow at the end of the toolbar scrolls to the icons that don't fit.
+- A button next to the theme switch shrinks the sidebar to icons.
+- Click the Tags heading in the sidebar to fold all tags away.
+- A focus button in the PDF viewer gives the PDF the whole window.
 
 ### Changed
 - Sort options moved into the new … button in the note list.
 - The note page is wider.
+- The welcome guide on new installs covers sub-notes, note colors, select mode and focus mode.
 
 ### Fixed
 - Links on colored notes in dark mode stand out from the text.
 - The to-do tick now adapts to the color of its box.
+- Opening an image full size no longer scrolls the note back to the top.
+- The first PDF opened after launch no longer stays on "Opening…" until clicked again.
+- The editor no longer keeps the processor busy while a note is open.
 
 ## 1.0.5 — 2026-11-08
 

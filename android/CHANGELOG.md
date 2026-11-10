@@ -1,6 +1,6 @@
 # Changelog — Android app
 
-## 1.0.5 — 2026-11-09
+## 1.0.5 — 2026-11-10
 
 ### Added
 - Share a note from its ⋮ menu: pick PDF, Text, JSON or HTML and the system share menu opens.
@@ -16,6 +16,9 @@
 ### Fixed
 - Links on colored notes in dark mode stand out from the text.
 - The to-do tick now adapts to the color of its box.
+- Opening an image full size no longer scrolls the note back to the top.
+- The first PDF opened after launch no longer stays on "Opening…" until tapped again.
+- The editor no longer keeps the processor busy while a note is open.
 
 ## 1.0.4 — 2026-11-08
 
