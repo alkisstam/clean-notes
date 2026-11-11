@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.7 — 2026-11-11
+
+### Added
+- Email addresses and phone numbers in notes become links. Numbers starting with + or with 10 or more digits link as you type, and pasted numbers can have spaces. The Link dialog adds mailto: or tel: for you.
+- Back and forward arrows before the notebook menu step through the notes you opened.
+- The note list's right-click menu now works in the browser too.
+
+### Changed
+- The … menu and the right-click menu on a note offer the same actions. Hide toolbar stays in the … menu and Select in the right-click menu.
+
 ## 1.0.6 — 2026-11-10
 
 ### Added

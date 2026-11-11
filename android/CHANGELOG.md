@@ -1,5 +1,13 @@
 # Changelog — Android app
 
+## 1.0.6 — 2026-11-11
+
+### Added
+- Email addresses and phone numbers in notes become links that open the mail app or the dialer. Numbers starting with + or with 10 or more digits link as you type, and pasted numbers can have spaces.
+
+### Fixed
+- Closing a note returns the list to where you were instead of the top.
+
 ## 1.0.5 — 2026-11-10
 
 ### Added
