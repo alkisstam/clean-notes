@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { ExportMode } from './export';
 import type { View } from './types';
 import { dateKey } from './dates';
+import { db } from './db';
 
 const read = <T,>(key: string, fallback: T): T => {
   try {
@@ -67,9 +68,13 @@ interface State {
   dialog: DialogState | null;
   /** Null outside select mode. */
   selected: string[] | null;
+  /** Notes opened before and after the current one, most recent last. */
+  back: string[];
+  fwd: string[];
 
   setView: (view: View) => void;
   openNote: (id: string | null, opts?: { taskId?: string; focusTitle?: boolean }) => void;
+  travel: (dir: 'back' | 'fwd') => Promise<void>;
   setQuery: (q: string) => void;
   setDailyDate: (d: string) => void;
   setPdf: (p: PdfTarget | null) => void;
@@ -120,6 +125,8 @@ export const useStore = create<State>((set, get) => ({
   toast: null,
   dialog: null,
   selected: null,
+  back: [],
+  fwd: [],
 
   setView: (view) => {
     write('cn.view', view);
@@ -127,14 +134,29 @@ export const useStore = create<State>((set, get) => ({
   },
   openNote: (noteId, opts) => {
     write('cn.note', noteId);
-    const samePdf = get().noteId === noteId;
+    const prev = get().noteId;
     set({
       noteId,
       pane: noteId ? 'editor' : get().pane,
       focusTaskId: opts?.taskId ?? null,
       focusTitle: opts?.focusTitle ?? false,
-      pdf: samePdf ? get().pdf : null,
+      pdf: prev === noteId ? get().pdf : null,
+      ...(prev && noteId && prev !== noteId && { back: [...get().back, prev].slice(-100), fwd: [] }),
     });
+  },
+  travel: async (dir) => {
+    const other = dir === 'back' ? 'fwd' : 'back';
+    const stack = [...get()[dir]];
+    while (stack.length) {
+      const id = stack.pop()!;
+      const note = await db.notes.get(id);
+      const cur = get().noteId;
+      if (!note || note.trashedAt || id === cur) continue;
+      write('cn.note', id);
+      set({ [dir]: stack, [other]: cur ? [...get()[other], cur] : get()[other], noteId: id, pane: 'editor', focusTaskId: null, focusTitle: false, pdf: null } as Partial<State>);
+      return;
+    }
+    set({ [dir]: [] } as Partial<State>);
   },
   setQuery: (query) => set({ query, pane: 'list', selected: null }),
   setDailyDate: (dailyDate) => set({ dailyDate }),

@@ -50,6 +50,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -105,13 +107,15 @@ fun NoteList(
     syncing: Boolean,
     snackbar: SnackbarHostState,
     view: String,
+    all: List<NoteRow>,
+    listState: LazyListState,
+    gridState: LazyGridState,
     onView: (String) -> Unit,
     onSync: () -> Unit,
     onOpen: (String) -> Unit,
     onOpenPdf: (note: String, target: String) -> Unit,
     onNew: (notebook: String?, tag: String?) -> Unit,
 ) {
-    val all by app.db.dao().liveNotes().collectAsStateWithLifecycle(emptyList())
     val notebooks by app.db.dao().liveNotebooks().collectAsStateWithLifecycle(emptyList())
     val trashed by app.db.dao().liveTrash().collectAsStateWithLifecycle(emptyList())
     val syncedAt by app.sync.syncedAt.collectAsState()
@@ -392,7 +396,7 @@ fun NoteList(
                         }
                         val neutral = MaterialTheme.colorScheme.outline
                         LazyVerticalGrid(
-                            GridCells.Fixed(2), Modifier.fillMaxSize(),
+                            GridCells.Fixed(2), Modifier.fillMaxSize(), gridState,
                             contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = if (selecting) PILL_ROOM else 12.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -433,7 +437,7 @@ fun NoteList(
                                 }
                             }
                         }
-                    } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = if (selecting) PILL_ROOM else 0.dp)) {
+                    } else LazyColumn(Modifier.fillMaxSize(), listState, contentPadding = PaddingValues(bottom = if (selecting) PILL_ROOM else 0.dp)) {
                     items(rows, key = { it.note.id }) { (note, depth, hasKids) ->
                         var pressed by remember { mutableStateOf(false) }
                         val bg = noteColor(colors[note.id], dark)

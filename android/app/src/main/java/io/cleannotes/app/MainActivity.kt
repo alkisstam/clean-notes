@@ -9,6 +9,7 @@ import android.graphics.Color
 import androidx.compose.runtime.key
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.os.Bundle
 import android.text.format.DateUtils
 import androidx.activity.ComponentActivity
@@ -23,6 +24,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import kotlinx.coroutines.launch
@@ -76,6 +79,10 @@ fun NotesApp(app: App, shared: MutableState<Intent?>) {
     var view by rememberSaveable { mutableStateOf("all") }
     // A PDF to open with the note, when the note was opened from the PDFs list.
     var openPdf by rememberSaveable { mutableStateOf<String?>(null) }
+    // Out here, so the list keeps its scroll while a note is open in its place, and has its notes on its first frame back.
+    val notes by app.db.dao().liveNotes().collectAsStateWithLifecycle(emptyList())
+    val listState = rememberLazyListState()
+    val gridState = rememberLazyGridState()
     val paired by app.sync.paired.collectAsState()
     val runSync = {
         if (!syncing && paired) scope.launch {
@@ -137,7 +144,7 @@ fun NotesApp(app: App, shared: MutableState<Intent?>) {
         }
     } else {
         NoteList(
-            app, syncing, snackbar, view,
+            app, syncing, snackbar, view, notes, listState, gridState,
             onView = { view = it },
             onSync = { runSync() },
             onOpen = { openId = it },

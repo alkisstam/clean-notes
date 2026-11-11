@@ -1,4 +1,4 @@
-import type { Editor, JSONContent, Range } from '@tiptap/core';
+import { Extension, InputRule, PasteRule, type Editor, type JSONContent, type Range } from '@tiptap/core';
 import { Highlight } from '@tiptap/extension-highlight';
 import { FontSize, TextStyle } from '@tiptap/extension-text-style';
 import { NodeSelection, Selection } from '@tiptap/pm/state';
@@ -34,6 +34,49 @@ import { dateKey } from '../lib/dates';
 
 const CELL_MIN_WIDTH = 80;
 
+// International numbers or 10+ digits, so dates like 2026-11-11 stay plain text.
+const PHONE = String.raw`\+\d[\d()-]{6,}\d|\d{10,}`;
+const telHref = (phone: string) => 'tel:' + phone.replace(/[^\d+]/g, '');
+
+/** Linkify finds emails but not phone numbers, so these rules link those. */
+// shortcut: typed numbers with spaces aren't linked (the rule fires at each space); paste or the Link dialog handles them.
+const PhoneLinks = Extension.create({
+  name: 'phoneLinks',
+  addInputRules() {
+    const type = this.editor.schema.marks.link;
+    return [
+      new InputRule({
+        find: new RegExp(`(?:^|\\s)(${PHONE})(\\s)$`),
+        handler: ({ state, range, match }) => {
+          const to = range.to - match[2].length;
+          const from = to - match[1].length;
+          if (state.doc.rangeHasMark(from, to, type)) return null;
+          state.tr.addMark(from, to, type.create({ href: telHref(match[1]) }));
+        },
+      }),
+    ];
+  },
+  addPasteRules() {
+    const type = this.editor.schema.marks.link;
+    return [
+      new PasteRule({
+        find: new RegExp(`(?<![\\w+/=.?&#@-])(?:\\+\\d[\\d ()-]{6,}\\d|\\d{10,})(?![\\w@])`, 'g'),
+        handler: ({ state, range, match }) => {
+          if (state.doc.rangeHasMark(range.from, range.to, type)) return;
+          state.tr.addMark(range.from, range.to, type.create({ href: telHref(match[0]) }));
+        },
+      }),
+    ];
+  },
+});
+
+/** What the Link dialog stores for a typed address: emails and phone numbers get their scheme, the rest https. */
+const toHref = (value: string) =>
+  /^[a-z][a-z0-9+.-]*:/i.test(value) ? value
+  : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? `mailto:${value}`
+  : /^\+?[\d\s().-]{6,}$/.test(value) ? telHref(value)
+  : `https://${value}`;
+
 /** Everything that decides how a note's document turns into HTML. */
 export const noteExtensions = [
   StarterKit.configure({
@@ -49,6 +92,7 @@ export const noteExtensions = [
   TableStyle,
   PdfAttachment,
   ImageBlock,
+  PhoneLinks,
 ];
 
 const SAVE_DELAY = 350;
@@ -307,7 +351,7 @@ function Toolbar({ editor, items }: { editor: Editor; items: SlashItem[] }) {
         const value = raw.trim();
         const chain = editor.chain().focus().extendMarkRange('link');
         if (!value) chain.unsetLink().run();
-        else chain.setLink({ href: /^[a-z][a-z0-9+.-]*:/i.test(value) ? value : `https://${value}` }).run();
+        else chain.setLink({ href: toHref(value) }).run();
       },
     });
   const btn = (label: string, Icon: typeof Bold, run: () => void, active?: boolean) => (
@@ -794,7 +838,7 @@ function FormatMenu({ editor }: { editor: Editor }) {
     const value = url.trim();
     const chain = editor.chain().focus().extendMarkRange('link');
     if (!value) chain.unsetLink().run();
-    else chain.setLink({ href: /^[a-z][a-z0-9+.-]*:/i.test(value) ? value : `https://${value}` }).run();
+    else chain.setLink({ href: toHref(value) }).run();
     setLinking(false);
   };
 

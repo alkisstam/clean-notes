@@ -375,7 +375,7 @@ kbd { font: 500 10.5px var(--font-mono); color: var(--ink-3); }
 .doc-pane[data-color], .doc-scroll[data-color] { background: var(--note-bg); }
 .doc-bar { height: 52px; flex: none; padding: 0 12px; display: flex; align-items: center; gap: 3px; }
 .doc-spacer { flex: 1; }
-.doc-daily-nav { display: flex; align-items: center; gap: 2px; }
+.doc-daily-nav, .doc-history { display: flex; align-items: center; gap: 2px; }
 .notebook-select {
   height: 30px; padding: 0 3px 0 9px;
   display: inline-flex; align-items: center; gap: 6px;

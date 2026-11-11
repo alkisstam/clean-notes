@@ -1,5 +1,5 @@
 import {
-  Archive, ArchiveRestore, ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Copy, CornerLeftUp, Download, PanelTop, Palette, Feather, FilePlus, FileSymlink, Redo2, Undo2, Maximize2, Minimize2, Pin, PinOff, RotateCcw, Share2, Trash2, X,
+  Archive, ArchiveRestore, ArrowLeft, ArrowRight, BookOpen, ChevronLeft, ChevronRight, Copy, CornerLeftUp, Download, PanelTop, Palette, Feather, FilePlus, FileSymlink, Redo2, Undo2, Maximize2, Minimize2, Pin, PinOff, Plus, RotateCcw, Share2, Trash2, X,
 } from 'lucide-react';
 import { lazy, Component, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createNote, createSubNote, deleteForever, duplicateNote, editTags, journalEdit, openDaily, patchNote, restoreNote, trashNote } from '../lib/actions';
@@ -9,8 +9,41 @@ import { store, useStore } from '../lib/store';
 import { noteBg, noteTone } from '../lib/colors';
 import { normalizeTag } from '../lib/tags';
 import { shareFormats } from '../lib/export';
+import type { Editor } from '@tiptap/core';
 import type { Note, Notebook } from '../lib/types';
-import { Menu } from './Overlay';
+import { Menu, type MenuItem } from './Overlay';
+
+/** The note actions shared by the three-dots menu and the list's right-click menu. */
+export function noteMenuItems(note: Note, editor: Editor | null): MenuItem[] {
+  const isDaily = note.kind === 'daily';
+  return [
+    { label: 'New note', icon: <Plus size={14} />, run: () => void createNote() },
+    ...(!isDaily
+      ? [
+          { label: 'New sub-note', icon: <FilePlus size={14} />, run: () => void createSubNote(note.id) },
+          { label: 'Duplicate', icon: <Copy size={14} />, run: () => void duplicateNote(note.id) },
+          {
+            label: note.pinned ? 'Unpin' : 'Pin to top',
+            icon: note.pinned ? <PinOff size={14} /> : <Pin size={14} />,
+            run: () => void patchNote(note.id, { pinned: !note.pinned }),
+          },
+        ]
+      : []),
+    ...(note.parentId ? [{ label: 'Move to top level', icon: <CornerLeftUp size={14} />, run: () => void patchNote(note.id, { parentId: null }) }] : []),
+    ...(editor ? [{ label: 'Link to note', icon: <FileSymlink size={14} />, run: () => linkToNote(editor) }] : []),
+    { label: 'Background color', icon: <Palette size={14} />, run: () => store.getState().setDialog({ kind: 'noteColor', noteIds: [note.id] }) },
+    ...(shareFormats().length ? [{ label: 'Share', icon: <Share2 size={14} />, run: () => store.getState().setDialog({ kind: 'export', noteIds: [note.id], mode: 'share' }) }] : []),
+    { label: 'Export', icon: <Download size={14} />, run: () => store.getState().setDialog({ kind: 'export', noteIds: [note.id], mode: 'save' }) },
+    ...(!isDaily
+      ? [{
+          label: note.archivedAt ? 'Unarchive' : 'Archive',
+          icon: note.archivedAt ? <ArchiveRestore size={14} /> : <Archive size={14} />,
+          run: () => void patchNote(note.id, { archivedAt: note.archivedAt ? null : Date.now() }),
+        }]
+      : []),
+    { label: 'Move to Trash', icon: <Trash2 size={14} />, danger: true, run: () => void trashNote(note.id) },
+  ];
+}
 
 const PdfViewer = lazy(() => import('./PdfViewer').then((m) => ({ default: m.PdfViewer })));
 
@@ -116,6 +149,9 @@ function Document({ note, notebooks, allTags }: { note: Note; notebooks: Noteboo
   const toggleFocus = useStore((s) => s.toggleFocus);
   const focusTitle = useStore((s) => s.focusTitle);
   const setPane = useStore((s) => s.setPane);
+  const back = useStore((s) => s.back);
+  const fwd = useStore((s) => s.fwd);
+  const travel = useStore((s) => s.travel);
   const [title, setTitle] = useState(note.title);
   const editingTitle = useRef(false);
   const isDaily = note.kind === 'daily';
@@ -198,6 +234,16 @@ function Document({ note, notebooks, allTags }: { note: Note; notebooks: Noteboo
         <button type="button" className="icon-btn phone-only" aria-label="Back to list" onClick={() => setPane('list')}>
           <ArrowLeft size={18} />
         </button>
+        {!inTrash && (
+          <div className="doc-history">
+            <button type="button" className="icon-btn" aria-label="Previous note" title="Back" disabled={!back.length} onClick={() => void travel('back')}>
+              <ArrowLeft size={15} />
+            </button>
+            <button type="button" className="icon-btn" aria-label="Next note" title="Forward" disabled={!fwd.length} onClick={() => void travel('fwd')}>
+              <ArrowRight size={15} />
+            </button>
+          </div>
+        )}
         {isDaily ? (
           <div className="doc-daily-nav">
             <button type="button" className="icon-btn" aria-label="Previous day" title="Previous day" onClick={() => void openDaily(addDays(note.date!, -1))}><ChevronLeft size={16} /></button>
@@ -276,21 +322,8 @@ function Document({ note, notebooks, allTags }: { note: Note; notebooks: Noteboo
             <Menu
               label="Note actions"
               items={[
-                ...(note.parentId ? [{ label: 'Move to top level', icon: <CornerLeftUp size={14} />, run: () => void patchNote(note.id, { parentId: null }) }] : []),
-                ...(!isDaily ? [{ label: 'Duplicate', icon: <Copy size={14} />, run: () => void duplicateNote(note.id) }] : []),
-                ...(editor ? [{ label: 'Link to note', icon: <FileSymlink size={14} />, run: () => linkToNote(editor) }] : []),
+                ...noteMenuItems(note, editor),
                 { label: showToolbar ? 'Hide toolbar' : 'Show toolbar', icon: <PanelTop size={14} />, run: () => store.getState().toggleToolbar() },
-                { label: 'Background color', icon: <Palette size={14} />, run: () => store.getState().setDialog({ kind: 'noteColor', noteIds: [note.id] }) },
-                ...(shareFormats().length ? [{ label: 'Share', icon: <Share2 size={14} />, run: () => store.getState().setDialog({ kind: 'export', noteIds: [note.id], mode: 'share' }) }] : []),
-                { label: 'Export', icon: <Download size={14} />, run: () => store.getState().setDialog({ kind: 'export', noteIds: [note.id], mode: 'save' }) },
-                ...(!isDaily
-                  ? [{
-                      label: note.archivedAt ? 'Unarchive' : 'Archive',
-                      icon: note.archivedAt ? <ArchiveRestore size={14} /> : <Archive size={14} />,
-                      run: () => void patchNote(note.id, { archivedAt: note.archivedAt ? null : Date.now() }),
-                    }]
-                  : []),
-                { label: 'Move to Trash', icon: <Trash2 size={14} />, danger: true, run: () => void trashNote(note.id) },
               ]}
             />
           </>

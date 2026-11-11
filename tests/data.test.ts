@@ -18,6 +18,24 @@ beforeEach(async () => {
 });
 
 describe('data', () => {
+  it('walks note history back and forward, skipping trashed notes', async () => {
+    const [a, b, c] = [baseNote(), baseNote(), baseNote({ trashedAt: 1 })];
+    await db.notes.bulkAdd([a, b, c]);
+    const s = store.getState;
+    s().openNote(null);
+    store.setState({ back: [], fwd: [] });
+    s().openNote(a.id);
+    s().openNote(c.id);
+    s().openNote(b.id);
+    await s().travel('back');
+    expect(s().noteId).toBe(a.id);
+    expect(s().back).toEqual([]);
+    await s().travel('fwd');
+    expect(s().noteId).toBe(b.id);
+    s().openNote(a.id);
+    expect(s().fwd).toEqual([]);
+  });
+
   it('trashes several notes with one Undo that restores them all', async () => {
     const a = baseNote();
     const b = baseNote();

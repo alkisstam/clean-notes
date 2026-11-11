@@ -55,7 +55,7 @@ app.whenReady().then(() => {
     webPreferences: { preload: path.join(import.meta.dirname, 'preload.cjs') },
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/.test(url)) void shell.openExternal(url);
+    if (/^(https?|mailto|tel):/.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
   // The page draws the menu so it matches the app; it asks back here for the edit itself.

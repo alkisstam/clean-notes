@@ -1,9 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  Archive, ArchiveRestore, ArrowDownAZ, CalendarPlus, Check, Clock, Copy, Download, FilePlus, FolderInput, Palette, PinOff, Share2, SquareCheck, Tag, X, FileText, Image as ImageIcon, Menu as MenuIcon, Pin, Plus, RotateCcw, Search, SearchX, Trash2, ChevronDown,
+  Archive, ArchiveRestore, ArrowDownAZ, CalendarPlus, Check, Clock, Copy, Download, FolderInput, Palette, PinOff, Share2, SquareCheck, Tag, X, FileText, Image as ImageIcon, Menu as MenuIcon, Pin, Plus, RotateCcw, Search, SearchX, Trash2, ChevronDown,
 } from 'lucide-react';
 import { memo, useMemo, useState, type ReactNode } from 'react';
-import { createNote, createSubNote, deleteForever, duplicateNote, nestNote, patchNote, patchNotes, trashNote, trashNotes, flushEditor, openDaily, quickAddTask, restoreNote, setTaskAttrs } from '../lib/actions';
+import { createNote, deleteForever, duplicateNote, nestNote, patchNotes, trashNotes, flushEditor, openDaily, quickAddTask, restoreNote, setTaskAttrs } from '../lib/actions';
 import { shareFormats } from '../lib/export';
 import { db } from '../lib/db';
 import { noteBg } from '../lib/colors';
@@ -18,6 +18,8 @@ import { extractTasks, groupTasks } from '../lib/tasks';
 import type { Note, Notebook, PdfFile, TaskRef, View } from '../lib/types';
 import { Menu, MenuPopup, type MenuItem } from './Overlay';
 import { dropProps, NOTE_DRAG } from './Sidebar';
+import { noteMenuItems } from './EditorPane';
+import { currentEditor } from '../editor/NoteEditor';
 
 const Hit = ({ s }: { s: Snippet }) => (
   <>
@@ -51,29 +53,11 @@ const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, acti
   const hasPdf = useMemo(() => pdfIdsIn(note.content).length > 0, [note.content]);
   const hasImage = useMemo(() => imageIdsIn(note.content).length > 0, [note.content]);
   const [ctx, setCtx] = useState<DOMRect | null>(null);
-  const isDaily = note.kind === 'daily';
   const bg = noteBg(note.color);
   const ctxItems: MenuItem[] = ctx
     ? [
-        { label: 'New note', icon: <Plus size={14} />, run: () => void createNote() },
         ...(selectable ? [{ label: 'Select', icon: <SquareCheck size={14} />, run: () => store.getState().setSelected([note.id]) }] : []),
-        ...(!isDaily
-          ? [
-              { label: 'New sub-note', icon: <FilePlus size={14} />, run: () => void createSubNote(note.id) },
-              { label: 'Duplicate', icon: <Copy size={14} />, run: () => void duplicateNote(note.id) },
-              {
-                label: note.pinned ? 'Unpin' : 'Pin to top',
-                icon: note.pinned ? <PinOff size={14} /> : <Pin size={14} />,
-                run: () => void patchNote(note.id, { pinned: !note.pinned }),
-              },
-              {
-                label: note.archivedAt ? 'Unarchive' : 'Archive',
-                icon: note.archivedAt ? <ArchiveRestore size={14} /> : <Archive size={14} />,
-                run: () => void patchNote(note.id, { archivedAt: note.archivedAt ? null : Date.now() }),
-              },
-            ]
-          : []),
-        { label: 'Move to Trash', icon: <Trash2 size={14} />, danger: true, run: () => void trashNote(note.id) },
+        ...noteMenuItems(note, active ? currentEditor() : null),
       ]
     : [];
   return (
@@ -84,7 +68,7 @@ const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, acti
       data-selecting={selecting || undefined}
       data-ticked={ticked || undefined}
       onContextMenu={(e) => {
-        if (import.meta.env.MODE !== 'desktop' || note.trashedAt) return;
+        if (note.trashedAt) return;
         e.preventDefault();
         setCtx(new DOMRect(e.clientX, e.clientY, 0, 0));
       }}
