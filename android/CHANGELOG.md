@@ -1,5 +1,11 @@
 # Changelog — Android app
 
+## 1.0.7 — 2026-11-12
+
+### Added
+- Reminders for to-dos. The date dialog, in Tasks and from a to-do's date button, has an Add reminder row that picks a time on that date. A notification shows at that time and opens the note. Ticking the to-do stops it.
+- The reminder time shows after the date, like "Today 09:00".
+- A copy button in the corner of each code block copies its code.
 ## 1.0.6 — 2026-11-11
 
 ### Added

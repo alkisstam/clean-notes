@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.8 — 2026-11-12
+
+### Added
+- A copy button in the corner of each code block copies its code. It shows when you hover over the block.
+- To-dos keep the reminder time set on Android and show it after the date, like "Today 09:00".
 ## 1.0.7 — 2026-11-11
 
 ### Added
