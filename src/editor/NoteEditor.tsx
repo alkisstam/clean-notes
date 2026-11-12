@@ -1,7 +1,9 @@
 import { Extension, InputRule, PasteRule, type Editor, type JSONContent, type Range } from '@tiptap/core';
 import { Highlight } from '@tiptap/extension-highlight';
 import { FontSize, TextStyle } from '@tiptap/extension-text-style';
-import { NodeSelection, Selection } from '@tiptap/pm/state';
+import { NodeSelection, Plugin, PluginKey, Selection } from '@tiptap/pm/state';
+import type { Node as PMNode } from '@tiptap/pm/model';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
 import { CellSelection, TableMap } from '@tiptap/pm/tables';
@@ -77,6 +79,66 @@ const toHref = (value: string) =>
   : /^\+?[\d\s().-]{6,}$/.test(value) ? telHref(value)
   : `https://${value}`;
 
+const COPY_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+const CHECK_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const area = Object.assign(document.createElement('textarea'), { value: text });
+    document.body.append(area);
+    area.select();
+    document.execCommand('copy');
+    area.remove();
+  }
+}
+
+/** A copy button in the corner of each code block. A widget, not a node view, so export HTML stays plain. */
+const CodeCopy = Extension.create({
+  name: 'codeCopy',
+  addProseMirrorPlugins() {
+    const button = (getPos: () => number | undefined) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'code-copy';
+      btn.contentEditable = 'false';
+      btn.setAttribute('aria-label', 'Copy code');
+      btn.innerHTML = COPY_ICON;
+      btn.addEventListener('mousedown', (e) => e.preventDefault());
+      btn.addEventListener('click', () => {
+        const pos = getPos();
+        const node = pos === undefined ? null : this.editor.state.doc.resolve(pos).parent;
+        if (!node) return;
+        void copyText(node.textContent);
+        btn.innerHTML = CHECK_ICON;
+        setTimeout(() => (btn.innerHTML = COPY_ICON), 1200);
+      });
+      return btn;
+    };
+    const build = (doc: PMNode) => {
+      const widgets: Decoration[] = [];
+      doc.descendants((node, pos) => {
+        if (node.type.name !== 'codeBlock') return;
+        widgets.push(Decoration.widget(pos + 1, (_view, getPos) => button(getPos), { side: -1, ignoreSelection: true, key: 'code-copy' }));
+        return false;
+      });
+      return DecorationSet.create(doc, widgets);
+    };
+    const key = new PluginKey<DecorationSet>('codeCopy');
+    return [
+      new Plugin({
+        key,
+        state: {
+          init: (_, state) => build(state.doc),
+          apply: (tr, old) => (tr.docChanged ? build(tr.doc) : old),
+        },
+        props: { decorations: (state) => key.getState(state) },
+      }),
+    ];
+  },
+});
+
 /** Everything that decides how a note's document turns into HTML. */
 export const noteExtensions = [
   StarterKit.configure({
@@ -93,6 +155,7 @@ export const noteExtensions = [
   PdfAttachment,
   ImageBlock,
   PhoneLinks,
+  CodeCopy,
 ];
 
 const SAVE_DELAY = 350;
