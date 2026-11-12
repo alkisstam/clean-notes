@@ -208,7 +208,7 @@ const w = window as unknown as {
   cnRedo: () => void;
   cnStartLink: () => void;
   cnUnlinkNote: () => void;
-  cnSetDue: (due: string | null) => void;
+  cnSetDue: (due: string | null, remind: string | null) => void;
   cnLinkNote: (id: string, title: string) => void;
   cnCloseViewer: () => void;
   cnInsertPicked: (picked: { url: string; name: string; type: string }[]) => Promise<void>;
@@ -217,13 +217,13 @@ const w = window as unknown as {
 
 formatMenu.placement = 'bottom';
 // The app shows the same date dialog as its Tasks screen, then answers with cnSetDue().
-let dueSet: ((due: string | null) => void) | null = null;
-dueHooks.host = (_anchor, due, set) => {
+let dueSet: ((due: string | null, remind: string | null) => void) | null = null;
+dueHooks.host = (due, remind, set) => {
   dueSet = set;
-  CleanNotes.postMessage(JSON.stringify({ type: 'due', due }));
+  CleanNotes.postMessage(JSON.stringify({ type: 'due', due, remind }));
 };
-w.cnSetDue = (due) => {
-  dueSet?.(due);
+w.cnSetDue = (due, remind) => {
+  dueSet?.(due, remind);
   dueSet = null;
 };
 

@@ -3,8 +3,9 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { dateKey, dueLabel } from '../lib/dates';
 
 type OpenDue = (anchor: DOMRect, due: string | null, set: (due: string | null) => void) => void;
+type HostDue = (due: string | null, remind: string | null, set: (due: string | null, remind: string | null) => void) => void;
 /** The page shows its own calendar by the button, since Chromium on Wayland opens the native one in the screen's corner. A host may show its own instead, as the Android app does to match its Tasks screen. */
-export const dueHooks = { open: null as OpenDue | null, host: null as OpenDue | null };
+export const dueHooks = { open: null as OpenDue | null, host: null as HostDue | null };
 
 /** To-do item with a stable id, so the Tasks view can reach it, and an optional due date. */
 export const TaskItemDue = TaskItem.extend({
@@ -20,6 +21,12 @@ export const TaskItemDue = TaskItem.extend({
         default: null,
         parseHTML: (el) => el.getAttribute('data-due'),
         renderHTML: (attrs) => (attrs.due ? { 'data-due': attrs.due } : {}),
+      },
+      // "HH:mm" on the due date; the Android app notifies at that time.
+      remind: {
+        default: null,
+        parseHTML: (el) => el.getAttribute('data-remind'),
+        renderHTML: (attrs) => (attrs.remind ? { 'data-remind': attrs.remind } : {}),
       },
     };
   },
@@ -66,8 +73,8 @@ export const TaskItemDue = TaskItem.extend({
 
       check.addEventListener('change', () => setAttrs({ checked: check.checked }));
       dueBtn.addEventListener('click', () => {
-        const open = dueHooks.host ?? dueHooks.open;
-        if (open) return open(dueBtn.getBoundingClientRect(), node.attrs.due, (due) => setAttrs({ due }));
+        if (dueHooks.host) return dueHooks.host(node.attrs.due, node.attrs.remind, (due, remind) => setAttrs({ due, remind }));
+        if (dueHooks.open) return dueHooks.open(dueBtn.getBoundingClientRect(), node.attrs.due, (due) => setAttrs(due ? { due } : { due, remind: null }));
         dueInput.value = node.attrs.due ?? '';
         try {
           dueInput.showPicker();
@@ -75,7 +82,7 @@ export const TaskItemDue = TaskItem.extend({
           dueInput.focus();
         }
       });
-      dueInput.addEventListener('change', () => setAttrs({ due: dueInput.value || null }));
+      dueInput.addEventListener('change', () => setAttrs(dueInput.value ? { due: dueInput.value } : { due: null, remind: null }));
 
       const paint = () => {
         const due: string | null = node.attrs.due;
@@ -83,8 +90,9 @@ export const TaskItemDue = TaskItem.extend({
         li.dataset.checked = String(Boolean(node.attrs.checked));
         if (node.attrs.id) li.dataset.taskId = node.attrs.id;
         check.checked = Boolean(node.attrs.checked);
-        dueBtn.textContent = due ? dueLabel(due, today) : '+ date';
-        dueBtn.setAttribute('aria-label', due ? `Due ${dueLabel(due, today)}. Change date` : 'Add due date');
+        const label = due ? dueLabel(due, today) + (node.attrs.remind ? ` ${node.attrs.remind}` : '') : '';
+        dueBtn.textContent = due ? label : '+ date';
+        dueBtn.setAttribute('aria-label', due ? `Due ${label}. Change date` : 'Add due date');
         dueWrap.dataset.set = String(Boolean(due));
         dueWrap.dataset.late = String(Boolean(due && due < today && !node.attrs.checked));
       };

@@ -70,12 +70,12 @@ class NoteViewState {
         linking = false
         web?.evaluateJavascript("cnUnlinkNote()", null)
     }
-    /** A to-do's date button was tapped: its current due date, or "" for none. The screen shows its date dialog while set. */
-    var dating by mutableStateOf<String?>(null)
+    /** A to-do's date button was tapped: its current due date and reminder time. The screen shows its date dialog while set. */
+    var dating by mutableStateOf<Pair<String?, String?>?>(null)
 
-    fun setDue(due: String?) {
+    fun setDue(due: String?, remind: String?) {
         dating = null
-        web?.evaluateJavascript("cnSetDue(${due?.let(JSONObject::quote) ?: "null"})", null)
+        web?.evaluateJavascript("cnSetDue(${due?.let(JSONObject::quote) ?: "null"}, ${remind?.let(JSONObject::quote) ?: "null"})", null)
     }
 
     /** Called when a note link in the page is tapped. */
@@ -289,7 +289,7 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
                             state.linking = true
                         }
                         "tags" -> state.tagging = true
-                        "due" -> state.dating = if (msg.isNull("due")) "" else msg.getString("due")
+                        "due" -> state.dating = (if (msg.isNull("due")) null else msg.getString("due")) to (if (msg.isNull("remind")) null else msg.optString("remind").ifEmpty { null })
                         "openNote" -> state.onOpenNote?.invoke(msg.getString("id"))
                         "history" -> {
                             state.canUndo = msg.getBoolean("undo")

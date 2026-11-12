@@ -38,7 +38,7 @@ class MainActivity : ComponentActivity() {
     private val shared = mutableStateOf<Intent?>(null)
 
     private fun receive(intent: Intent?) {
-        if (intent?.action == Intent.ACTION_SEND || intent?.action == Intent.ACTION_SEND_MULTIPLE) shared.value = intent
+        if (intent?.action in listOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE, Reminders.OPEN_NOTE)) shared.value = intent
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -108,6 +108,15 @@ fun NotesApp(app: App, shared: MutableState<Intent?>) {
 
     LaunchedEffect(shared.value) {
         val intent = shared.value ?: return@LaunchedEffect
+        if (intent.action == Reminders.OPEN_NOTE) {
+            connecting = false
+            view = "all"
+            trail = emptyList()
+            openPdf = null
+            openId = intent.getStringExtra("noteId")
+            shared.value = null
+            return@LaunchedEffect
+        }
         app.sharedFiles = if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
             IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
         } else listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))

@@ -63,4 +63,24 @@ class TasksTest {
         assertEquals(false, copy.has("parentId"))
     }
     private fun tasksOf(n: JSONObject) = tasks(n.getJSONObject("content"))
+
+    @Test fun readsAndWritesReminders() {
+        val added = appendTask(doc, "z", "Call", "2026-11-12", "09:30")
+        assertEquals("09:30", tasks(added).last().remind)
+        assertEquals(null, tasks(doc).first().remind)
+    }
+
+    @Test fun nextReminderIsTheEarliestOpenOneAfterTheGivenTime() {
+        val utc = java.time.ZoneOffset.UTC
+        val at = { d: String, t: String -> java.time.LocalDateTime.parse("${d}T$t").toInstant(utc).toEpochMilli() }
+        val list = listOf(
+            TaskRef("a", "n", "", "Done", true, "2026-11-12", "08:00"),
+            TaskRef("b", "n", "", "Late", false, "2026-11-12", "10:00"),
+            TaskRef("c", "n", "", "Soon", false, "2026-11-12", "09:00"),
+            TaskRef("d", "n", "", "Past", false, "2026-11-11", "09:00"),
+            TaskRef("e", "n", "", "No time", false, "2026-11-12"),
+        )
+        assertEquals(at("2026-11-12", "09:00"), nextReminder(list, at("2026-11-12", "07:00"), utc))
+        assertEquals(null, nextReminder(list, at("2026-11-12", "10:00"), utc))
+    }
 }

@@ -13,6 +13,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -55,10 +57,13 @@ class App : Application() {
         }
     }
 
+    @OptIn(FlowPreview::class)
     override fun onCreate() {
         super.onCreate()
         // Also schedules it for installs paired before background sync existed.
         if (sync.paired.value) SyncWorker.schedule(this)
+        // Every change to the notes (edits, sync, ticks, trash) re-picks the next reminder.
+        scope.launch { db.dao().liveNotes().debounce(1000).collect { Reminders.schedule(this@App, it) } }
     }
 
     /** Runs writes from the editor one at a time, in the order they arrived. */
@@ -161,10 +166,10 @@ class App : Application() {
         updateNote(noteId, contentChanged = true) { n, _ -> n.put("content", patchTask(n.getJSONObject("content"), taskId, attrs)) }
 
     /** Port of quickAddTask(): new tasks go to the end of today's note. */
-    suspend fun quickAddTask(text: String, due: String?) {
+    suspend fun quickAddTask(text: String, due: String?, remind: String? = null) {
         val id = dailyNote(dateKey())
         updateNote(id, contentChanged = true) { n, _ ->
-            val content = appendTask(n.getJSONObject("content"), UUID.randomUUID().toString(), text, due)
+            val content = appendTask(n.getJSONObject("content"), UUID.randomUUID().toString(), text, due, remind)
             n.put("content", content).put("text", docText(content))
         }
     }

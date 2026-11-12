@@ -102,7 +102,7 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
         if (live.any { it.id == target }) view.flush { onFollowLink(target) }
         else Toast.makeText(context, "That note was deleted", Toast.LENGTH_SHORT).show()
     }
-    view.dating?.let { due -> DueDialog(due.ifEmpty { null }, view::setDue) { view.dating = null } }
+    view.dating?.let { (due, remind) -> DueDialog(due, remind, view::setDue) { view.dating = null } }
     // Saving pending keystrokes first keeps the editor from adopting a copy older than what it shows.
     if (view.tagging) note?.let { n ->
         TagPicker(n.tagList, allTags, { sel -> view.tagging = false; view.flush { app.scope.launch { app.editTags(id) { sel } } } }) { view.tagging = false }

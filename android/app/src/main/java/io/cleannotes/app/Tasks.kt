@@ -5,7 +5,7 @@ import org.json.JSONObject
 
 // Ports of src/lib/doc.ts and src/lib/tasks.ts over the editor's JSON documents.
 
-data class TaskRef(val id: String, val noteId: String, val noteTitle: String, val text: String, val done: Boolean, val due: String?)
+data class TaskRef(val id: String, val noteId: String, val noteTitle: String, val text: String, val done: Boolean, val due: String?, val remind: String? = null)
 
 private fun JSONObject.text(key: String) = if (isNull(key)) "" else optString(key)
 
@@ -46,7 +46,7 @@ fun extractTasks(noteId: String, noteTitle: String, content: JSONObject): List<T
         if (n.optString("type") != "taskItem" || id.isEmpty()) return@walkDoc
         val text = ownText(n).trim()
         if (text.isEmpty()) return@walkDoc
-        tasks += TaskRef(id, noteId, noteTitle, text, attrs!!.optBoolean("checked"), attrs.text("due").ifEmpty { null })
+        tasks += TaskRef(id, noteId, noteTitle, text, attrs!!.optBoolean("checked"), attrs.text("due").ifEmpty { null }, attrs.text("remind").ifEmpty { null })
     }
     return tasks
 }
@@ -61,11 +61,11 @@ fun patchTask(doc: JSONObject, id: String, attrs: Map<String, Any?>): JSONObject
     return copy
 }
 
-fun appendTask(doc: JSONObject, id: String, text: String, due: String?): JSONObject {
+fun appendTask(doc: JSONObject, id: String, text: String, due: String?, remind: String? = null): JSONObject {
     val copy = JSONObject(doc.toString())
     val item = JSONObject()
         .put("type", "taskItem")
-        .put("attrs", JSONObject().put("id", id).put("checked", false).put("due", due ?: JSONObject.NULL))
+        .put("attrs", JSONObject().put("id", id).put("checked", false).put("due", due ?: JSONObject.NULL).put("remind", remind ?: JSONObject.NULL))
         .put("content", JSONArray().put(JSONObject().put("type", "paragraph").put("content", JSONArray().put(JSONObject().put("type", "text").put("text", text)))))
     val content = copy.children().toMutableList()
     // Join the last task list if the document ends with one.
