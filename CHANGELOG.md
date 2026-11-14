@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.9 — 2026-11-14
+
+### Added
+- A breadcrumb above the note title shows where the note is, like Notebooks › Projects › Clean Notes › To-Do. Click the notebook or a parent note to go there.
+- Zoom images and PDFs with a pinch, a double tap, or Ctrl+scroll. A zoomed image can be dragged around.
+
+### Fixed
+- The formatting toolbar no longer shows a button as on (like Bold) after you select different text.
+- A selected image's toolbar and resize handle go away when you click anywhere outside the image, not only inside the text.
+
 ## 1.0.8 — 2026-11-12
 
 ### Added

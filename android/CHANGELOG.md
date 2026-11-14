@@ -1,5 +1,16 @@
 # Changelog — Android app
 
+## 1.0.8 — 2026-11-14
+
+### Added
+- Reminders for whole notes. Add reminder in a note's long-press and … menus, or the pill under Tags inside the note, picks a date and time; a date without a time reminds at 9:00. The pill shows the reminder once set.
+- A breadcrumb above the note title shows where the note is, like Notebooks › Projects › Clean Notes › To-Do. Tap a parent note to open it.
+- Pinch or double tap to zoom images and PDFs. A zoomed image can be dragged around.
+
+### Fixed
+- The formatting pop-up no longer shows a button as on (like Bold) after you select different text.
+- A selected image's toolbar and resize handle go away when you tap anywhere outside the image.
+
 ## 1.0.7 — 2026-11-12
 
 ### Added
