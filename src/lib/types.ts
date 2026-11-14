@@ -21,6 +21,8 @@ export interface Note {
   archivedAt?: number | null;
   /** Preset id from colors.ts, like "soft-rose", so each theme can pick its own shade. */
   color?: string | null;
+  /** Local "YYYY-MM-DDTHH:MM" when the Android app reminds about the note. */
+  remindAt?: string | null;
   /** Which editor instance wrote last, so an editor ignores its own echoes. */
   writer?: string;
 }

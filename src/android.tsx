@@ -19,7 +19,8 @@ import { exportHost, exportNotes, type ExportFormat } from './lib/export';
 import { currentEditor, editorHooks, formatMenu, insertIntoEditor, linkToNote, NoteEditor, noteLinks, sharedFiles } from './editor/NoteEditor';
 import { viewerHooks } from './editor/ImageBlock';
 import { dueHooks } from './editor/TaskItemDue';
-import { Boundary } from './components/EditorPane';
+import { Boundary, Crumbs } from './components/EditorPane';
+import { Bell } from 'lucide-react';
 import { store, useStore, type PdfTarget } from './lib/store';
 import type { Note, NoteImage, PdfFile } from './lib/types';
 
@@ -32,6 +33,13 @@ interface Payload {
   deviceFonts?: boolean;
   /** A PDF to show as the note opens, from the app's PDFs list or a search hit. */
   pdf?: PdfTarget | null;
+  /** For the breadcrumb, since this page only holds the open note. */
+  path?: Path;
+}
+
+interface Path {
+  notebook: string | null;
+  parents: { id: string; title: string }[];
 }
 
 /** Added by the Android app, and only for this page's origin. */
@@ -142,7 +150,10 @@ function PdfLayer() {
   );
 }
 
-function Page({ id }: { id: string }) {
+const remindLabel = (at: string) =>
+  new Date(at).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+
+function Page({ id, path }: { id: string; path: Path | null }) {
   const note = useLiveQuery(() => db.notes.get(id), [id]);
   const [title, setTitle] = useState<string | null>(null);
   useEffect(() => {
@@ -154,6 +165,14 @@ function Page({ id }: { id: string }) {
     // The body never scrolls (the web app scrolls inside its panes), so this needs the full height to scroll itself.
     <div className="doc-scroll" data-color={bg ? '' : undefined} data-tone={noteTone(note.color)} style={{ height: '100%', ...(bg && { '--note-bg': bg }) } as React.CSSProperties}>
       <article className="doc">
+        {path && note.kind !== 'daily' && (
+          <Crumbs
+            notebook={path.notebook !== null ? { name: path.notebook } : null}
+            parents={path.parents}
+            title={title ?? note.title}
+            onParent={(parent) => CleanNotes.postMessage(JSON.stringify({ type: 'openNote', id: parent }))}
+          />
+        )}
         <textarea
           className="doc-title"
           rows={1}
@@ -191,6 +210,18 @@ function Page({ id }: { id: string }) {
             </span>
           ))}
           <span className="doc-tags-add">Add tags</span>
+        </button>
+        <button
+          type="button"
+          className="doc-remind"
+          data-past={note.remindAt ? new Date(note.remindAt).getTime() < Date.now() : undefined}
+          onClick={() => {
+            (document.activeElement as HTMLElement | null)?.blur();
+            CleanNotes.postMessage(JSON.stringify({ type: 'remind' }));
+          }}
+        >
+          <Bell size={13} />
+          {note.remindAt ? remindLabel(note.remindAt) : 'Add reminder'}
         </button>
         <NoteEditor note={note} />
       </article>
@@ -297,7 +328,7 @@ w.cnClosePdf = () => store.getState().setPdf(null);
 w.cnAck = () => acks.shift()?.();
 
 // Called by the app on open and whenever its copy changes. The page's own database is only a cache for this note.
-w.cnLoad = async ({ note, images, files, dark, deviceFonts, pdf }) => {
+w.cnLoad = async ({ note, images, files, dark, deviceFonts, pdf, path }) => {
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   const fonts: [string, string][] = [['--font-ui', 'sans-serif'], ['--font-text', 'serif'], ['--font-mono', 'monospace']];
   for (const [name, value] of fonts) {
@@ -332,7 +363,8 @@ w.cnLoad = async ({ note, images, files, dark, deviceFonts, pdf }) => {
     }
   });
   if (opening) store.getState().setPdf(pdf ?? null);
-  if (opening) root.render(<Page key={note.id} id={note.id} />);
+  // Rendered on every load too, so a renamed parent or notebook shows in the breadcrumb.
+  root.render(<Page key={note.id} id={note.id} path={path ?? null} />);
 };
 
 // Saves pending keystrokes and hands the note to the app before it closes this page.

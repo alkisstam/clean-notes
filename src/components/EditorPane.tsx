@@ -1,7 +1,7 @@
 import {
   Archive, ArchiveRestore, ArrowLeft, ArrowRight, BookOpen, ChevronLeft, ChevronRight, Copy, CornerLeftUp, Download, PanelTop, Palette, Feather, FilePlus, FileSymlink, Redo2, Undo2, Maximize2, Minimize2, Pin, PinOff, Plus, RotateCcw, Share2, Trash2, X,
 } from 'lucide-react';
-import { lazy, Component, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Component, Fragment, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createNote, createSubNote, deleteForever, duplicateNote, editTags, journalEdit, openDaily, patchNote, restoreNote, trashNote } from '../lib/actions';
 import { addDays, dateKey, fullDate, fullDateTime, relativeTime } from '../lib/dates';
 import { currentEditor, editorHooks, linkToNote, NoteEditor } from '../editor/NoteEditor';
@@ -138,11 +138,52 @@ function TagInput({ note, allTags }: { note: Note; allTags: string[] }) {
   );
 }
 
+/** Where the note sits: its notebook, then the notes it is nested under, then itself. */
+export function Crumbs({ notebook, parents, title, onRoot, onParent }: {
+  notebook: { name: string; onClick?: () => void } | null;
+  parents: { id: string; title: string }[];
+  title: string;
+  onRoot?: () => void;
+  onParent: (id: string) => void;
+}) {
+  const items: { label: string; onClick?: () => void }[] = [
+    notebook ? { label: 'Notebooks' } : { label: 'Notes', onClick: onRoot },
+    ...(notebook ? [{ label: notebook.name || 'Untitled', onClick: notebook.onClick }] : []),
+    ...parents.map((p) => ({ label: p.title || 'Untitled', onClick: () => onParent(p.id) })),
+    { label: title || 'Untitled' },
+  ];
+  return (
+    <nav className="doc-crumbs" aria-label="Location">
+      {items.map((c, i) => (
+        <Fragment key={i}>
+          {i > 0 && <ChevronRight size={12} aria-hidden />}
+          {c.onClick ? (
+            <button type="button" onClick={c.onClick}>{c.label}</button>
+          ) : (
+            <span aria-current={i === items.length - 1 ? 'page' : undefined}>{c.label}</span>
+          )}
+        </Fragment>
+      ))}
+    </nav>
+  );
+}
+
+/** The notes `note` is nested under, outermost first. */
+function parentsOf(note: Note, notes: Note[]) {
+  const out: Note[] = [];
+  const seen = new Set([note.id]);
+  for (let p = notes.find((n) => n.id === note.parentId); p && !seen.has(p.id); p = notes.find((n) => n.id === p!.parentId)) {
+    seen.add(p.id);
+    out.unshift(p);
+  }
+  return out;
+}
+
 function wordCount(text: string) {
   return text.trim() ? text.trim().split(/\s+/u).length : 0;
 }
 
-function Document({ note, notebooks, allTags }: { note: Note; notebooks: Notebook[]; allTags: string[] }) {
+function Document({ note, notes, notebooks, allTags }: { note: Note; notes: Note[]; notebooks: Notebook[]; allTags: string[] }) {
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const focusMode = useStore((s) => s.focusMode);
   const showToolbar = useStore((s) => s.showToolbar);
@@ -332,6 +373,18 @@ function Document({ note, notebooks, allTags }: { note: Note; notebooks: Noteboo
 
       <div className="doc-scroll">
         <article className="doc" key={note.id}>
+          {!isDaily && !inTrash && (() => {
+            const book = notebooks.find((b) => b.id === note.notebookId);
+            return (
+              <Crumbs
+                notebook={book ? { name: book.name, onClick: () => store.getState().setView({ type: 'notebook', id: book.id }) } : null}
+                parents={parentsOf(note, notes)}
+                title={title}
+                onRoot={() => store.getState().setView({ type: 'all' })}
+                onParent={(id) => store.getState().openNote(id)}
+              />
+            );
+          })()}
           <textarea
             ref={titleRef}
             className="doc-title"
@@ -379,7 +432,7 @@ export function EditorPane({ notes, notebooks, allTags }: { notes: Note[]; noteb
       <div className="editor-split">
         <div className="doc-pane" data-color={bg ? '' : undefined} data-tone={noteTone(note?.color)} style={bg ? ({ '--note-bg': bg } as React.CSSProperties) : undefined}>
           {note ? (
-            <Document key={note.id} note={note} notebooks={notebooks} allTags={allTags} />
+            <Document key={note.id} note={note} notes={notes} notebooks={notebooks} allTags={allTags} />
           ) : (
             <div className="empty blank-state">
               <Feather size={26} strokeWidth={1.25} />

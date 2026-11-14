@@ -73,14 +73,26 @@ class TasksTest {
     @Test fun nextReminderIsTheEarliestOpenOneAfterTheGivenTime() {
         val utc = java.time.ZoneOffset.UTC
         val at = { d: String, t: String -> java.time.LocalDateTime.parse("${d}T$t").toInstant(utc).toEpochMilli() }
-        val list = listOf(
-            TaskRef("a", "n", "", "Done", true, "2026-11-12", "08:00"),
-            TaskRef("b", "n", "", "Late", false, "2026-11-12", "10:00"),
-            TaskRef("c", "n", "", "Soon", false, "2026-11-12", "09:00"),
-            TaskRef("d", "n", "", "Past", false, "2026-11-11", "09:00"),
-            TaskRef("e", "n", "", "No time", false, "2026-11-12"),
-        )
-        assertEquals(at("2026-11-12", "09:00"), nextReminder(list, at("2026-11-12", "07:00"), utc))
-        assertEquals(null, nextReminder(list, at("2026-11-12", "10:00"), utc))
+        var content = doc
+        content = appendTask(content, "late", "Late", "2026-11-12", "10:00")
+        content = appendTask(content, "soon", "Soon", "2026-11-12", "09:00")
+        content = appendTask(content, "past", "Past", "2026-11-11", "09:00")
+        content = appendTask(content, "notime", "No time", "2026-11-12")
+        content = patchTask(appendTask(content, "done", "Done", "2026-11-12", "08:00"), "done", mapOf("checked" to true))
+        val note = JSONObject().put("id", "n").put("title", "").put("content", content)
+        val due = reminders(note, utc)
+        assertEquals(listOf("late", "soon", "past"), due.map { it.key })
+        assertEquals("Untitled", due.first().text)
+        assertEquals(at("2026-11-12", "09:00"), nextReminder(due, at("2026-11-12", "07:00")))
+        assertEquals(null, nextReminder(due, at("2026-11-12", "10:00")))
+    }
+
+    @Test fun aNoteHasItsOwnReminder() {
+        val utc = java.time.ZoneOffset.UTC
+        val note = JSONObject().put("id", "n").put("title", "Rent").put("content", doc).put("remindAt", "2026-11-20T18:30")
+        val own = reminders(note, utc).single()
+        assertEquals(Due("n", "n", "Rent", "Reminder", java.time.LocalDateTime.parse("2026-11-20T18:30").toInstant(utc).toEpochMilli()), own)
+        assertEquals(emptyList<Due>(), reminders(note.put("remindAt", JSONObject.NULL), utc))
+        assertEquals(null, noteRemindAt(JSONObject()))
     }
 }

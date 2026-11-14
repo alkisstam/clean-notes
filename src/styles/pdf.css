@@ -28,7 +28,7 @@
 .pdf-search input { flex: 1; min-width: 0; border: 0; background: none; color: var(--ink); }
 .pdf-search input:focus-visible { outline: none; }
 .pdf-search-count { font: 400 11px var(--font-mono); white-space: nowrap; }
-.pdf-scroll { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px; }
+.pdf-scroll { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px; touch-action: pan-x pan-y; }
 .pdf-page { position: relative; margin: 0 auto 14px; background: #fff; box-shadow: 0 1px 2px rgb(30 20 5 / 0.14), 0 6px 22px -8px rgb(30 20 5 / 0.3); }
 .pdf-page canvas { display: block; position: absolute; inset: 0; }
 .pdf-scroll[data-dim='true'] .pdf-page canvas { filter: invert(0.9) hue-rotate(180deg); }

@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { TextLayer, type PDFDocumentProxy, type PDFPageProxy, type RenderTask } from 'pdfjs-dist';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { db } from '../lib/db';
 import { isPasswordError, loadPdf, pageText, saveBlob } from '../lib/pdf';
 import { findRanges } from '../lib/search';
@@ -323,6 +324,84 @@ export function PdfViewer({ target }: { target: PdfTarget }) {
   }, [query, matches.length]);
 
   const setZoomBy = (factor: number) => setZoom(Math.max(0.25, Math.min(4, Math.round(scale * factor * 100) / 100)));
+
+  // Pinch, double tap and Ctrl+wheel zoom around the point under the fingers or the pointer.
+  const live = useRef({ scale, fit });
+  live.current = { scale, fit };
+  useEffect(() => {
+    if (!scroller) return;
+    let pending: { to: number | null; x: number; y: number } | null = null;
+    let frame = 0;
+    /** `to` null fits the width again. One zoom per frame, since each re-lays out every page. */
+    const zoomAt = (to: number | null, x: number, y: number) => {
+      pending = { to, x, y };
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        const { to, x, y } = pending!;
+        pending = null;
+        const { scale, fit } = live.current;
+        const next = to === null ? (fit ?? 1) : Math.max(0.25, Math.min(4, to));
+        const box = scroller.getBoundingClientRect();
+        const px = x - box.left;
+        const py = y - box.top;
+        const k = next / scale;
+        const left = (scroller.scrollLeft + px) * k - px;
+        const top = (scroller.scrollTop + py) * k - py;
+        flushSync(() => setZoom(to === null ? null : next));
+        scroller.scrollLeft = left;
+        scroller.scrollTop = top;
+      });
+    };
+    const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    let pinch: { d: number; s: number } | null = null;
+    let moved = false;
+    let down = { x: 0, y: 0 };
+    let tap = { t: 0, x: 0, y: 0 };
+    const start = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        moved = false;
+        down = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      } else moved = true;
+      if (e.touches.length === 2) pinch = { d: dist(e.touches) || 1, s: live.current.scale };
+    };
+    const move = (e: TouchEvent) => {
+      if (e.touches.length === 1 && Math.hypot(e.touches[0].clientX - down.x, e.touches[0].clientY - down.y) > 10) moved = true;
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      const [a, b] = [e.touches[0], e.touches[1]];
+      zoomAt((pinch.s * dist(e.touches)) / pinch.d, (a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2);
+    };
+    const end = (e: TouchEvent) => {
+      if (e.touches.length < 2) pinch = null;
+      if (e.touches.length || moved) return;
+      const t = e.changedTouches[0];
+      if (e.timeStamp - tap.t < 300 && Math.hypot(t.clientX - tap.x, t.clientY - tap.y) < 24) {
+        // Keeps the second tap from selecting a word.
+        e.preventDefault();
+        tap = { t: 0, x: 0, y: 0 };
+        const { scale, fit } = live.current;
+        zoomAt(fit && scale > fit * 1.05 ? null : (fit ?? 1) * 2, t.clientX, t.clientY);
+      } else tap = { t: e.timeStamp, x: t.clientX, y: t.clientY };
+    };
+    const wheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      // At most one zoom button's step per event; trackpad pinches send small ones.
+      zoomAt((pending?.to ?? live.current.scale) * Math.exp(-Math.max(-20, Math.min(20, e.deltaY)) * 0.01), e.clientX, e.clientY);
+    };
+    scroller.addEventListener('touchstart', start, { passive: true });
+    scroller.addEventListener('touchmove', move, { passive: false });
+    scroller.addEventListener('touchend', end, { passive: false });
+    scroller.addEventListener('wheel', wheel, { passive: false });
+    return () => {
+      cancelAnimationFrame(frame);
+      scroller.removeEventListener('touchstart', start);
+      scroller.removeEventListener('touchmove', move);
+      scroller.removeEventListener('touchend', end);
+      scroller.removeEventListener('wheel', wheel);
+    };
+  }, [scroller]);
 
   // Ctrl+F searches the PDF while the pointer or focus is inside it.
   const root = useRef<HTMLDivElement>(null);

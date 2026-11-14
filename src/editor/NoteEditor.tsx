@@ -8,7 +8,7 @@ import { TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
 import { CellSelection, TableMap } from '@tiptap/pm/tables';
 import { Placeholder } from '@tiptap/extensions';
-import { EditorContent, useEditor } from '@tiptap/react';
+import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { StarterKit } from '@tiptap/starter-kit';
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
@@ -891,6 +891,8 @@ function FormatMenu({ editor }: { editor: Editor }) {
   const [linking, setLinking] = useState(false);
   const [url, setUrl] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  // The editor doesn't re-render on selection changes, so the buttons' active state went stale on a new selection.
+  useEditorState({ editor, selector: ({ transactionNumber }) => transactionNumber });
 
   const startLink = () => {
     setUrl(editor.getAttributes('link').href ?? '');

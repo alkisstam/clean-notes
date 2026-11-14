@@ -1,4 +1,5 @@
 import { Node, mergeAttributes } from '@tiptap/core';
+import { Selection } from '@tiptap/pm/state';
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { AlignEndVertical, AlignStartVertical, Download, ImageOff, Maximize2, Rows2, Trash2, Type, X } from 'lucide-react';
@@ -36,19 +37,79 @@ function useObjectUrl(blob?: Blob) {
 /** Hosts hear when an image opens full screen, as the Android app does to hide its bars, and may close it. */
 export const viewerHooks = { onChange: null as ((open: boolean) => void) | null, close: null as (() => void) | null };
 
+/** Wheel steps as big as the PDF viewer's zoom buttons at most; trackpad pinches send small ones. */
+const wheelFactor = (deltaY: number) => Math.exp(-Math.max(-20, Math.min(20, deltaY)) * 0.01);
+
 function Lightbox({ src, alt, close }: { src: string; alt: string; close: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const img = useRef<HTMLImageElement>(null);
+  const view = useRef({ s: 1, x: 0, y: 0 });
+  const closing = useRef<number | undefined>(undefined);
+
+  /** Scales to `to`, keeping the screen point (px, py) where it is. */
+  const zoomAt = (to: number, px: number, py: number) => {
+    const v = view.current;
+    const r = img.current!.getBoundingClientRect();
+    // Scaling is around the image's middle, which only the translation moves.
+    const cx = r.left + r.width / 2 - v.x;
+    const cy = r.top + r.height / 2 - v.y;
+    const s = Math.max(1, Math.min(5, to));
+    const k = s / v.s;
+    v.x = s === 1 ? 0 : px - cx - k * (px - cx - v.x);
+    v.y = s === 1 ? 0 : py - cy - k * (py - cy - v.y);
+    v.s = s;
+    img.current!.style.transform = `translate(${v.x}px, ${v.y}px) scale(${s})`;
+  };
+
   useEffect(() => {
     const d = ref.current!;
     if (!d.open) d.showModal();
     viewerHooks.onChange?.(true);
     viewerHooks.close = close;
+    const wheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      zoomAt(view.current.s * wheelFactor(e.deltaY), e.clientX, e.clientY);
+    };
+    d.addEventListener('wheel', wheel, { passive: false });
     return () => {
+      d.removeEventListener('wheel', wheel);
+      clearTimeout(closing.current);
       d.close();
       viewerHooks.close = null;
       viewerHooks.onChange?.(false);
     };
   }, []);
+
+  // Two fingers pinch around their middle; one drags a zoomed image. Either keeps the tap from closing.
+  const points = useRef(new Map<number, { x: number; y: number }>());
+  const moved = useRef(false);
+  const start = useRef({ x: 0, y: 0 });
+  const lastTap = useRef({ t: 0, x: 0, y: 0 });
+  const onPointerMove = (e: React.PointerEvent) => {
+    const pts = points.current;
+    const prev = pts.get(e.pointerId);
+    if (!prev) return;
+    const [a, b] = [...pts.values()];
+    const before = pts.size === 2 ? { d: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : null;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const v = view.current;
+    if (before) {
+      const [c, d] = [...pts.values()];
+      const mid = { x: (c.x + d.x) / 2, y: (c.y + d.y) / 2 };
+      v.x += mid.x - before.x;
+      v.y += mid.y - before.y;
+      zoomAt(v.s * (Math.hypot(c.x - d.x, c.y - d.y) / (before.d || 1)), mid.x, mid.y);
+      moved.current = true;
+    } else if (v.s > 1) {
+      v.x += e.clientX - prev.x;
+      v.y += e.clientY - prev.y;
+      zoomAt(v.s, 0, 0);
+      if (Math.hypot(e.clientX - start.current.x, e.clientY - start.current.y) > 8) moved.current = true;
+    }
+  };
+  const onPointerUp = (e: React.PointerEvent) => points.current.delete(e.pointerId);
+
   return (
     <dialog
       ref={ref}
@@ -58,18 +119,50 @@ function Lightbox({ src, alt, close }: { src: string; alt: string; close: () => 
         e.preventDefault();
         close();
       }}
-      onClick={close}
+      onPointerDown={(e) => {
+        if (!points.current.size) {
+          moved.current = false;
+          start.current = { x: e.clientX, y: e.clientY };
+        }
+        points.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onClick={(e) => {
+        if (moved.current) return;
+        // A second tap soon after the first, near it, zooms instead of closing.
+        const tap = { t: e.timeStamp, x: e.clientX, y: e.clientY };
+        const prev = lastTap.current;
+        lastTap.current = tap;
+        if (tap.t - prev.t < 300 && Math.hypot(tap.x - prev.x, tap.y - prev.y) < 24) {
+          clearTimeout(closing.current);
+          lastTap.current = { t: 0, x: 0, y: 0 };
+          zoomAt(view.current.s > 1 ? 1 : 2.5, tap.x, tap.y);
+          return;
+        }
+        closing.current = window.setTimeout(close, 300);
+      }}
     >
-      <img src={src} alt={alt} />
+      <img ref={img} src={src} alt={alt} draggable={false} />
       {/* No autoFocus: it runs before showModal and scrolls the note to the dialog. showModal focuses this button itself. */}
-      <button type="button" className="lightbox-close" aria-label="Close image" onClick={close}>
+      <button
+        type="button"
+        className="lightbox-close"
+        aria-label="Close image"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          close();
+        }}
+      >
         <X size={18} />
       </button>
     </dialog>
   );
 }
 
-function ImageView({ node, selected, editor, updateAttributes, deleteNode }: NodeViewProps) {
+function ImageView({ node, selected, editor, getPos, updateAttributes, deleteNode }: NodeViewProps) {
   const imageId: string = node.attrs.imageId;
   const alt: string = node.attrs.alt ?? '';
   const image = useLiveQuery(() => db.images.get(imageId), [imageId], null as NoteImage | null | undefined);
@@ -79,6 +172,22 @@ function ImageView({ node, selected, editor, updateAttributes, deleteNode }: Nod
   const width: number = node.attrs.width ?? 100;
   const align: 'left' | 'right' | null = node.attrs.align ?? null;
   const editable = editor.isEditable;
+
+  // A tap outside the note's text drops the image's selection, and with it the toolbar, as a tap inside the text already does.
+  useEffect(() => {
+    if (!selected || !editable) return;
+    const down = (ev: PointerEvent) => {
+      if (editor.view.dom.contains(ev.target as Element)) return;
+      const pos = getPos();
+      if (typeof pos !== 'number') return;
+      const { state } = editor.view;
+      const $after = state.doc.resolve(pos + node.nodeSize);
+      const next = Selection.findFrom($after, 1, true) ?? Selection.findFrom($after, -1, true);
+      if (next) editor.view.dispatch(state.tr.setSelection(next));
+    };
+    document.addEventListener('pointerdown', down, true);
+    return () => document.removeEventListener('pointerdown', down, true);
+  }, [selected, editable, editor, getPos, node]);
 
   const startResize = (e: React.PointerEvent<HTMLElement>) => {
     e.preventDefault();

@@ -16,6 +16,7 @@ import androidx.core.content.edit
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 
@@ -25,9 +26,23 @@ fun remindAt(t: TaskRef, zone: ZoneId = ZoneId.systemDefault()): Long? {
     return runCatching { LocalDate.parse(t.due).atTime(LocalTime.parse(t.remind)).atZone(zone).toInstant().toEpochMilli() }.getOrNull()
 }
 
+/** The note's own reminder, local "YYYY-MM-DDTHH:MM", or null. */
+fun noteRemindAt(note: JSONObject): String? = if (note.isNull("remindAt")) null else note.optString("remindAt").ifEmpty { null }
+
+/** One notification to show: a to-do's or a whole note's. `key` keeps their notifications apart. */
+data class Due(val key: String, val noteId: String, val title: String, val text: String, val at: Long)
+
+/** Every reminder in a note's JSON: its to-dos' and its own. */
+fun reminders(note: JSONObject, zone: ZoneId = ZoneId.systemDefault()): List<Due> {
+    val id = note.getString("id")
+    val title = note.optString("title").ifBlank { "Untitled" }
+    val tasks = extractTasks(id, title, note.getJSONObject("content")).mapNotNull { t -> remindAt(t, zone)?.let { Due(t.id, id, t.text, title, it) } }
+    val own = noteRemindAt(note)?.let { runCatching { LocalDateTime.parse(it).atZone(zone).toInstant().toEpochMilli() }.getOrNull() }
+    return tasks + listOfNotNull(own?.let { Due(id, id, title, "Reminder", it) })
+}
+
 /** The earliest reminder after [after]. */
-fun nextReminder(tasks: List<TaskRef>, after: Long, zone: ZoneId = ZoneId.systemDefault()): Long? =
-    tasks.mapNotNull { remindAt(it, zone) }.filter { it > after }.minOrNull()
+fun nextReminder(due: List<Due>, after: Long): Long? = due.map { it.at }.filter { it > after }.minOrNull()
 
 /**
  * One alarm, for the next reminder after the last time reminders were shown; the receiver shows every one due since,
@@ -46,13 +61,12 @@ object Reminders {
         return p.getLong("lastFired", 0)
     }
 
-    private fun tasks(notes: List<NoteRow>) = notes.filter { it.trashedAt == null && it.archivedAt == null }
-        .flatMap { extractTasks(it.id, it.title, JSONObject(it.raw).getJSONObject("content")) }
+    private fun due(notes: List<NoteRow>) = notes.filter { it.trashedAt == null && it.archivedAt == null }.flatMap { reminders(JSONObject(it.raw)) }
 
     fun schedule(ctx: Context, notes: List<NoteRow>) {
         val alarms = ctx.getSystemService(AlarmManager::class.java)
         val intent = PendingIntent.getBroadcast(ctx, 0, Intent(ctx, ReminderReceiver::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val at = nextReminder(tasks(notes), lastFired(ctx))
+        val at = nextReminder(due(notes), lastFired(ctx))
         if (at == null) return alarms.cancel(intent)
         if (Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms()) alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, intent)
         else alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, intent)
@@ -62,18 +76,18 @@ object Reminders {
         val notes = app.db.dao().allNotes()
         val now = System.currentTimeMillis()
         val since = lastFired(app)
-        val due = tasks(notes).filter { t -> remindAt(t)?.let { it in (since + 1)..now } == true }
+        val due = due(notes).filter { it.at in (since + 1)..now }
         prefs(app).edit { putLong("lastFired", now) }
         if (due.isNotEmpty() && (Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(app, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)) {
             val nm = app.getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(NotificationChannel(CHANNEL, "Reminders", NotificationManager.IMPORTANCE_HIGH))
             due.forEach { t ->
                 val open = Intent(app, MainActivity::class.java).setAction(OPEN_NOTE).putExtra("noteId", t.noteId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                val tap = PendingIntent.getActivity(app, t.id.hashCode(), open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-                nm.notify(t.id.hashCode(), NotificationCompat.Builder(app, CHANNEL)
+                val tap = PendingIntent.getActivity(app, t.key.hashCode(), open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                nm.notify(t.key.hashCode(), NotificationCompat.Builder(app, CHANNEL)
                     .setSmallIcon(R.drawable.ic_bell)
-                    .setContentTitle(t.text)
-                    .setContentText(t.noteTitle.ifBlank { "Untitled" })
+                    .setContentTitle(t.title)
+                    .setContentText(t.text)
                     .setCategory(NotificationCompat.CATEGORY_REMINDER)
                     .setPriority(NotificationCompat.PRIORITY_HIGH)
                     .setContentIntent(tap)

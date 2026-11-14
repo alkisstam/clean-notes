@@ -65,6 +65,8 @@ class NoteViewState {
         internal set
     /** The page's "Add tags" was tapped; the screen shows its tag picker while set. */
     var tagging by mutableStateOf(false)
+    /** The page's reminder pill was tapped; the screen shows its reminder dialog while set. */
+    var reminding by mutableStateOf(false)
 
     fun unlinkNote() {
         linking = false
@@ -165,7 +167,8 @@ private fun withLinkItem(callback: ActionMode.Callback, state: NoteViewState) = 
 /** Shows and edits a note with the web app's own Tiptap editor. */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifier: Modifier = Modifier) {
+/** `path` is the breadcrumb as JSON text: {notebook, parents: [{id, title}]}. */
+fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, path: String?, modifier: Modifier = Modifier) {
     val dark = LocalDark.current
     val deviceFonts = !LocalWebFonts.current
     var payload by remember { mutableStateOf<String?>(null) }
@@ -228,7 +231,7 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
         }
     }
 
-    LaunchedEffect(note.raw, dark, deviceFonts) {
+    LaunchedEffect(note.raw, dark, deviceFonts, path) {
         // Ids are UUIDs, so a substring match finds exactly the attachments this note uses.
         val used = app.db.dao().attachments().filter { note.raw.contains(it.id) }
         payload = JSONObject()
@@ -238,6 +241,7 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
             .put("dark", dark)
             .put("deviceFonts", deviceFonts)
             .put("pdf", pdf?.let(::JSONObject) ?: JSONObject.NULL)
+            .put("path", path?.let(::JSONObject) ?: JSONObject.NULL)
             .toString()
     }
 
@@ -289,6 +293,7 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, modifi
                             state.linking = true
                         }
                         "tags" -> state.tagging = true
+                        "remind" -> state.reminding = true
                         "due" -> state.dating = (if (msg.isNull("due")) null else msg.getString("due")) to (if (msg.isNull("remind")) null else msg.optString("remind").ifEmpty { null })
                         "openNote" -> state.onOpenNote?.invoke(msg.getString("id"))
                         "history" -> {
