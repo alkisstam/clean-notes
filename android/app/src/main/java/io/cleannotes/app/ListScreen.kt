@@ -414,7 +414,7 @@ fun NoteList(
                                         drawRect(c, Offset((k * 12 + 4).dp.toPx(), 0f), Size(3.dp.toPx(), bottom))
                                     }
                                 }.padding(start = (depth * 12).dp)) {
-                                    Surface(shape = RoundedCornerShape(16.dp), color = bg ?: MaterialTheme.colorScheme.surfaceContainer) {
+                                    Surface(Modifier.noteBounds(note.id, 16.dp), shape = RoundedCornerShape(16.dp), color = bg ?: MaterialTheme.colorScheme.surfaceContainer) {
                                         Column(Modifier.fillMaxWidth().combinedClickable(onClick = { if (selecting) toggleSelected(note.id) else onOpen(note.id) }, onLongClick = {
                                             if (!selecting) {
                                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)

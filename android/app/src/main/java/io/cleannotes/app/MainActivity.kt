@@ -28,11 +28,45 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.SharedTransitionScope.OverlayClip
+import androidx.compose.animation.core.animateDp
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 fun ago(time: Long): CharSequence =
     if (System.currentTimeMillis() - time < 60_000) "just now"
     else DateUtils.getRelativeTimeSpanString(time, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+val LocalShared = staticCompositionLocalOf<SharedTransitionScope?> { null }
+val LocalNoteAnim = staticCompositionLocalOf<AnimatedVisibilityScope?> { null }
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+fun Modifier.noteBounds(id: String, rest: Dp): Modifier {
+    val shared = LocalShared.current ?: return this
+    val anim = LocalNoteAnim.current ?: return this
+    val r by anim.transition.animateDp(label = "corner") { if (it == EnterExitState.Visible) rest else 16.dp - rest }
+    return with(shared) {
+        sharedBounds(rememberSharedContentState("note-$id"), anim, clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(r)))
+            // Content keeps its final size and is clipped, so the editor is not re-laid out every frame.
+            .skipToLookaheadSize()
+    }
+}
 
 class MainActivity : ComponentActivity() {
     private val shared = mutableStateOf<Intent?>(null)
@@ -130,7 +164,6 @@ fun NotesApp(app: App, shared: MutableState<Intent?>) {
         shared.value = null
     }
 
-    val id = openId
     if (view == "settings" && !connecting) {
         BackHandler { view = "all" }
         SettingsScreen(app, onBack = { view = "all" }, onConnect = { connecting = true })
@@ -140,25 +173,32 @@ fun NotesApp(app: App, shared: MutableState<Intent?>) {
     } else if (connecting) {
         BackHandler { connecting = false }
         PairScreen(app.sync, onBack = { connecting = false })
-    } else if (id != null) {
-        // Keyed, so switching to another note (a new sub-note) builds a fresh editor for it.
-        key(id) {
-            NoteScreen(
-                app, id, view.removePrefix("tag:").takeIf { view.startsWith("tag:") }, openPdf,
-                onClose = { openId = trail.lastOrNull(); trail = trail.dropLast(1); openPdf = null },
-                onOpenTag = { openId = null; trail = emptyList(); view = "tag:$it" },
-                onOpenNote = { openId = it },
-                onFollowLink = { trail = trail + id; openId = it; openPdf = null },
-            )
+    } else @OptIn(ExperimentalSharedTransitionApi::class) SharedTransitionLayout {
+        // Keyed on open-or-not, so moving between notes swaps them without the card animation.
+        AnimatedContent(openId, contentKey = { it != null }, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "note") { id ->
+            CompositionLocalProvider(LocalShared provides this@SharedTransitionLayout, LocalNoteAnim provides this) {
+                if (id != null) {
+                    // Keyed, so switching to another note (a new sub-note) builds a fresh editor for it.
+                    key(id) {
+                        NoteScreen(
+                            app, id, view.removePrefix("tag:").takeIf { view.startsWith("tag:") }, openPdf,
+                            onClose = { openId = trail.lastOrNull(); trail = trail.dropLast(1); openPdf = null },
+                            onOpenTag = { openId = null; trail = emptyList(); view = "tag:$it" },
+                            onOpenNote = { openId = it },
+                            onFollowLink = { trail = trail + id; openId = it; openPdf = null },
+                        )
+                    }
+                } else {
+                    NoteList(
+                        app, syncing, snackbar, view, notes, listState, gridState,
+                        onView = { view = it },
+                        onSync = { runSync() },
+                        onOpen = { openId = it },
+                        onOpenPdf = { note, target -> openPdf = target; openId = note },
+                        onNew = { nb, tag -> scope.launch { openId = app.newNote(nb, tag) } },
+                    )
+                }
+            }
         }
-    } else {
-        NoteList(
-            app, syncing, snackbar, view, notes, listState, gridState,
-            onView = { view = it },
-            onSync = { runSync() },
-            onOpen = { openId = it },
-            onOpenPdf = { note, target -> openPdf = target; openId = note },
-            onNew = { nb, tag -> scope.launch { openId = app.newNote(nb, tag) } },
-        )
     }
 }
