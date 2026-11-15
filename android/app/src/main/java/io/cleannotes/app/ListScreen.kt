@@ -122,6 +122,7 @@ fun NoteList(
     val paired by app.sync.paired.collectAsState()
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
+    val from = LocalOpenFrom.current
     val drawer = rememberDrawerState(DrawerValue.Closed)
     var menu by remember { mutableStateOf(false) }
     var naming by remember { mutableStateOf<NotebookRow?>(null) }
@@ -414,8 +415,8 @@ fun NoteList(
                                         drawRect(c, Offset((k * 12 + 4).dp.toPx(), 0f), Size(3.dp.toPx(), bottom))
                                     }
                                 }.padding(start = (depth * 12).dp)) {
-                                    Surface(Modifier.noteBounds(note.id, 16.dp), shape = RoundedCornerShape(16.dp), color = bg ?: MaterialTheme.colorScheme.surfaceContainer) {
-                                        Column(Modifier.fillMaxWidth().combinedClickable(onClick = { if (selecting) toggleSelected(note.id) else onOpen(note.id) }, onLongClick = {
+                                    Surface(Modifier.noteBounds("${note.id}|list", 16.dp), shape = RoundedCornerShape(16.dp), color = bg ?: MaterialTheme.colorScheme.surfaceContainer) {
+                                        Column(Modifier.fillMaxWidth().combinedClickable(onClick = { if (selecting) toggleSelected(note.id) else { from.value = "${note.id}|list"; onOpen(note.id) } }, onLongClick = {
                                             if (!selecting) {
                                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                 pressed = true
@@ -448,7 +449,7 @@ fun NoteList(
                             rails.forEachIndexed { k, c -> drawRect(c, Offset((k * 20 + 10).dp.toPx(), 0f), Size(3.dp.toPx(), size.height)) }
                         }.padding(start = (depth * 20).dp)) {
                         Box {
-                        Column(Modifier.fillMaxWidth().background(bg ?: Color.Transparent).combinedClickable(onClick = { if (selecting) toggleSelected(note.id) else onOpen(note.id) }, onLongClick = {
+                        Column(Modifier.fillMaxWidth().noteBounds("${note.id}|list", 0.dp).background(bg ?: Color.Transparent).combinedClickable(onClick = { if (selecting) toggleSelected(note.id) else { from.value = "${note.id}|list"; onOpen(note.id) } }, onLongClick = {
                             if (!selecting) {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 pressed = true

@@ -54,15 +54,18 @@ fun ago(time: Long): CharSequence =
 @OptIn(ExperimentalSharedTransitionApi::class)
 val LocalShared = staticCompositionLocalOf<SharedTransitionScope?> { null }
 val LocalNoteAnim = staticCompositionLocalOf<AnimatedVisibilityScope?> { null }
+// "<note id>|<where>" of the item tapped to open a note, so its note grows out of that item and shrinks back into it.
+val LocalOpenFrom = staticCompositionLocalOf { mutableStateOf("") }
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun Modifier.noteBounds(id: String, rest: Dp): Modifier {
+fun Modifier.noteBounds(key: String?, rest: Dp): Modifier {
+    if (key == null) return this
     val shared = LocalShared.current ?: return this
     val anim = LocalNoteAnim.current ?: return this
     val r by anim.transition.animateDp(label = "corner") { if (it == EnterExitState.Visible) rest else 16.dp - rest }
     return with(shared) {
-        sharedBounds(rememberSharedContentState("note-$id"), anim, clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(r)))
+        sharedBounds(rememberSharedContentState(key), anim, clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(r)))
             // Content keeps its final size and is clipped, so the editor is not re-laid out every frame.
             .skipToLookaheadSize()
     }
@@ -118,6 +121,7 @@ fun NotesApp(app: App, shared: MutableState<Intent?>) {
     val listState = rememberLazyListState()
     val gridState = rememberLazyGridState()
     val paired by app.sync.paired.collectAsState()
+    val openFrom = rememberSaveable { mutableStateOf("") }
     val runSync = {
         if (!syncing && paired) scope.launch {
             syncing = true
@@ -176,7 +180,7 @@ fun NotesApp(app: App, shared: MutableState<Intent?>) {
     } else @OptIn(ExperimentalSharedTransitionApi::class) SharedTransitionLayout {
         // Keyed on open-or-not, so moving between notes swaps them without the card animation.
         AnimatedContent(openId, contentKey = { it != null }, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "note") { id ->
-            CompositionLocalProvider(LocalShared provides this@SharedTransitionLayout, LocalNoteAnim provides this) {
+            CompositionLocalProvider(LocalShared provides this@SharedTransitionLayout, LocalNoteAnim provides this, LocalOpenFrom provides openFrom) {
                 if (id != null) {
                     // Keyed, so switching to another note (a new sub-note) builds a fresh editor for it.
                     key(id) {

@@ -121,7 +121,7 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
     // Pending keystrokes are saved and sent when the app goes to the background.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { view.flush { app.sync.runInBackground() } }
     Scaffold(
-        Modifier.noteBounds(id, 0.dp),
+        Modifier.noteBounds(LocalOpenFrom.current.value.takeIf { it.startsWith("$id|") }, 0.dp),
         containerColor = bg ?: MaterialTheme.colorScheme.background,
         topBar = {
             // The PDF viewer has its own toolbar, and an image fills the screen; back still closes them.

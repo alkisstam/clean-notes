@@ -50,6 +50,7 @@ fun PdfsBody(app: App, notes: List<NoteRow>, onOpen: (note: String, target: Stri
         Text("No PDFs yet. Type /pdf in a note to add one.", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
+    val from = LocalOpenFrom.current
     LazyColumn(Modifier.fillMaxSize()) {
         items(files, key = { it.id }) { f ->
             val meta = remember(f.raw) { JSONObject(f.raw) }
@@ -62,7 +63,7 @@ fun PdfsBody(app: App, notes: List<NoteRow>, onOpen: (note: String, target: Stri
             }
             val pages = meta.optInt("pageCount")
             Row(
-                Modifier.fillMaxWidth().clickable(enabled = owner != null) { owner?.let { onOpen(it.id, JSONObject().put("fileId", f.id).toString()) } }.padding(16.dp, 10.dp),
+                Modifier.fillMaxWidth().noteBounds(owner?.let { "${it.id}|pdf-${f.id}" }, 0.dp).background(MaterialTheme.colorScheme.background).clickable(enabled = owner != null) { owner?.let { from.value = "${it.id}|pdf-${f.id}"; onOpen(it.id, JSONObject().put("fileId", f.id).toString()) } }.padding(16.dp, 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

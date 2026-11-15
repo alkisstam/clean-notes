@@ -56,10 +56,11 @@ fun DailyBody(app: App, all: List<NoteRow>, onOpen: (String) -> Unit) {
     val open = { key: String -> scope.launch { onOpen(app.dailyNote(key)) } }
     val withNotes = remember(all) { all.filter { it.kind == "daily" && it.text.isNotBlank() }.mapNotNull { it.date }.toSet() }
     val notes = listFor("daily", all, today)
+    val from = LocalOpenFrom.current
     LazyColumn(Modifier.fillMaxSize()) {
         item { Calendar(today, withNotes) { open(it) } }
         items(notes, key = { it.id }) { note ->
-            Column(Modifier.fillMaxWidth().clickable { onOpen(note.id) }.padding(16.dp, 12.dp)) {
+            Column(Modifier.fillMaxWidth().noteBounds("${note.id}|daily", 0.dp).background(MaterialTheme.colorScheme.background).clickable { from.value = "${note.id}|daily"; onOpen(note.id) }.padding(16.dp, 12.dp)) {
                 Text(note.title.ifBlank { "Untitled" }, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
                     note.text.replace('\n', ' ').take(170).ifBlank { "No content yet" },

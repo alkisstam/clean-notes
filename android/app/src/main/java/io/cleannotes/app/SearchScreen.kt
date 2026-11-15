@@ -1,5 +1,6 @@
 package io.cleannotes.app
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -61,8 +62,10 @@ fun SearchBody(app: App, notes: List<NoteRow>, query: String, onOpen: (String) -
         return
     }
     val mark = SpanStyle(fontWeight = FontWeight.Bold, background = MaterialTheme.colorScheme.primaryContainer)
+    val from = LocalOpenFrom.current
     LazyColumn(Modifier.fillMaxSize()) {
         items(hits) { h ->
+            val key = h.note?.let { "${it.id}|search" } ?: h.owner?.let { "${it.id}|search-${h.file!!.optString("id")}-${h.page}" }
             val open = h.note?.let { n -> { onOpen(n.id) } } ?: h.owner?.let { o ->
                 {
                     val target = JSONObject().put("fileId", h.file!!.optString("id")).put("query", query.trim())
@@ -70,7 +73,7 @@ fun SearchBody(app: App, notes: List<NoteRow>, query: String, onOpen: (String) -
                     onOpenPdf(o.id, target.toString())
                 }
             }
-            Column(Modifier.fillMaxWidth().clickable(enabled = open != null) { open?.invoke() }.padding(16.dp, 12.dp)) {
+            Column(Modifier.fillMaxWidth().noteBounds(key, 0.dp).background(MaterialTheme.colorScheme.background).clickable(enabled = open != null) { key?.let { from.value = it }; open?.invoke() }.padding(16.dp, 12.dp)) {
                 val name = h.note?.title?.ifBlank { "Untitled" } ?: h.file!!.optString("name")
                 Text(name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 h.snippet?.let { s ->

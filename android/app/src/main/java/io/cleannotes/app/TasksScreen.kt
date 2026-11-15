@@ -11,6 +11,7 @@ import android.os.Build
 import android.text.format.DateFormat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -144,9 +145,11 @@ private fun Header(name: String, count: Int, late: Boolean) = Text(
 @Composable
 private fun TaskLine(app: App, t: TaskRef, today: String, onOpen: (String) -> Unit, onDate: () -> Unit) {
     val late = t.due != null && t.due < today && !t.done
-    Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    val from = LocalOpenFrom.current
+    val key = "${t.noteId}|task-${t.id}"
+    Row(Modifier.fillMaxWidth().noteBounds(key, 0.dp).background(MaterialTheme.colorScheme.background).padding(start = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Checkbox(t.done, { checked -> app.scope.launch { app.setTaskAttrs(t.noteId, t.id, mapOf("checked" to checked)) } })
-        Column(Modifier.weight(1f).clickable { onOpen(t.noteId) }.padding(vertical = 10.dp)) {
+        Column(Modifier.weight(1f).clickable { from.value = key; onOpen(t.noteId) }.padding(vertical = 10.dp)) {
             Text(
                 t.text,
                 maxLines = 2,
