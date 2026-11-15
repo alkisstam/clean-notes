@@ -1,5 +1,11 @@
 # Changelog — Android app
 
+## 1.0.9 — 2026-11-15
+
+### Added
+- Opening a note animates: the card or row you tap grows into the full note, and shrinks back into it when you close the note. Works from the notes grid and list, Daily, Tasks, Search and PDFs.
+- Showing or hiding sub-notes animates: they fade in or out, the notes below slide into place, and the arrow turns.
+
 ## 1.0.8 — 2026-11-14
 
 ### Added
