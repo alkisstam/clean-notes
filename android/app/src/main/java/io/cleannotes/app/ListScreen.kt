@@ -1,5 +1,9 @@
 package io.cleannotes.app
 
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.draw.rotate
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -409,7 +413,7 @@ fun NoteList(
                                 val bg = noteColor(colors[note.id], dark)
                                 val rails = if (left[i]) railColors(note, depth, byId, colors, dark, neutral) else emptyList()
                                 val nextDepth = (i + 1 until cells.size).firstOrNull { left[it] && cells[it] != null }?.let { cells[it]!!.depth } ?: 0
-                                Box(Modifier.drawBehind {
+                                Box(Modifier.animateItem().drawBehind {
                                     rails.forEachIndexed { k, c ->
                                         val bottom = size.height + if (nextDepth > k) 8.dp.toPx() else 0f
                                         drawRect(c, Offset((k * 12 + 4).dp.toPx(), 0f), Size(3.dp.toPx(), bottom))
@@ -444,7 +448,7 @@ fun NoteList(
                         val bg = noteColor(colors[note.id], dark)
                         val rails = railColors(note, depth, byId, colors, dark, MaterialTheme.colorScheme.outline)
                         // Drawn over the whole item so the line crosses the divider too.
-                        Column(Modifier.drawWithContent {
+                        Column(Modifier.animateItem().drawWithContent {
                             drawContent()
                             rails.forEachIndexed { k, c -> drawRect(c, Offset((k * 20 + 10).dp.toPx(), 0f), Size(3.dp.toPx(), size.height)) }
                         }.padding(start = (depth * 20).dp)) {
@@ -656,11 +660,15 @@ private fun railColors(note: NoteRow, depth: Int, byId: Map<String, NoteRow>, co
 @Composable
 private fun NoteTitle(note: NoteRow, hasKids: Boolean, open: Boolean, onToggle: () -> Unit, style: TextStyle) =
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (hasKids) Icon(
-            if (open) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            if (open) "Hide sub-notes" else "Show sub-notes",
-            Modifier.size(22.dp).clickable(onClick = onToggle),
-        )
+        if (hasKids) {
+            val shut = if (LocalLayoutDirection.current == LayoutDirection.Rtl) 90f else -90f
+            val turn by animateFloatAsState(if (open) 0f else shut, label = "chevron")
+            Icon(
+                Icons.Default.KeyboardArrowDown,
+                if (open) "Hide sub-notes" else "Show sub-notes",
+                Modifier.size(22.dp).rotate(turn).clickable(onClick = onToggle),
+            )
+        }
         Text(note.title.ifBlank { "Untitled" }, Modifier.weight(1f, fill = false), style = style, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (note.pinned) Icon(painterResource(R.drawable.ic_pin), "Pinned", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
     }
