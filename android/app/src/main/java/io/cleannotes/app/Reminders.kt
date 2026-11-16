@@ -46,6 +46,14 @@ fun nextRepeat(at: LocalDateTime, repeat: String, now: LocalDateTime): LocalDate
     return step(k)
 }
 
+/** A repeating note reminder whose time has passed moves to its next time; null when it stays, as a completed one does. */
+fun advancedRemindAt(note: JSONObject, now: LocalDateTime): String? {
+    val repeat = noteRepeat(note) ?: return null
+    if (noteDone(note)) return null
+    val at = noteRemindAt(note)?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() } ?: return null
+    return if (at.isAfter(now)) null else nextRepeat(at, repeat, now).toString().take(16)
+}
+
 /** One line on the Reminders page: a note's own reminder (taskId null) or a to-do's. */
 data class ReminderItem(val key: String, val noteId: String, val taskId: String?, val title: String, val at: LocalDateTime, val repeat: String?, val favorite: Boolean, val done: Boolean, val kind: String)
 
@@ -143,10 +151,8 @@ object Reminders {
         // Repeating reminders that have come round move on to their next time; the notes collector then reschedules.
         val nowLocal = LocalDateTime.now()
         notes.filter { it.trashedAt == null && it.archivedAt == null }.forEach { row ->
-            val note = JSONObject(row.raw)
-            val repeat = noteRepeat(note) ?: return@forEach
-            val at = noteRemindAt(note)?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() } ?: return@forEach
-            if (!at.isAfter(nowLocal)) app.updateNote(row.id) { j, _ -> j.put("remindAt", nextRepeat(at, repeat, nowLocal).toString().take(16)) }
+            val next = advancedRemindAt(JSONObject(row.raw), nowLocal) ?: return@forEach
+            app.updateNote(row.id) { j, _ -> j.put("remindAt", next) }
         }
         schedule(app, notes)
     }

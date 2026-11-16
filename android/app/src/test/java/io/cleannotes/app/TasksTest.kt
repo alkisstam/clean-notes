@@ -113,6 +113,15 @@ class TasksTest {
         assertEquals(dt("2026-11-24T18:30"), nextRepeat(dt("2026-11-10T18:30"), "weekly", dt("2026-11-17T18:30")))
     }
 
+    @Test fun onlyAnOpenRepeatingReminderThatHasPassedMovesOn() {
+        val now = dt("2026-11-20T10:00")
+        fun note(at: String) = JSONObject().put("remindAt", at).put("repeat", "daily")
+        assertEquals("2026-11-20T18:30", advancedRemindAt(note("2026-11-10T18:30"), now))
+        assertEquals(null, advancedRemindAt(note("2026-11-20T18:30"), now))
+        assertEquals(null, advancedRemindAt(note("2026-11-10T18:30").put("doneAt", 1), now))
+        assertEquals(null, advancedRemindAt(note("2026-11-10T18:30").put("repeat", JSONObject.NULL), now))
+    }
+
     @Test fun groupsRemindersByDayAndDoneWithFavoritesFirst() {
         fun row(id: String, raw: JSONObject) = noteRow(raw.put("id", id).put("title", id).put("content", JSONObject().put("type", "doc")).put("kind", "reminder")
             .put("pinned", false).put("updatedAt", 1).put("trashedAt", JSONObject.NULL).put("notebookId", JSONObject.NULL).put("tags", JSONArray()))
