@@ -2,11 +2,25 @@
 
 A local-first note-taking PWA with a three-column interface: notebooks, nested tags, daily notes, tasks, a rich-text editor with slash commands, images, and PDFs you can attach, read and search. Notes, images and PDFs are stored in the browser's IndexedDB. There is no account. An optional self-hosted server syncs devices (see [Sync](#sync)).
 
+## About
+
+Sheaf Notes is a calm, fast place for notes that stays yours. Everything lives on your device and works offline; there is no account. Organise notes with notebooks and nested tags, keep a daily note, track tasks with due dates and reminders, and keep PDFs and images right next to your writing. When you want your notes everywhere, sync them through your own server.
+
 ## Install it
+
+### Web (PWA)
+
+Open [sheafnotes.app](https://sheafnotes.app) in any modern browser and start writing. To install it as an app, which also makes it work offline:
+
+- **Desktop Chrome or Edge:** click the install icon in the address bar, or the menu → **Install Sheaf Notes**.
+- **Android (Chrome):** menu → **Add to Home screen** or **Install app**.
+- **iPhone and iPad (Safari):** Share → **Add to Home Screen**.
+
+Notes are stored in that browser, separate from the desktop and Android apps. To share them between devices, use [Sync](#sync) with your own server, or a [cloud-folder backup](#sync-through-a-cloud-folder).
 
 ### Desktop (Linux AppImage)
 
-1. Download `Sheaf-Notes-<version>.AppImage` from the [latest desktop release](https://github.com/alkisstam/clean-notes/releases/latest).
+1. Download `Sheaf-Notes-<version>.AppImage` from the [latest desktop release](https://github.com/alkisstam/sheafnotes/releases/latest).
 2. Make it executable and run it:
 
    ```bash
@@ -20,7 +34,7 @@ If it does not start, install FUSE 2 (`fuse2` on Arch, `libfuse2` on Debian and 
 
 ### Android (8.0 or later)
 
-1. Download `Sheaf-Notes-<version>.apk` on your phone from the newest [Android release](https://github.com/alkisstam/clean-notes/releases?q=android&expanded=true).
+1. Download `Sheaf-Notes-<version>.apk` on your phone from the newest [Android release](https://github.com/alkisstam/sheafnotes/releases?q=android&expanded=true).
 2. Open the file. If Android asks, allow your browser or file manager to install unknown apps.
 3. Confirm **Install**. Google Play Protect may warn about an unrecognized app, because the app is not on Google Play.
 
