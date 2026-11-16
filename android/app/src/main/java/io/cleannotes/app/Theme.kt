@@ -143,7 +143,7 @@ val MenuShape = RoundedCornerShape(24.dp)
 fun Menu(expanded: Boolean, onDismiss: () -> Unit, properties: PopupProperties = PopupProperties(focusable = true), content: @Composable ColumnScope.() -> Unit) =
     DropdownMenu(
         expanded, onDismiss, properties = properties, shape = MenuShape,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, content = content,
+        containerColor = MaterialTheme.colorScheme.background, content = content,
     )
 
 @Composable

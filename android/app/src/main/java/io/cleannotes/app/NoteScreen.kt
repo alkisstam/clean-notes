@@ -222,7 +222,7 @@ fun NoteMenu(
     // A long press in the list opens it in the middle of the screen; the note page's ⋮ drops it from the corner.
     if (centered) {
         if (expanded) Dialog(onDismiss) {
-            Surface(shape = MenuShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+            Surface(shape = MenuShape, color = MaterialTheme.colorScheme.background) {
                 Column(Modifier.width(IntrinsicSize.Max).widthIn(min = 240.dp).padding(vertical = 8.dp)) { items() }
             }
         }
