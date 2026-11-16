@@ -5,7 +5,7 @@ import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/p
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 
 export async function startServer({ token, dir, port = 0 }) {
   if (!token) throw new Error('SYNC_TOKEN is required');
@@ -18,6 +18,8 @@ export async function startServer({ token, dir, port = 0 }) {
   } catch (err) {
     if (err.code !== 'ENOENT') throw err;
   }
+  // New for each fresh data folder, so devices notice a rebuilt server and send everything again.
+  state.id ??= randomUUID();
   // shortcut: whole state rewritten per sync; fine for one user's notes, move to SQLite if it gets slow.
   let saving = Promise.resolve();
   const save = () =>
@@ -104,7 +106,7 @@ export async function startServer({ token, dir, port = 0 }) {
         const out = Object.entries(state.records)
           .filter(([key, r]) => r.seq > since && accepted.get(key) !== r.seq)
           .map(([, r]) => r);
-        return send(res, 200, { seq: state.seq, records: out });
+        return send(res, 200, { id: state.id, seq: state.seq, records: out });
       }
       const m = url.pathname.match(/^\/api\/blob\/([\w-]{1,100})$/);
       if (m) {

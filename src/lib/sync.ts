@@ -82,7 +82,14 @@ async function serverSync(): Promise<boolean> {
     ...images.filter((i) => !tooBig.has(i.id)).map(({ blob, ...meta }) => ({ table: 'images' as const, id: meta.id, time: meta.createdAt, data: { ...meta, type: blob.type } })),
   ];
   const res = await api('sync', { method: 'POST', body: JSON.stringify({ since, records }) });
-  const { seq, records: incoming } = (await res.json()) as { seq: number; records: SyncRecord[] };
+  const { id, seq, records: incoming } = (await res.json()) as { id: string; seq: number; records: SyncRecord[] };
+  // A rebuilt or restored server has lost changes: send everything again and fetch all.
+  const knownId = await getMeta<string>('serverId');
+  await setMeta('serverId', id);
+  if ((knownId && knownId !== id) || seq < since) {
+    await Promise.all([setMeta('serverSeq', 0), setMeta('lastPushAt', -1)]);
+    return serverSync();
+  }
 
   const rows = <T>(table: SyncRecord['table']) => incoming.filter((r) => r.table === table).map((r) => r.data as T);
   const haveFiles = new Set(await db.files.toCollection().primaryKeys());
@@ -122,7 +129,7 @@ export async function enableServerSync(token: string) {
 }
 
 export const disableServerSync = () =>
-  Promise.all(['syncToken', 'serverSeq', 'lastPushAt', 'syncedAt'].map((k) => setMeta(k, undefined)));
+  Promise.all(['syncToken', 'serverSeq', 'lastPushAt', 'syncedAt', 'serverId'].map((k) => setMeta(k, undefined)));
 
 const DELAY = 60_000;
 let timer: ReturnType<typeof setTimeout> | undefined;

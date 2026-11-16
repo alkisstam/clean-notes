@@ -78,6 +78,19 @@ it('sends an image again if the server dropped it while another note still used 
   expect(await (await db.images.get('img2'))?.blob.text()).toBe('two');
 });
 
+it('sends everything again when the server lost its data', async () => {
+  const kept = baseNote({ title: 'survives a server rebuild' });
+  await db.notes.add(kept);
+  await syncNow();
+  server.close();
+  await fs.rm(dir, { recursive: true });
+  dir = await fs.mkdtemp(`${(await load('node:os')).tmpdir()}/cn-sync-`);
+  server = await (await load('../server/sync.mjs')).startServer({ token: 'secret', dir });
+  await syncNow();
+  await freshDevice();
+  expect((await db.notes.get(kept.id))?.title).toBe('survives a server rebuild');
+});
+
 it('reports a wrong token without wiping anything', async () => {
   await db.meta.put({ key: 'syncToken', value: 'wrong' });
   const before = await db.notes.count();

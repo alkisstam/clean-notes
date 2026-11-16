@@ -89,75 +89,88 @@ class Sync(private val context: Context, private val db: AppDb) {
         if (paired.value) SyncWorker.soon(context)
     }
 
-    suspend fun run() = lock.withLock {
-        withContext(Dispatchers.IO) {
-            val since = prefs.getLong("seq", 0)
-            val pushFrom = prefs.getLong("lastPushAt", 0)
-            // Read in one transaction with the start time, so no local write stamped before it can land after these reads.
-            var startedAt = 0L
-            var notes = emptyList<NoteRow>()
-            var tombstones = emptyList<TombstoneRow>()
-            var notebooks = emptyList<NotebookRow>()
-            var files = emptyList<AttachmentRow>()
-            db.withTransaction {
-                startedAt = System.currentTimeMillis()
-                notes = dao.notesSince(pushFrom)
-                tombstones = dao.tombstonesSince(pushFrom)
-                notebooks = dao.notebooksSince(pushFrom)
-                // The server drops files no note uses, so each pushed note's own go along, in case they were dropped.
-                files = dao.attachments().filter { a -> a.savedAt > pushFrom || notes.any { it.raw.contains(a.id) } }
-            }
-            // Skipped, so one file the server refuses does not stop every sync.
-            val tooBig = files.filter { File(blobDir, it.id).length() > MAX_UPLOAD }
-            if (tooBig.map { warnedTooBig.add(it.id) }.any { it }) {
-                Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(context, "A PDF or image is over 200 MB, too large to sync. It stays on this device.", Toast.LENGTH_LONG).show()
-                }
-            }
-            files = files - tooBig.toSet()
-            // Bytes go first, so no device ever sees a file record whose bytes are missing.
-            for (f in files) {
-                if (request("HEAD", "api/blob/${f.id}") != null) continue
-                request("PUT", "api/blob/${f.id}", File(blobDir, f.id).readBytes(), "application/octet-stream")
-            }
-            val out = notes.map {
-                JSONObject().put("table", "notes").put("id", it.id).put("time", it.updatedAt).put("data", JSONObject(it.raw))
-            } + files.map {
-                JSONObject().put("table", it.tbl).put("id", it.id).put("time", it.time).put("data", JSONObject(it.raw))
-            } + notebooks.map {
-                JSONObject().put("table", "notebooks").put("id", it.id).put("time", it.time).put("data", JSONObject(it.raw))
-            } + tombstones.map {
-                JSONObject().put("table", "tombstones").put("id", it.id).put("time", it.deletedAt)
-                    .put("data", JSONObject().put("id", it.id).put("table", it.tbl).put("deletedAt", it.deletedAt))
-            }
-            val body = JSONObject().put("since", since).put("records", JSONArray(out)).toString()
-            val res = JSONObject(String(request("POST", "api/sync", body.toByteArray(), "application/json") ?: throw SyncError("The sync server was not found.")))
-            val records = res.getJSONArray("records").let { a -> List(a.length()) { a.getJSONObject(it) } }
+    suspend fun run() {
+        while (lock.withLock { withContext(Dispatchers.IO) { pass() } }) {}
+    }
 
-            // Bytes first, like the web client: a PDF or image record is only kept once its file is here.
-            val have = dao.attachmentIds().toSet()
-            val attachments = records.filter { (it.getString("table") == "files" || it.getString("table") == "images") && it.getString("id") !in have }
-                .mapNotNull { r ->
-                    val id = r.getString("id")
-                    val bytes = request("GET", "api/blob/$id") ?: return@mapNotNull null
-                    File(blobDir, "$id.tmp").apply { writeBytes(bytes); renameTo(File(blobDir, id)) }
-                    AttachmentRow(id, r.getString("table"), r.getLong("time"), r.getJSONObject("data").toString())
-                }
-
-            val merged = merge(
-                records.filter { it.getString("table") == "notes" }.map { it.getJSONObject("data") },
-                records.filter { it.getString("table") == "notebooks" }.map { it.getJSONObject("data") },
-                records.filter { it.getString("table") == "tombstones" }.map { it.getJSONObject("data") },
-                attachments,
-            )
-            // Only after deletes, as on the web: a file dropped from a note may come back with Undo.
-            if (merged.deleted > 0) collectOrphans()
-            val now = System.currentTimeMillis()
-            // A backup import during this sync may have moved the marker back; keep that.
-            val pushMarker = prefs.getLong("lastPushAt", 0).let { if (it >= pushFrom) startedAt else it }
-            prefs.edit { putLong("seq", res.getLong("seq")); putLong("lastPushAt", pushMarker); putLong("syncedAt", now) }
-            syncedAt.value = now
+    /** One sync round. True when the server turned out rebuilt and a second round must send everything. */
+    private suspend fun pass(): Boolean {
+        val since = prefs.getLong("seq", 0)
+        val pushFrom = prefs.getLong("lastPushAt", 0)
+        // Read in one transaction with the start time, so no local write stamped before it can land after these reads.
+        var startedAt = 0L
+        var notes = emptyList<NoteRow>()
+        var tombstones = emptyList<TombstoneRow>()
+        var notebooks = emptyList<NotebookRow>()
+        var files = emptyList<AttachmentRow>()
+        db.withTransaction {
+            startedAt = System.currentTimeMillis()
+            notes = dao.notesSince(pushFrom)
+            tombstones = dao.tombstonesSince(pushFrom)
+            notebooks = dao.notebooksSince(pushFrom)
+            // The server drops files no note uses, so each pushed note's own go along, in case they were dropped.
+            files = dao.attachments().filter { a -> a.savedAt > pushFrom || notes.any { it.raw.contains(a.id) } }
         }
+        // Skipped, so one file the server refuses does not stop every sync.
+        val tooBig = files.filter { File(blobDir, it.id).length() > MAX_UPLOAD }
+        if (tooBig.map { warnedTooBig.add(it.id) }.any { it }) {
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(context, "A PDF or image is over 200 MB, too large to sync. It stays on this device.", Toast.LENGTH_LONG).show()
+            }
+        }
+        files = files - tooBig.toSet()
+        // Bytes go first, so no device ever sees a file record whose bytes are missing.
+        for (f in files) {
+            if (request("HEAD", "api/blob/${f.id}") != null) continue
+            request("PUT", "api/blob/${f.id}", type = "application/octet-stream", upload = File(blobDir, f.id))
+        }
+        val out = notes.map {
+            JSONObject().put("table", "notes").put("id", it.id).put("time", it.updatedAt).put("data", JSONObject(it.raw))
+        } + files.map {
+            JSONObject().put("table", it.tbl).put("id", it.id).put("time", it.time).put("data", JSONObject(it.raw))
+        } + notebooks.map {
+            JSONObject().put("table", "notebooks").put("id", it.id).put("time", it.time).put("data", JSONObject(it.raw))
+        } + tombstones.map {
+            JSONObject().put("table", "tombstones").put("id", it.id).put("time", it.deletedAt)
+                .put("data", JSONObject().put("id", it.id).put("table", it.tbl).put("deletedAt", it.deletedAt))
+        }
+        val body = JSONObject().put("since", since).put("records", JSONArray(out)).toString()
+        val res = JSONObject(String(request("POST", "api/sync", body.toByteArray(), "application/json") ?: throw SyncError("The sync server was not found.")))
+        // A rebuilt or restored server has lost changes: send everything again and fetch all.
+        // -1, since rows that came from the server have savedAt 0.
+        val knownId = prefs.getString("serverId", null)
+        prefs.edit { putString("serverId", res.optString("id")) }
+        if ((!knownId.isNullOrEmpty() && knownId != res.optString("id")) || res.getLong("seq") < since) {
+            prefs.edit { putLong("seq", 0); putLong("lastPushAt", -1) }
+            return true
+        }
+        val records = res.getJSONArray("records").let { a -> List(a.length()) { a.getJSONObject(it) } }
+
+        // Bytes first, like the web client: a PDF or image record is only kept once its file is here.
+        val have = dao.attachmentIds().toSet()
+        val attachments = records.filter { (it.getString("table") == "files" || it.getString("table") == "images") && it.getString("id") !in have }
+            .mapNotNull { r ->
+                val id = r.getString("id")
+                val tmp = File(blobDir, "$id.tmp")
+                request("GET", "api/blob/$id", saveTo = tmp) ?: return@mapNotNull null
+                tmp.renameTo(File(blobDir, id))
+                AttachmentRow(id, r.getString("table"), r.getLong("time"), r.getJSONObject("data").toString())
+            }
+
+        val merged = merge(
+            records.filter { it.getString("table") == "notes" }.map { it.getJSONObject("data") },
+            records.filter { it.getString("table") == "notebooks" }.map { it.getJSONObject("data") },
+            records.filter { it.getString("table") == "tombstones" }.map { it.getJSONObject("data") },
+            attachments,
+        )
+        // Only after deletes, as on the web: a file dropped from a note may come back with Undo.
+        if (merged.deleted > 0) collectOrphans()
+        val now = System.currentTimeMillis()
+        // A backup import during this sync may have moved the marker back; keep that.
+        val pushMarker = prefs.getLong("lastPushAt", 0).let { if (it >= pushFrom) startedAt else it }
+        prefs.edit { putLong("seq", res.getLong("seq")); putLong("lastPushAt", pushMarker); putLong("syncedAt", now) }
+        syncedAt.value = now
+        return false
     }
 
     class MergeResult(val added: Int, val updated: Int, val deleted: Int, val oldest: Long)
@@ -227,8 +240,11 @@ class Sync(private val context: Context, private val db: AppDb) {
         orphans.forEach { File(blobDir, it).delete() }
     }
 
-    /** Returns the body, or null on 404. */
-    private fun request(method: String, path: String, body: ByteArray? = null, type: String? = null): ByteArray? {
+    /**
+     * Returns the body, or null on 404. [upload] and [saveTo] stream a file each way, so a large PDF never sits in memory;
+     * with [saveTo] the returned body is empty.
+     */
+    private fun request(method: String, path: String, body: ByteArray? = null, type: String? = null, upload: File? = null, saveTo: File? = null): ByteArray? {
         val base = prefs.getString("url", null) ?: throw SyncError("Not paired.")
         val c = URL(base + path).openConnection() as HttpURLConnection
         try {
@@ -236,14 +252,16 @@ class Sync(private val context: Context, private val db: AppDb) {
             c.connectTimeout = 15_000
             c.readTimeout = 60_000
             c.setRequestProperty("Authorization", "Bearer ${prefs.getString("token", "")}")
-            if (body != null) {
+            if (body != null || upload != null) {
                 c.doOutput = true
                 c.setRequestProperty("Content-Type", type)
-                c.setFixedLengthStreamingMode(body.size)
-                c.outputStream.use { it.write(body) }
+                c.setFixedLengthStreamingMode(upload?.length() ?: body!!.size.toLong())
+                c.outputStream.use { out -> if (upload != null) upload.inputStream().use { it.copyTo(out) } else out.write(body!!) }
             }
             return when (c.responseCode) {
-                200 -> c.inputStream.use { it.readBytes() }
+                200 -> c.inputStream.use { input ->
+                    if (saveTo == null) input.readBytes() else ByteArray(0).also { saveTo.outputStream().use { input.copyTo(it) } }
+                }
                 404 -> null
                 401 -> throw SyncError("The sync server did not accept the token.")
                 else -> throw SyncError("The sync server answered ${c.responseCode}.")
