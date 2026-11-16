@@ -53,7 +53,7 @@
   "main": "electron/main.js",
   "build": {
     "appId": "io.cleannotes.app",
-    "productName": "Clean Notes",
+    "productName": "Sheaf Notes",
     "files": [
       "dist/**",
       "electron/**",

@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => ({
       includeAssets: ['icons/icon.svg'],
       manifest: {
         id: './',
-        name: 'Clean Notes',
+        name: 'Sheaf Notes',
         short_name: 'Notes',
         description: 'Notebooks, nested tags, daily notes, tasks and PDFs. Stored on your device.',
         start_url: './',

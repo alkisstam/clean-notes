@@ -228,7 +228,7 @@ export function App() {
   if (dbError) {
     return (
       <div className="fatal">
-        <h1>Clean Notes can't open its storage</h1>
+        <h1>Sheaf Notes can't open its storage</h1>
         <p>The browser is blocking local storage, which often happens in private windows. Open the app in a normal window to continue.</p>
       </div>
     );

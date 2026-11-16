@@ -217,7 +217,7 @@ describe('export', () => {
     const notes = [{ title: 'A', text: 'one' }, { title: '', text: 'two' }];
     expect(exportText(notes)).toBe('A\n\none\n\n---\n\nUntitled\n\ntwo\n');
     const page = exportPages([{ title: 'A', body: '<p>1</p>' }, { title: 'B', body: '<p>2</p>' }]);
-    expect(page).toContain('<title>Clean Notes (2 notes)</title>');
+    expect(page).toContain('<title>Sheaf Notes (2 notes)</title>');
     expect(page).toContain('<h1>A</h1><p>1</p><h1 style="break-before:page">B</h1><p>2</p>');
   });
   it('keeps JSON an object for one note and an array for several', () => {

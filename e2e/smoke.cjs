@@ -24,7 +24,7 @@ const check = (name, ok, extra = '') => { results.push(ok); console.log(`${ok ? 
   await page.goto(BASE);
   await page.waitForSelector('.prose');
   await wait(900);
-  check('first run opens the welcome note', (await page.inputValue('.doc-title')) === 'Welcome to Clean Notes');
+  check('first run opens the welcome note', (await page.inputValue('.doc-title')) === 'Welcome to Sheaf Notes');
   check('three columns are visible', await page.locator('.sidebar').isVisible() && await page.locator('.list-col').isVisible() && await page.locator('.editor-col').isVisible());
   await shot('01-light-welcome');
 
@@ -217,7 +217,7 @@ const check = (name, ok, extra = '') => { results.push(ok); console.log(`${ok ? 
   await shot('05-tasks');
   await dated.locator('.task-row-main').click();
   await wait(300);
-  check('opening a task lands on its note', (await page.inputValue('.doc-title')) === 'Welcome to Clean Notes');
+  check('opening a task lands on its note', (await page.inputValue('.doc-title')) === 'Welcome to Sheaf Notes');
   check('due chip appears in the note', (await page.locator('.prose li', { hasText: 'Install the app' }).locator('.task-due').getAttribute('data-late')) === 'true');
   // Checkbox in editor flows to Tasks
   await page.locator('.prose li', { hasText: 'Install the app' }).locator('.task-check input').check({ force: true });
@@ -528,7 +528,7 @@ const check = (name, ok, extra = '') => { results.push(ok); console.log(`${ok ? 
   check('older backups still restore', (await page.locator('.toast').innerText()).startsWith('Restored'), await page.locator('.toast').innerText());
   await page.getByLabel('Backup file').setInputFiles({ name: 'x.json', mimeType: 'application/json', buffer: Buffer.from('{"format":"other"}') });
   await wait(200);
-  check('a wrong backup file is refused', (await page.locator('.toast').innerText()).includes('not a Clean Notes backup'));
+  check('a wrong backup file is refused', (await page.locator('.toast').innerText()).includes('not a Sheaf Notes backup'));
   check('refused restore changes nothing', (await page.locator('.nav-row', { hasText: 'All notes' }).locator('.nav-count').innerText()) === before);
   await page.locator('dialog').getByRole('button', { name: 'Close' }).click();
 

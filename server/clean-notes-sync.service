@@ -1,5 +1,5 @@
 [Unit]
-Description=Clean Notes sync server
+Description=Sheaf Notes sync server
 After=network.target
 
 [Service]

@@ -48,7 +48,7 @@ const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '
 export const exportName = (title: string, ext: string) =>
   `${title.replace(/[/\\:*?"<>|\x00-\x1f]/g, '').trim() || 'Untitled'}.${ext}`;
 
-const batchName = (count: number) => `Clean Notes (${count} notes)`;
+const batchName = (count: number) => `Sheaf Notes (${count} notes)`;
 
 export const exportPages = (notes: { title: string; body: string }[]) => {
   const page = escapeHtml(notes.length === 1 ? notes[0].title || 'Untitled' : batchName(notes.length));

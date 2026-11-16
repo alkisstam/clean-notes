@@ -134,14 +134,14 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onConnect: () -> Unit) {
                     }
                     syncNote?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 } else {
-                    Text("Notes stay on this phone. Connect to a Clean Notes server to keep your devices in step.")
+                    Text("Notes stay on this phone. Connect to a Sheaf Notes server to keep your devices in step.")
                     Button(onClick = onConnect) { Text("Connect to server") }
                 }
             }
             Section("Backup") {
                 Text("One file with every note, notebook, PDF and image, in the web app's backup format. Importing merges: the newer edit of each note wins.")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(enabled = !busy, onClick = { exporter.launch("clean-notes-backup-${dateKey()}.json") }) { Text("Export") }
+                    Button(enabled = !busy, onClick = { exporter.launch("sheaf-notes-backup-${dateKey()}.json") }) { Text("Export") }
                     OutlinedButton(enabled = !busy, onClick = { importer.launch(arrayOf("application/json", "application/octet-stream", "*/*")) }) { Text("Import") }
                 }
                 backupNote?.let { Text(it) }
@@ -149,7 +149,7 @@ fun SettingsScreen(app: App, onBack: () -> Unit, onConnect: () -> Unit) {
             Section("Storage") {
                 Text(storage, style = MaterialTheme.typography.bodyMedium)
                 val version = remember { app.packageManager.getPackageInfo(app.packageName, 0).versionName }
-                Text("Clean Notes $version", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Sheaf Notes $version", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

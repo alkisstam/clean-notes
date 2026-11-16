@@ -10,7 +10,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "io.cleannotes.app"
+        applicationId = "com.alkisstam.notes"
         minSdk = 26
         targetSdk = 36
         versionCode = 11

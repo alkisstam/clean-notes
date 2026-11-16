@@ -72,7 +72,7 @@ export async function seedIfEmpty() {
       p(t('Notes live in this browser, so export a backup from Settings now and then.')),
     ],
   };
-  const note = baseNote({ id: 'welcome', title: 'Welcome to Clean Notes', content, notebookId, tags: ['guide/basics'], pinned: true, updatedAt: SEED_TIME });
+  const note = baseNote({ id: 'welcome', title: 'Welcome to Sheaf Notes', content, notebookId, tags: ['guide/basics'], pinned: true, updatedAt: SEED_TIME });
   await db.transaction('rw', db.notes, db.notebooks, async () => {
     await db.notebooks.put({ id: notebookId, name: 'Getting started', createdAt: SEED_TIME, updatedAt: SEED_TIME });
     await db.notes.put(note);

@@ -62,7 +62,7 @@ private fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replac
 fun exportName(title: String, ext: String) =
     "${title.replace(Regex("[/\\\\:*?\"<>|\\x00-\\x1f]"), "").trim().ifEmpty { "Untitled" }}.$ext"
 
-private fun batchName(count: Int) = "Clean Notes ($count notes)"
+private fun batchName(count: Int) = "Sheaf Notes ($count notes)"
 
 fun exportPages(notes: List<Pair<String, String>>): String {
     val page = esc(if (notes.size == 1) notes[0].first.ifBlank { "Untitled" } else batchName(notes.size))

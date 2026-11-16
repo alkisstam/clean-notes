@@ -46,7 +46,7 @@ class ExportTest {
     @Test fun combinesSeveralNotes() {
         assertEquals("A\n\none\n\n---\n\nUntitled\n\ntwo\n", exportText(listOf("A" to "one", "" to "two")))
         val page = exportPages(listOf("A" to "<p>1</p>", "B" to "<p>2</p>"))
-        assertTrue(page.contains("<title>Clean Notes (2 notes)</title>"))
+        assertTrue(page.contains("<title>Sheaf Notes (2 notes)</title>"))
         assertTrue(page.contains("<h1>A</h1><p>1</p><h1 style=\"break-before:page\">B</h1><p>2</p>"))
     }
 

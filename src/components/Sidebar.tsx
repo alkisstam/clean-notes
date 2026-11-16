@@ -170,7 +170,7 @@ export function Sidebar({ notes, notebooks }: { notes: Note[]; notebooks: Notebo
   return (
     <nav className="sidebar" aria-label="Library">
       <div className="brand">
-        <span className="brand-name">Clean Notes</span>
+        <span className="brand-name">Sheaf Notes</span>
       </div>
 
       <div className="sidebar-scroll">

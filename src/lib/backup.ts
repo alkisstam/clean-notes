@@ -61,7 +61,7 @@ const warnIfTooLarge = (size: number) => {
 
 export async function exportBackup() {
   const backup = await buildBackup();
-  saveBlob(backup, `clean-notes-backup-${dateKey()}.json`);
+  saveBlob(backup, `sheaf-notes-backup-${dateKey()}.json`);
   warnIfTooLarge(backup.size);
 }
 
@@ -161,7 +161,7 @@ export async function importBackup(file: File): Promise<MergeResult> {
   const validNote = (n: Note) =>
     typeof n?.id === 'string' && n.content?.type === 'doc' && Array.isArray(n.tags) && typeof n.updatedAt === 'number';
   if (data?.format !== FORMAT || !Array.isArray(data.notes) || !data.notes.every(validNote)) {
-    throw new Error('That file is not a Clean Notes backup.');
+    throw new Error('That file is not a Sheaf Notes backup.');
   }
   const r = await mergeSnapshot({
     notes: data.notes,
@@ -190,8 +190,8 @@ export const autoBackupSupported = typeof window !== 'undefined' && 'showSaveFil
 export async function chooseBackupFile() {
   const picker = (window as unknown as { showSaveFilePicker(o: object): Promise<BackupHandle> }).showSaveFilePicker;
   const handle = await picker({
-    suggestedName: 'clean-notes-backup.json',
-    types: [{ description: 'Clean Notes backup', accept: { 'application/json': ['.json'] } }],
+    suggestedName: 'sheaf-notes-backup.json',
+    types: [{ description: 'Sheaf Notes backup', accept: { 'application/json': ['.json'] } }],
   });
   await setMeta('backupFile', handle);
   await setMeta('backupWrittenAt', 0);

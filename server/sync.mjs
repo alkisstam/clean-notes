@@ -1,4 +1,4 @@
-// Clean Notes sync server. Node stdlib only, one user, behind nginx at /api/.
+// Sheaf Notes sync server. Node stdlib only, one user, behind nginx at /api/.
 // Env: SYNC_TOKEN (required), DATA_DIR (default /var/lib/clean-notes), PORT (default 8787).
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
@@ -139,5 +139,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     dir: process.env.DATA_DIR ?? '/var/lib/clean-notes',
     port: Number(process.env.PORT ?? 8787),
   });
-  console.log(`Clean Notes sync listening on ${server.address().port}`);
+  console.log(`Sheaf Notes sync listening on ${server.address().port}`);
 }

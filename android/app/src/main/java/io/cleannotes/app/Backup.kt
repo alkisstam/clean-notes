@@ -161,6 +161,6 @@ class Backup(private val context: Context, private val db: AppDb, private val sy
     }
 
     companion object {
-        const val NOT_BACKUP = "That file is not a Clean Notes backup."
+        const val NOT_BACKUP = "That file is not a Sheaf Notes backup."
     }
 }

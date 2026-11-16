@@ -301,7 +301,7 @@ function Settings({ close }: { close: () => void }) {
         <h3>Sync</h3>
         <p>
           {window.desktop
-            ? 'Keep your devices in step through your Clean Notes server. Notes are sent to that server over HTTPS.'
+            ? 'Keep your devices in step through your Sheaf Notes server. Notes are sent to that server over HTTPS.'
             : 'Keep your devices in step through the server this app is hosted on. Notes are sent to that server over HTTPS.'}
         </p>
         {sync?.on ? (
@@ -334,7 +334,7 @@ function Settings({ close }: { close: () => void }) {
             {pairQr && (
               <>
                 <img className="pair-qr" src={pairQr} alt="Pairing code with the sync address and token" width={240} height={240} />
-                <p className="dialog-hint">Scan this in the Clean Notes Android app. It contains your sync token, so don't share it.</p>
+                <p className="dialog-hint">Scan this in the Sheaf Notes Android app. It contains your sync token, so don't share it.</p>
               </>
             )}
           </>
@@ -382,7 +382,7 @@ function Settings({ close }: { close: () => void }) {
       {installEvent && (
         <section className="settings-section">
           <h3>Install</h3>
-          <p>Run Clean Notes in its own window, with or without a connection.</p>
+          <p>Run Sheaf Notes in its own window, with or without a connection.</p>
           <div className="settings-row">
             <button
               type="button"
