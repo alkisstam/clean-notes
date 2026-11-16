@@ -1,5 +1,14 @@
 # Changelog — Android app
 
+## 1.1.0 — 2026-11-16
+
+### Changed
+- The app is now called Sheaf Notes, and its app ID is now `com.alkisstam.notes`. Android treats it as a new app, so it won't update the old Clean Notes: install it alongside, pair it with your sync server (Settings → scan the QR code from the web app) and sync, check your notes are there, then uninstall Clean Notes. Notes that were never synced, like PDFs or images over 200 MB, are only in the old app; export a backup from it first.
+- Menus now have the same background color as the rest of the app.
+
+### Added
+- A new install starts with a "Welcome to Sheaf Notes" guide in a Getting started notebook. After pairing, it merges with the web app's copy instead of showing up twice.
+
 ## 1.0.9 — 2026-11-15
 
 ### Added
