@@ -34,10 +34,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -80,7 +83,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 /** `pdf` is the web's PdfTarget as JSON text: {fileId, page?, query?}. */
 fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> Unit, onOpenTag: (String) -> Unit, onOpenNote: (String) -> Unit, onFollowLink: (String) -> Unit) {
@@ -118,56 +121,62 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
         }) { view.reminding = false }
     }
     BackHandler { back() }
+    BackHandler(adding) { adding = false }
     // Pending keystrokes are saved and sent when the app goes to the background.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { view.flush { app.sync.runInBackground() } }
-    Scaffold(
-        Modifier.noteBounds(LocalOpenFrom.current.value.takeIf { it.startsWith("$id|") }, 0.dp),
-        containerColor = bg ?: MaterialTheme.colorScheme.background,
-        topBar = {
-            // The PDF viewer has its own toolbar, and an image fills the screen; back still closes them.
-            if (!viewing) TopAppBar(
-                colors = if (bg != null) TopAppBarDefaults.topAppBarColors(containerColor = bg) else TopAppBarDefaults.topAppBarColors(),
-                title = {
-                    // Daily notes step to the day before or after, creating it if needed, as on the web.
-                    val date = note?.date?.takeIf { note?.kind == "daily" }
-                    if (date != null) {
-                        val go = { days: Long ->
-                            view.flush { app.scope.launch { app.dailyNote(addDays(date, days)).let { withContext(Dispatchers.Main) { onOpenNote(it) } } } }
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { go(-1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous day") }
-                            IconButton(onClick = { go(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next day") }
-                        }
-                    }
-                },
-                navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
-                actions = {
-                    IconButton(onClick = view::undo, enabled = view.canUndo) { Icon(painterResource(R.drawable.ic_undo), "Undo", Modifier.size(22.dp)) }
-                    IconButton(onClick = view::redo, enabled = view.canRedo) { Icon(painterResource(R.drawable.ic_redo), "Redo", Modifier.size(22.dp)) }
-                    IconButton(onClick = { adding = true }) { Icon(painterResource(R.drawable.ic_plus), "Add", Modifier.size(22.dp)) }
-                    Menu(adding, { adding = false }) {
-                        // A sub-note keeps this note, so only leaving for a sibling may discard it.
-                        val open = { leaving: Boolean, make: suspend () -> String? ->
-                            adding = false
-                            view.flush {
-                                if (leaving) discard()
-                                app.scope.launch { make()?.let { withContext(Dispatchers.Main) { onOpenNote(it) } } }
+    Box(Modifier.noteBounds(LocalOpenFrom.current.value.takeIf { it.startsWith("$id|") }, 0.dp).fillMaxSize()) {
+        Scaffold(
+            containerColor = bg ?: MaterialTheme.colorScheme.background,
+            topBar = {
+                // The PDF viewer has its own toolbar, and an image fills the screen; back still closes them.
+                if (!viewing) TopAppBar(
+                    colors = if (bg != null) TopAppBarDefaults.topAppBarColors(containerColor = bg) else TopAppBarDefaults.topAppBarColors(),
+                    title = {
+                        // Daily notes step to the day before or after, creating it if needed, as on the web.
+                        val date = note?.date?.takeIf { note?.kind == "daily" }
+                        if (date != null) {
+                            val go = { days: Long ->
+                                view.flush { app.scope.launch { app.dailyNote(addDays(date, days)).let { withContext(Dispatchers.Main) { onOpenNote(it) } } } }
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { go(-1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous day") }
+                                IconButton(onClick = { go(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next day") }
                             }
                         }
-                        MenuItem("New note", { open(true) { app.newNote(note?.notebookId, tag) } }, R.drawable.ic_square_pen)
-                        MenuItem("New sub-note", { open(false) { app.newSubNote(id, tag) } }, R.drawable.ic_file_plus)
-                        MenuItem("Add image", { adding = false; view.pick("image") }, R.drawable.ic_image)
-                        MenuItem("Add PDF", { adding = false; view.pick("pdf") }, R.drawable.ic_file_text)
+                    },
+                    navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                    actions = {
+                        IconButton(onClick = view::undo, enabled = view.canUndo) { Icon(painterResource(R.drawable.ic_undo), "Undo", Modifier.size(22.dp)) }
+                        IconButton(onClick = view::redo, enabled = view.canRedo) { Icon(painterResource(R.drawable.ic_redo), "Redo", Modifier.size(22.dp)) }
+                        IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
+                        note?.let { n -> NoteMenu(app, n, live, menu, { menu = false }, view::flush, onClose, onLinkNote = view::startLink, onExport = view::export, onShare = { f -> view.flush { shareNotes(app, context, listOf(id), f) } }) }
+                    },
+                )
+            },
+        ) { pad ->
+            note?.let { n ->
+                Column(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize().imePadding()) {
+                    NoteView(app, n, view, pdf, path, Modifier.weight(1f).fillMaxWidth())
+                }
+            }
+        }
+        // Outside the Scaffold, so the dim behind an open + menu covers the top bar too.
+        FabScrim(adding) { adding = false }
+        Box(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(16.dp)) {
+            // Out of the way while typing, and over the PDF viewer or an open image.
+            if (!viewing && !WindowInsets.isImeVisible) MorphFab(adding, { adding = it }) {
+                // A sub-note keeps this note, so only leaving for a sibling may discard it.
+                val open = { leaving: Boolean, make: suspend () -> String? ->
+                    adding = false
+                    view.flush {
+                        if (leaving) discard()
+                        app.scope.launch { make()?.let { withContext(Dispatchers.Main) { onOpenNote(it) } } }
                     }
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
-                    note?.let { n -> NoteMenu(app, n, live, menu, { menu = false }, view::flush, onClose, onLinkNote = view::startLink, onExport = view::export, onShare = { f -> view.flush { shareNotes(app, context, listOf(id), f) } }) }
-                },
-            )
-        },
-    ) { pad ->
-        note?.let { n ->
-            Column(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize().imePadding()) {
-                NoteView(app, n, view, pdf, path, Modifier.weight(1f).fillMaxWidth())
+                }
+                FabAction("New note", R.drawable.ic_square_pen) { open(true) { app.newNote(note?.notebookId, tag) } }
+                FabAction("New sub-note", R.drawable.ic_file_plus) { open(false) { app.newSubNote(id, tag) } }
+                FabAction("Add image", R.drawable.ic_image) { adding = false; view.pick("image") }
+                FabAction("Add PDF", R.drawable.ic_file_text) { adding = false; view.pick("pdf") }
             }
         }
     }

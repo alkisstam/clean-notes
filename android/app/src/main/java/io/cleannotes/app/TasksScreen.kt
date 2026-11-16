@@ -170,6 +170,22 @@ private fun TaskLine(app: App, t: TaskRef, today: String, onOpen: (String) -> Un
     }
 }
 
+/** Asks for notifications, then for exact alarms, when either is missing. */
+@Composable
+fun rememberReminderPermission(): () -> Unit {
+    val ctx = LocalContext.current
+    // Without exact alarms, Android may deliver a reminder minutes late; the setting lives on its own system screen.
+    val askExact = {
+        if (Build.VERSION.SDK_INT >= 31 && !ctx.getSystemService(AlarmManager::class.java).canScheduleExactAlarms())
+            ctx.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${ctx.packageName}")))
+    }
+    val notify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { askExact() }
+    return {
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) notify.launch(Manifest.permission.POST_NOTIFICATIONS)
+        else askExact()
+    }
+}
+
 /** Picks a due date and an optional reminder time on it; Clear removes both. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -178,12 +194,7 @@ fun DueDialog(initial: String?, initialRemind: String?, onDone: (String?, String
     var remind by remember { mutableStateOf(initialRemind) }
     var timing by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
-    // Without exact alarms, Android may deliver a reminder minutes late; the setting lives on its own system screen.
-    val askExact = {
-        if (Build.VERSION.SDK_INT >= 31 && !ctx.getSystemService(AlarmManager::class.java).canScheduleExactAlarms())
-            ctx.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${ctx.packageName}")))
-    }
-    val notify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { askExact() }
+    val allowReminders = rememberReminderPermission()
     DatePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
@@ -217,8 +228,7 @@ fun DueDialog(initial: String?, initialRemind: String?, onDone: (String?, String
                 TextButton(onClick = {
                     remind = "%02d:%02d".format(time.hour, time.minute)
                     timing = false
-                    if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) notify.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    else askExact()
+                    allowReminders()
                 }) { Text("Set") }
             },
             dismissButton = { TextButton(onClick = { timing = false }) { Text("Cancel") } },

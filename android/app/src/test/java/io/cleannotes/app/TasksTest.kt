@@ -95,4 +95,36 @@ class TasksTest {
         assertEquals(emptyList<Due>(), reminders(note.put("remindAt", JSONObject.NULL), utc))
         assertEquals(null, noteRemindAt(JSONObject()))
     }
+
+    private fun dt(s: String) = java.time.LocalDateTime.parse(s)
+
+    @Test fun repeatsCountFromTheFirstTimeAndCatchUp() {
+        assertEquals(dt("2026-02-28T09:00"), nextRepeat(dt("2026-01-31T09:00"), "monthly", dt("2026-02-01T00:00")))
+        assertEquals(dt("2026-03-31T09:00"), nextRepeat(dt("2026-01-31T09:00"), "monthly", dt("2026-03-01T00:00")))
+        assertEquals(dt("2026-02-28T08:00"), nextRepeat(dt("2024-02-29T08:00"), "yearly", dt("2026-01-01T00:00")))
+        assertEquals(dt("2028-02-29T08:00"), nextRepeat(dt("2024-02-29T08:00"), "yearly", dt("2027-03-01T00:00")))
+        assertEquals(dt("2026-11-20T18:30"), nextRepeat(dt("2026-11-10T18:30"), "daily", dt("2026-11-20T10:00")))
+        assertEquals(dt("2026-11-24T18:30"), nextRepeat(dt("2026-11-10T18:30"), "weekly", dt("2026-11-17T18:30")))
+    }
+
+    @Test fun groupsRemindersByDayAndDoneWithFavoritesFirst() {
+        fun row(id: String, raw: JSONObject) = noteRow(raw.put("id", id).put("title", id).put("content", JSONObject().put("type", "doc")).put("kind", "reminder")
+            .put("pinned", false).put("updatedAt", 1).put("trashedAt", JSONObject.NULL).put("notebookId", JSONObject.NULL).put("tags", JSONArray()))
+        val notes = listOf(
+            row("late", JSONObject().put("remindAt", "2026-11-15T09:00")),
+            row("fav", JSONObject().put("remindAt", "2026-11-16T20:00").put("favorite", true)),
+            row("later", JSONObject().put("remindAt", "2026-11-18T09:00")),
+            row("done", JSONObject().put("remindAt", "2026-11-16T07:00").put("doneAt", 5)),
+            row("none", JSONObject()),
+        )
+        val g = groupReminders(reminderItems(notes), java.time.LocalDate.parse("2026-11-16"))
+        assertEquals(listOf("fav", "late"), g.today.map { it.noteId })
+        assertEquals(listOf("later"), g.scheduled.map { it.noteId })
+        assertEquals(listOf("done"), g.completed.map { it.noteId })
+    }
+
+    @Test fun aDoneNoteReminderNoLongerFires() {
+        val note = JSONObject().put("id", "n").put("title", "Rent").put("content", doc).put("remindAt", "2026-11-20T18:30").put("doneAt", 1)
+        assertEquals(emptyList<Due>(), reminders(note, java.time.ZoneOffset.UTC).filter { it.key == "n" })
+    }
 }

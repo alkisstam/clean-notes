@@ -112,6 +112,8 @@ fun NotesApp(app: App, shared: MutableState<Intent?>) {
     // Notes left by following a link, so closing a note returns to the one that linked to it.
     var trail by rememberSaveable { mutableStateOf(listOf<String>()) }
     var connecting by rememberSaveable { mutableStateOf(false) }
+    // The reminder being added ("new") or edited.
+    var reminderId by rememberSaveable { mutableStateOf<String?>(null) }
     // One key per view, matching View in src/lib/types.ts: "all", "trash", "nb:<id>", ...
     var view by rememberSaveable { mutableStateOf("all") }
     // A PDF to open with the note, when the note was opened from the PDFs list.
@@ -148,6 +150,7 @@ fun NotesApp(app: App, shared: MutableState<Intent?>) {
         val intent = shared.value ?: return@LaunchedEffect
         if (intent.action == Reminders.OPEN_NOTE) {
             connecting = false
+            reminderId = null
             view = "all"
             trail = emptyList()
             openPdf = null
@@ -174,6 +177,9 @@ fun NotesApp(app: App, shared: MutableState<Intent?>) {
     } else if (view == "trash") {
         BackHandler { view = "all" }
         TrashScreen(app, onBack = { view = "all" })
+    } else if (reminderId != null) {
+        BackHandler { reminderId = null }
+        key(reminderId) { ReminderScreen(app, reminderId.takeIf { it != "new" }) { reminderId = null } }
     } else if (connecting) {
         BackHandler { connecting = false }
         PairScreen(app.sync, onBack = { connecting = false })
@@ -199,7 +205,16 @@ fun NotesApp(app: App, shared: MutableState<Intent?>) {
                         onSync = { runSync() },
                         onOpen = { openId = it },
                         onOpenPdf = { note, target -> openPdf = target; openId = note },
-                        onNew = { nb, tag -> scope.launch { openId = app.newNote(nb, tag) } },
+                        onNew = { nb, tag ->
+                            scope.launch {
+                                val id = app.newNote(nb, tag)
+                                // The new note grows out of the + button, as a card's note grows out of the card.
+                                openFrom.value = "$id|fab"
+                                openId = id
+                            }
+                        },
+                        onNewReminder = { reminderId = "new" },
+                        onEditReminder = { reminderId = it },
                     )
                 }
             }

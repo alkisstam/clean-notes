@@ -29,6 +29,51 @@ fun remindAt(t: TaskRef, zone: ZoneId = ZoneId.systemDefault()): Long? {
 /** The note's own reminder, local "YYYY-MM-DDTHH:MM", or null. */
 fun noteRemindAt(note: JSONObject): String? = if (note.isNull("remindAt")) null else note.optString("remindAt").ifEmpty { null }
 
+fun noteRepeat(note: JSONObject): String? = if (note.isNull("repeat")) null else note.optString("repeat").ifEmpty { null }
+
+fun noteDone(note: JSONObject) = !note.isNull("doneAt")
+
+/** The first time after [now] that a reminder repeating from [at] falls on; counted from [at] so Jan 31 stays the 31st where it can. */
+fun nextRepeat(at: LocalDateTime, repeat: String, now: LocalDateTime): LocalDateTime {
+    val step: (Long) -> LocalDateTime = when (repeat) {
+        "daily" -> at::plusDays
+        "weekly" -> at::plusWeeks
+        "monthly" -> at::plusMonths
+        else -> at::plusYears
+    }
+    var k = 1L
+    while (!step(k).isAfter(now)) k++
+    return step(k)
+}
+
+/** One line on the Reminders page: a note's own reminder (taskId null) or a to-do's. */
+data class ReminderItem(val key: String, val noteId: String, val taskId: String?, val title: String, val at: LocalDateTime, val repeat: String?, val favorite: Boolean, val done: Boolean, val kind: String)
+
+fun reminderItems(notes: List<NoteRow>): List<ReminderItem> = notes.filter { it.trashedAt == null && it.archivedAt == null }.flatMap { row ->
+    val note = JSONObject(row.raw)
+    val title = row.title.ifBlank { "Untitled" }
+    val own = noteRemindAt(note)?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }?.let {
+        ReminderItem(row.id, row.id, null, title, it, noteRepeat(note), note.optBoolean("favorite"), noteDone(note), row.kind)
+    }
+    val tasks = extractTasks(row.id, title, note.getJSONObject("content")).mapNotNull { t ->
+        val at = if (t.due == null || t.remind == null) null else runCatching { LocalDate.parse(t.due).atTime(LocalTime.parse(t.remind)) }.getOrNull()
+        at?.let { ReminderItem(row.id + t.id, row.id, t.id, t.text, it, null, false, t.done, row.kind) }
+    }
+    listOfNotNull(own) + tasks
+}
+
+data class ReminderGroups(val today: List<ReminderItem>, val scheduled: List<ReminderItem>, val completed: List<ReminderItem>)
+
+fun groupReminders(items: List<ReminderItem>, today: LocalDate): ReminderGroups {
+    val order = compareByDescending<ReminderItem> { it.favorite }.thenBy { it.at }
+    val open = items.filter { !it.done }
+    return ReminderGroups(
+        open.filter { !it.at.toLocalDate().isAfter(today) }.sortedWith(order),
+        open.filter { it.at.toLocalDate().isAfter(today) }.sortedWith(order),
+        items.filter { it.done }.sortedWith(compareByDescending { it.at }),
+    )
+}
+
 /** One notification to show: a to-do's or a whole note's. `key` keeps their notifications apart. */
 data class Due(val key: String, val noteId: String, val title: String, val text: String, val at: Long)
 
@@ -37,7 +82,7 @@ fun reminders(note: JSONObject, zone: ZoneId = ZoneId.systemDefault()): List<Due
     val id = note.getString("id")
     val title = note.optString("title").ifBlank { "Untitled" }
     val tasks = extractTasks(id, title, note.getJSONObject("content")).mapNotNull { t -> remindAt(t, zone)?.let { Due(t.id, id, t.text, title, it) } }
-    val own = noteRemindAt(note)?.let { runCatching { LocalDateTime.parse(it).atZone(zone).toInstant().toEpochMilli() }.getOrNull() }
+    val own = noteRemindAt(note)?.takeIf { !noteDone(note) }?.let { runCatching { LocalDateTime.parse(it).atZone(zone).toInstant().toEpochMilli() }.getOrNull() }
     return tasks + listOfNotNull(own?.let { Due(id, id, title, "Reminder", it) })
 }
 
@@ -94,6 +139,14 @@ object Reminders {
                     .setAutoCancel(true)
                     .build())
             }
+        }
+        // Repeating reminders that have come round move on to their next time; the notes collector then reschedules.
+        val nowLocal = LocalDateTime.now()
+        notes.filter { it.trashedAt == null && it.archivedAt == null }.forEach { row ->
+            val note = JSONObject(row.raw)
+            val repeat = noteRepeat(note) ?: return@forEach
+            val at = noteRemindAt(note)?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() } ?: return@forEach
+            if (!at.isAfter(nowLocal)) app.updateNote(row.id) { j, _ -> j.put("remindAt", nextRepeat(at, repeat, nowLocal).toString().take(16)) }
         }
         schedule(app, notes)
     }

@@ -4,6 +4,17 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.draw.rotate
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -53,6 +64,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -119,6 +131,8 @@ fun NoteList(
     onOpen: (String) -> Unit,
     onOpenPdf: (note: String, target: String) -> Unit,
     onNew: (notebook: String?, tag: String?) -> Unit,
+    onNewReminder: () -> Unit,
+    onEditReminder: (String) -> Unit,
 ) {
     val notebooks by app.db.dao().liveNotebooks().collectAsStateWithLifecycle(emptyList())
     val trashed by app.db.dao().liveTrash().collectAsStateWithLifecycle(emptyList())
@@ -155,6 +169,10 @@ fun NoteList(
     val tasks = remember(all) {
         groupTasks(all.filter { it.archivedAt == null }.flatMap { extractTasks(it.id, it.title, JSONObject(it.raw).getJSONObject("content")) }, dateKey())
     }
+    val reminderGroups = remember(all) { groupReminders(reminderItems(all), java.time.LocalDate.now()) }
+    var fabOpen by remember { mutableStateOf(false) }
+    var remindersSelecting by remember { mutableStateOf(false) }
+    LaunchedEffect(view) { fabOpen = false }
     val tree = remember(all) { buildTagTree(all.filter { it.archivedAt == null }.map { it.tagList }) }
     val current = notebooks.find { "nb:${it.id}" == view }
     // A notebook deleted on another device shows all notes, and new notes go outside any notebook.
@@ -190,6 +208,7 @@ fun NoteList(
     BackHandler(drawer.isOpen) { scope.launch { drawer.close() } }
     BackHandler(searching && !drawer.isOpen) { closeSearch() }
     BackHandler(selecting && !drawer.isOpen) { selected = null }
+    BackHandler(fabOpen && !drawer.isOpen) { fabOpen = false }
     ModalNavigationDrawer(
         drawerState = drawer,
         drawerContent = {
@@ -207,6 +226,7 @@ fun NoteList(
                     )
                     Item("All notes", R.drawable.ic_library, "all", listFor("all", all).size)
                     Item("Today", R.drawable.ic_calendar_days, "daily")
+                    Item("Reminders", R.drawable.ic_bell, "reminders", reminderGroups.today.size + reminderGroups.scheduled.size)
                     Item("Tasks", R.drawable.ic_circle_check, "tasks", tasks.overdue.size + tasks.today.size + tasks.upcoming.size + tasks.someday.size)
                     Item("PDFs", R.drawable.ic_file_text, "pdfs")
                     Item("Pinned", R.drawable.ic_pin, "pinned", listFor("pinned", all).size)
@@ -265,269 +285,279 @@ fun NoteList(
             }
         },
     ) {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = {
-                        if (selecting) Text("${picked.size} selected")
-                        else if (searching) {
-                            val focus = remember { FocusRequester() }
-                            LaunchedEffect(Unit) { focus.requestFocus() }
-                            TextField(
-                                query, { query = it }, Modifier.fillMaxWidth().focusRequester(focus),
-                                placeholder = { Text("Search notes and PDFs") },
-                                singleLine = true,
-                                colors = TextFieldDefaults.colors(
-                                    focusedContainerColor = Color.Transparent,
-                                    unfocusedContainerColor = Color.Transparent,
-                                    focusedIndicatorColor = Color.Transparent,
-                                    unfocusedIndicatorColor = Color.Transparent,
-                                ),
-                            )
-                        } else Column {
-                            Text(
-                                current?.name?.ifBlank { "Untitled" } ?: when (view) {
-                                    "pinned" -> "Pinned"
-                                    "archive" -> "Archive"
-                                    "daily" -> "Daily notes"
-                                    "tasks" -> "Tasks"
-                                    "pdfs" -> "PDFs"
-                                    else -> tag?.let { "#$it" } ?: "Notes"
-                                },
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                when {
-                                    !paired -> "On this device only"
-                                    syncedAt == 0L -> "Not synced yet"
-                                    else -> "Synced ${ago(syncedAt)}"
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        }
-                    },
-                    navigationIcon = {
-                        if (selecting) IconButton(onClick = { selected = null }) { Icon(Icons.Default.Close, "Leave select mode") }
-                        else if (searching) IconButton(onClick = closeSearch) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Close search") }
-                        else IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(Icons.Default.Menu, "Notebooks") }
-                    },
-                    actions = {
-                        if (selecting) {
-                            val allOn = rows.isNotEmpty() && picked.size == rows.size
-                            TextButton(onClick = { selected = if (allOn) emptyList() else rows.map { it.note.id } }) { Text(if (allOn) "Deselect all" else "Select all") }
-                            return@TopAppBar
-                        }
-                        if (searching) {
-                            if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, "Clear search") }
-                            return@TopAppBar
-                        }
-                        IconButton(onClick = { searching = true }) { Icon(Icons.Default.Search, "Search") }
-                        if (view != "daily" && view != "tasks" && view != "pdfs") IconButton(onClick = {
-                            grid = !grid
-                            ui.edit { putBoolean("grid", grid) }
-                        }) {
-                            Icon(painterResource(if (grid) R.drawable.ic_list else R.drawable.ic_layout_grid), if (grid) "List view" else "Grid view", Modifier.size(22.dp))
-                        }
-                        if (view != "daily" && view != "tasks" && view != "pdfs") Box {
-                            IconButton(onClick = { sorting = true }) { Icon(painterResource(R.drawable.ic_arrow_down_up), "Sort by", Modifier.size(22.dp)) }
-                            Menu(sorting, { sorting = false }) {
-                                listOf(Triple("updated", "Last edited", R.drawable.ic_clock), Triple("created", "Date created", R.drawable.ic_calendar_plus), Triple("title", "Title", R.drawable.ic_arrow_down_a_z)).forEach { (key, label, icon) ->
-                                    MenuItem(label, {
-                                        sorting = false
-                                        sort = key
-                                        ui.edit { putString("sort", key) }
-                                    }, icon, checked = sort == key)
-                                }
+        Box(Modifier.fillMaxSize()) {
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = {
+                            if (selecting) Text("${picked.size} selected")
+                            else if (searching) {
+                                val focus = remember { FocusRequester() }
+                                LaunchedEffect(Unit) { focus.requestFocus() }
+                                TextField(
+                                    query, { query = it }, Modifier.fillMaxWidth().focusRequester(focus),
+                                    placeholder = { Text("Search notes and PDFs") },
+                                    singleLine = true,
+                                    colors = TextFieldDefaults.colors(
+                                        focusedContainerColor = Color.Transparent,
+                                        unfocusedContainerColor = Color.Transparent,
+                                        focusedIndicatorColor = Color.Transparent,
+                                        unfocusedIndicatorColor = Color.Transparent,
+                                    ),
+                                )
+                            } else Column {
+                                Text(
+                                    current?.name?.ifBlank { "Untitled" } ?: when (view) {
+                                        "pinned" -> "Pinned"
+                                        "archive" -> "Archive"
+                                        "daily" -> "Daily notes"
+                                        "tasks" -> "Tasks"
+                                        "reminders" -> "Reminders"
+                                        "pdfs" -> "PDFs"
+                                        else -> tag?.let { "#$it" } ?: "Notes"
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    when {
+                                        !paired -> "On this device only"
+                                        syncedAt == 0L -> "Not synced yet"
+                                        else -> "Synced ${ago(syncedAt)}"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
                             }
-                        }
-                        IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
-                        Menu(menu, { menu = false }) {
-                            if (tag != null) {
-                                MenuItem("Rename tag", { menu = false; renamingTag = true }, R.drawable.ic_pencil)
-                                MenuItem("Delete tag", { menu = false; deletingTag = true }, R.drawable.ic_trash)
+                        },
+                        navigationIcon = {
+                            if (selecting) IconButton(onClick = { selected = null }) { Icon(Icons.Default.Close, "Leave select mode") }
+                            else if (searching) IconButton(onClick = closeSearch) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Close search") }
+                            else IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(Icons.Default.Menu, "Notebooks") }
+                        },
+                        actions = {
+                            if (selecting) {
+                                val allOn = rows.isNotEmpty() && picked.size == rows.size
+                                TextButton(onClick = { selected = if (allOn) emptyList() else rows.map { it.note.id } }) { Text(if (allOn) "Deselect all" else "Select all") }
+                                return@TopAppBar
                             }
-                            if (current != null) {
-                                MenuItem("Rename notebook", { menu = false; naming = current }, R.drawable.ic_pencil)
-                                MenuItem("Delete notebook", { menu = false; deleting = current }, R.drawable.ic_trash)
+                            if (searching) {
+                                if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, "Clear search") }
+                                return@TopAppBar
                             }
-                            if (view != "daily" && view != "tasks" && view != "pdfs") MenuItem("Select", { menu = false; selected = emptyList() }, R.drawable.ic_square_check)
-                            MenuItem("Settings", { menu = false; onView("settings") }, R.drawable.ic_settings_2)
-                        }
-                    },
-                )
-            },
-            snackbarHost = { SnackbarHost(snackbar) },
-            floatingActionButton = {
-                // New notes only where they would show up, as on the web.
-                if (!searching && !selecting && (view == "all" || current != null || tag != null)) {
-                    FloatingActionButton(onClick = { onNew(current?.id, tag) }) { Icon(Icons.Default.Add, "New note") }
-                }
-            },
-        ) { pad ->
-            PullToRefreshBox(syncing, onSync, Modifier.padding(pad).fillMaxSize()) {
-                // Searching covers every view, as on the web.
-                if (query.isNotBlank()) SearchBody(app, all, query, onOpen, onOpenPdf)
-                else if (view == "daily") DailyBody(app, all, onOpen)
-                else if (view == "tasks") TasksBody(app, tasks, onOpen)
-                else if (view == "pdfs") PdfsBody(app, all, onOpenPdf)
-                else {
-                    val toggle = { id: String ->
-                        shutNotes = if (id in shutNotes) shutNotes - id else shutNotes + id
-                        ui.edit { putStringSet("collapsedNotes", shutNotes) }
-                    }
-                    if (grid) {
-                        // Null is an empty cell, so a sibling group ending mid-row doesn't share it with the next group.
-                        val cells = buildList<Nested<NoteRow>?> {
-                            var half = false
-                            var group: String? = null
-                            for (r in rows) {
-                                val g = if (r.depth == 0) "" else r.note.parentId
-                                if (r.hasKids) half = false
-                                else {
-                                    if (half && g != group) { add(null); half = false }
-                                    half = !half
-                                }
-                                add(r)
-                                group = g
+                            IconButton(onClick = { searching = true }) { Icon(Icons.Default.Search, "Search") }
+                            if (view !in listOf("daily", "tasks", "reminders", "pdfs")) IconButton(onClick = {
+                                grid = !grid
+                                ui.edit { putBoolean("grid", grid) }
+                            }) {
+                                Icon(painterResource(if (grid) R.drawable.ic_list else R.drawable.ic_layout_grid), if (grid) "List view" else "Grid view", Modifier.size(22.dp))
                             }
-                        }
-                        // Sub-note lines go in the left column only, or they would also run between the two cards.
-                        val left = BooleanArray(cells.size).also {
-                            var col = 0
-                            cells.forEachIndexed { i, c ->
-                                if (c?.hasKids == true) { it[i] = true; col = 0 } else { it[i] = col == 0; col = 1 - col }
-                            }
-                        }
-                        val neutral = MaterialTheme.colorScheme.outline
-                        LazyVerticalGrid(
-                            GridCells.Fixed(2), Modifier.fillMaxSize(), gridState,
-                            contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = if (selecting) PILL_ROOM else 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            items(cells.size, key = { cells[it]?.note?.id ?: "gap-$it" }, span = { GridItemSpan(if (cells[it]?.hasKids == true) maxLineSpan else 1) }) { i ->
-                                val (note, depth, hasKids) = cells[i] ?: return@items
-                                var pressed by remember { mutableStateOf(false) }
-                                val sub = depth > 0
-                                val bg = noteColor(colors[note.id], dark)
-                                val rails = if (left[i]) railColors(note, depth, byId, colors, dark, neutral) else emptyList()
-                                val nextDepth = (i + 1 until cells.size).firstOrNull { left[it] && cells[it] != null }?.let { cells[it]!!.depth } ?: 0
-                                Box(Modifier.animateItem().drawBehind {
-                                    rails.forEachIndexed { k, c ->
-                                        val bottom = size.height + if (nextDepth > k) 8.dp.toPx() else 0f
-                                        drawRect(c, Offset((k * 12 + 4).dp.toPx(), 0f), Size(3.dp.toPx(), bottom))
+                            if (view !in listOf("daily", "tasks", "reminders", "pdfs")) Box {
+                                IconButton(onClick = { sorting = true }) { Icon(painterResource(R.drawable.ic_arrow_down_up), "Sort by", Modifier.size(22.dp)) }
+                                Menu(sorting, { sorting = false }) {
+                                    listOf(Triple("updated", "Last edited", R.drawable.ic_clock), Triple("created", "Date created", R.drawable.ic_calendar_plus), Triple("title", "Title", R.drawable.ic_arrow_down_a_z)).forEach { (key, label, icon) ->
+                                        MenuItem(label, {
+                                            sorting = false
+                                            sort = key
+                                            ui.edit { putString("sort", key) }
+                                        }, icon, checked = sort == key)
                                     }
-                                }.padding(start = (depth * 12).dp)) {
-                                    Surface(Modifier.noteBounds("${note.id}|list", 16.dp), shape = RoundedCornerShape(16.dp), color = bg ?: MaterialTheme.colorScheme.surfaceContainer) {
-                                        Column(Modifier.fillMaxWidth().combinedClickable(onClick = { if (selecting) toggleSelected(note.id) else { from.value = "${note.id}|list"; onOpen(note.id) } }, onLongClick = {
-                                            if (!selecting) {
-                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                pressed = true
+                                }
+                            }
+                            IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
+                            Menu(menu, { menu = false }) {
+                                if (tag != null) {
+                                    MenuItem("Rename tag", { menu = false; renamingTag = true }, R.drawable.ic_pencil)
+                                    MenuItem("Delete tag", { menu = false; deletingTag = true }, R.drawable.ic_trash)
+                                }
+                                if (current != null) {
+                                    MenuItem("Rename notebook", { menu = false; naming = current }, R.drawable.ic_pencil)
+                                    MenuItem("Delete notebook", { menu = false; deleting = current }, R.drawable.ic_trash)
+                                }
+                                if (view !in listOf("daily", "tasks", "reminders", "pdfs")) MenuItem("Select", { menu = false; selected = emptyList() }, R.drawable.ic_square_check)
+                                MenuItem("Settings", { menu = false; onView("settings") }, R.drawable.ic_settings_2)
+                            }
+                        },
+                    )
+                },
+                snackbarHost = { SnackbarHost(snackbar) },
+            ) { pad ->
+                PullToRefreshBox(syncing, onSync, Modifier.padding(pad).fillMaxSize()) {
+                    // Searching covers every view, as on the web.
+                    if (query.isNotBlank()) SearchBody(app, all, query, onOpen, onOpenPdf)
+                    else if (view == "daily") DailyBody(app, all, onOpen)
+                    else if (view == "tasks") TasksBody(app, tasks, onOpen)
+                    else if (view == "reminders") RemindersBody(app, reminderGroups, colors, onOpen, onEditReminder) { remindersSelecting = it }
+                    else if (view == "pdfs") PdfsBody(app, all, onOpenPdf)
+                    else {
+                        val toggle = { id: String ->
+                            shutNotes = if (id in shutNotes) shutNotes - id else shutNotes + id
+                            ui.edit { putStringSet("collapsedNotes", shutNotes) }
+                        }
+                        if (grid) {
+                            // Null is an empty cell, so a sibling group ending mid-row doesn't share it with the next group.
+                            val cells = buildList<Nested<NoteRow>?> {
+                                var half = false
+                                var group: String? = null
+                                for (r in rows) {
+                                    val g = if (r.depth == 0) "" else r.note.parentId
+                                    if (r.hasKids) half = false
+                                    else {
+                                        if (half && g != group) { add(null); half = false }
+                                        half = !half
+                                    }
+                                    add(r)
+                                    group = g
+                                }
+                            }
+                            // Sub-note lines go in the left column only, or they would also run between the two cards.
+                            val left = BooleanArray(cells.size).also {
+                                var col = 0
+                                cells.forEachIndexed { i, c ->
+                                    if (c?.hasKids == true) { it[i] = true; col = 0 } else { it[i] = col == 0; col = 1 - col }
+                                }
+                            }
+                            val neutral = MaterialTheme.colorScheme.outline
+                            LazyVerticalGrid(
+                                GridCells.Fixed(2), Modifier.fillMaxSize(), gridState,
+                                contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = if (selecting) PILL_ROOM else 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                items(cells.size, key = { cells[it]?.note?.id ?: "gap-$it" }, span = { GridItemSpan(if (cells[it]?.hasKids == true) maxLineSpan else 1) }) { i ->
+                                    val (note, depth, hasKids) = cells[i] ?: return@items
+                                    var pressed by remember { mutableStateOf(false) }
+                                    val sub = depth > 0
+                                    val bg = noteColor(colors[note.id], dark)
+                                    val rails = if (left[i]) railColors(note, depth, byId, colors, dark, neutral) else emptyList()
+                                    val nextDepth = (i + 1 until cells.size).firstOrNull { left[it] && cells[it] != null }?.let { cells[it]!!.depth } ?: 0
+                                    Box(Modifier.animateItem().drawBehind {
+                                        rails.forEachIndexed { k, c ->
+                                            val bottom = size.height + if (nextDepth > k) 8.dp.toPx() else 0f
+                                            drawRect(c, Offset((k * 12 + 4).dp.toPx(), 0f), Size(3.dp.toPx(), bottom))
+                                        }
+                                    }.padding(start = (depth * 12).dp)) {
+                                        Surface(Modifier.noteBounds("${note.id}|list", 16.dp), shape = RoundedCornerShape(16.dp), color = bg ?: MaterialTheme.colorScheme.surfaceContainer) {
+                                            Column(Modifier.fillMaxWidth().combinedClickable(onClick = { if (selecting) toggleSelected(note.id) else { from.value = "${note.id}|list"; onOpen(note.id) } }, onLongClick = {
+                                                if (!selecting) {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    pressed = true
+                                                }
+                                            }).padding(if (sub) 12.dp else 14.dp).padding(end = if (selecting) 26.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                NoteTitle(note, hasKids, note.id !in shutNotes, { toggle(note.id) }, if (sub) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium)
+                                                Text(
+                                                    note.text.take(400).ifBlank { "No content yet" },
+                                                    style = if (sub) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                                                    color = if (bg != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    minLines = if (sub) 4 else 6,
+                                                    maxLines = if (sub) 4 else 6,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
                                             }
-                                        }).padding(if (sub) 12.dp else 14.dp).padding(end = if (selecting) 26.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            NoteTitle(note, hasKids, note.id !in shutNotes, { toggle(note.id) }, if (sub) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium)
-                                            Text(
-                                                note.text.take(400).ifBlank { "No content yet" },
-                                                style = if (sub) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
-                                                color = if (bg != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                minLines = if (sub) 4 else 6,
-                                                maxLines = if (sub) 4 else 6,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
+                                        }
+                                        if (selecting) Tick(note.id in selected.orEmpty())
+                                        NoteMenu(app, note, all, pressed, { pressed = false }, { it() }, {}, centered = true, onSelect = { selected = listOf(note.id) })
+                                    }
+                                }
+                            }
+                        } else LazyColumn(Modifier.fillMaxSize(), listState, contentPadding = PaddingValues(bottom = if (selecting) PILL_ROOM else 0.dp)) {
+                        items(rows, key = { it.note.id }) { (note, depth, hasKids) ->
+                            var pressed by remember { mutableStateOf(false) }
+                            val bg = noteColor(colors[note.id], dark)
+                            val rails = railColors(note, depth, byId, colors, dark, MaterialTheme.colorScheme.outline)
+                            // Drawn over the whole item so the line crosses the divider too.
+                            Column(Modifier.animateItem().drawWithContent {
+                                drawContent()
+                                rails.forEachIndexed { k, c -> drawRect(c, Offset((k * 20 + 10).dp.toPx(), 0f), Size(3.dp.toPx(), size.height)) }
+                            }.padding(start = (depth * 20).dp)) {
+                            Box {
+                            Column(Modifier.fillMaxWidth().noteBounds("${note.id}|list", 0.dp).background(bg ?: Color.Transparent).combinedClickable(onClick = { if (selecting) toggleSelected(note.id) else { from.value = "${note.id}|list"; onOpen(note.id) } }, onLongClick = {
+                                if (!selecting) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    pressed = true
+                                }
+                            }).padding(start = 16.dp, top = 12.dp, end = if (selecting) 44.dp else 16.dp, bottom = 12.dp)) {
+                                NoteTitle(note, hasKids, note.id !in shutNotes, { toggle(note.id) }, MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    note.text.replace('\n', ' ').take(170).ifBlank { "No content yet" },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (bg != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            if (selecting) Tick(note.id in selected.orEmpty())
+                            NoteMenu(app, note, all, pressed, { pressed = false }, { it() }, {}, centered = true, onSelect = { selected = listOf(note.id) })
+                            }
+                            HorizontalDivider()
+                            }
+                        }
+                        }
+                        if (selecting) {
+                            // Daily notes cannot be pinned, copied or archived, as on the web.
+                            val plain = picked.filter { it.kind != "daily" }
+                            val plainIds = plain.map { it.id }
+                            val allPinned = plain.isNotEmpty() && plain.all { it.pinned }
+                            val inArchive = view == "archive"
+                            val done = { selected = null }
+                            var more by remember { mutableStateOf(false) }
+                            Surface(
+                                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp),
+                                shape = RoundedCornerShape(36.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                shadowElevation = 6.dp,
+                            ) {
+                                Row(Modifier.padding(horizontal = 8.dp, vertical = 10.dp)) {
+                                    val on = picked.isNotEmpty()
+                                    PillAction("Move", R.drawable.ic_folder_input, on) { bulkMoving = true }
+                                    PillAction("Share", R.drawable.ic_share_2, on) { bulkFormat = "share" }
+                                    PillAction(if (allPinned) "Unpin" else "Pin", R.drawable.ic_pin, plain.isNotEmpty()) {
+                                        app.scope.launch { plainIds.forEach { id -> app.updateNote(id) { j, _ -> j.put("pinned", !allPinned) } } }
+                                        done()
+                                    }
+                                    PillAction("Delete", R.drawable.ic_trash, on) {
+                                        val ids = pickedIds
+                                        app.scope.launch { ids.forEach { app.trashNote(it) } }
+                                        done()
+                                        scope.launch {
+                                            val label = if (ids.size == 1) "Moved to Trash" else "${ids.size} notes moved to Trash"
+                                            if (snackbar.showSnackbar(label, "Undo") == SnackbarResult.ActionPerformed) app.scope.launch { ids.forEach { app.restoreNote(it) } }
                                         }
                                     }
-                                    if (selecting) Tick(note.id in selected.orEmpty())
-                                    NoteMenu(app, note, all, pressed, { pressed = false }, { it() }, {}, centered = true, onSelect = { selected = listOf(note.id) })
-                                }
-                            }
-                        }
-                    } else LazyColumn(Modifier.fillMaxSize(), listState, contentPadding = PaddingValues(bottom = if (selecting) PILL_ROOM else 0.dp)) {
-                    items(rows, key = { it.note.id }) { (note, depth, hasKids) ->
-                        var pressed by remember { mutableStateOf(false) }
-                        val bg = noteColor(colors[note.id], dark)
-                        val rails = railColors(note, depth, byId, colors, dark, MaterialTheme.colorScheme.outline)
-                        // Drawn over the whole item so the line crosses the divider too.
-                        Column(Modifier.animateItem().drawWithContent {
-                            drawContent()
-                            rails.forEachIndexed { k, c -> drawRect(c, Offset((k * 20 + 10).dp.toPx(), 0f), Size(3.dp.toPx(), size.height)) }
-                        }.padding(start = (depth * 20).dp)) {
-                        Box {
-                        Column(Modifier.fillMaxWidth().noteBounds("${note.id}|list", 0.dp).background(bg ?: Color.Transparent).combinedClickable(onClick = { if (selecting) toggleSelected(note.id) else { from.value = "${note.id}|list"; onOpen(note.id) } }, onLongClick = {
-                            if (!selecting) {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                pressed = true
-                            }
-                        }).padding(start = 16.dp, top = 12.dp, end = if (selecting) 44.dp else 16.dp, bottom = 12.dp)) {
-                            NoteTitle(note, hasKids, note.id !in shutNotes, { toggle(note.id) }, MaterialTheme.typography.bodyLarge)
-                            Text(
-                                note.text.replace('\n', ' ').take(170).ifBlank { "No content yet" },
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = if (bg != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        if (selecting) Tick(note.id in selected.orEmpty())
-                        NoteMenu(app, note, all, pressed, { pressed = false }, { it() }, {}, centered = true, onSelect = { selected = listOf(note.id) })
-                        }
-                        HorizontalDivider()
-                        }
-                    }
-                    }
-                    if (selecting) {
-                        // Daily notes cannot be pinned, copied or archived, as on the web.
-                        val plain = picked.filter { it.kind != "daily" }
-                        val plainIds = plain.map { it.id }
-                        val allPinned = plain.isNotEmpty() && plain.all { it.pinned }
-                        val inArchive = view == "archive"
-                        val done = { selected = null }
-                        var more by remember { mutableStateOf(false) }
-                        Surface(
-                            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp),
-                            shape = RoundedCornerShape(36.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            shadowElevation = 6.dp,
-                        ) {
-                            Row(Modifier.padding(horizontal = 8.dp, vertical = 10.dp)) {
-                                val on = picked.isNotEmpty()
-                                PillAction("Move", R.drawable.ic_folder_input, on) { bulkMoving = true }
-                                PillAction("Share", R.drawable.ic_share_2, on) { bulkFormat = "share" }
-                                PillAction(if (allPinned) "Unpin" else "Pin", R.drawable.ic_pin, plain.isNotEmpty()) {
-                                    app.scope.launch { plainIds.forEach { id -> app.updateNote(id) { j, _ -> j.put("pinned", !allPinned) } } }
-                                    done()
-                                }
-                                PillAction("Delete", R.drawable.ic_trash, on) {
-                                    val ids = pickedIds
-                                    app.scope.launch { ids.forEach { app.trashNote(it) } }
-                                    done()
-                                    scope.launch {
-                                        val label = if (ids.size == 1) "Moved to Trash" else "${ids.size} notes moved to Trash"
-                                        if (snackbar.showSnackbar(label, "Undo") == SnackbarResult.ActionPerformed) app.scope.launch { ids.forEach { app.restoreNote(it) } }
-                                    }
-                                }
-                                Box(Modifier.weight(1f)) {
-                                    Row { PillAction("More", null, on) { more = true } }
-                                    Menu(more, { more = false }) {
-                                        MenuItem("Export", { more = false; bulkFormat = "export" }, R.drawable.ic_download)
-                                        if (plain.isNotEmpty()) {
-                                            MenuItem("Duplicate", {
-                                                more = false
-                                                app.scope.launch { plainIds.forEach { app.duplicateNote(it) } }
-                                                done()
-                                            }, R.drawable.ic_copy)
-                                            MenuItem(if (inArchive) "Unarchive" else "Archive", {
-                                                more = false
-                                                app.scope.launch { plainIds.forEach { id -> app.updateNote(id) { j, now -> j.put("archivedAt", if (inArchive) JSONObject.NULL else now) } } }
-                                                done()
-                                            }, R.drawable.ic_archive)
+                                    Box(Modifier.weight(1f)) {
+                                        Row { PillAction("More", null, on) { more = true } }
+                                        Menu(more, { more = false }) {
+                                            MenuItem("Export", { more = false; bulkFormat = "export" }, R.drawable.ic_download)
+                                            if (plain.isNotEmpty()) {
+                                                MenuItem("Duplicate", {
+                                                    more = false
+                                                    app.scope.launch { plainIds.forEach { app.duplicateNote(it) } }
+                                                    done()
+                                                }, R.drawable.ic_copy)
+                                                MenuItem(if (inArchive) "Unarchive" else "Archive", {
+                                                    more = false
+                                                    app.scope.launch { plainIds.forEach { id -> app.updateNote(id) { j, now -> j.put("archivedAt", if (inArchive) JSONObject.NULL else now) } } }
+                                                    done()
+                                                }, R.drawable.ic_archive)
+                                            }
+                                            MenuItem("Tags", { more = false; bulkTags = true }, R.drawable.ic_tag)
+                                            MenuItem("Color", { more = false; bulkColor = true }, R.drawable.ic_palette)
                                         }
-                                        MenuItem("Tags", { more = false; bulkTags = true }, R.drawable.ic_tag)
-                                        MenuItem("Color", { more = false; bulkColor = true }, R.drawable.ic_palette)
                                     }
                                 }
                             }
                         }
+                    }
+                }
+            }
+            // Outside the Scaffold, so the dim behind an open + menu covers the top bar too.
+            FabScrim(fabOpen) { fabOpen = false }
+            // New notes only where they would show up, as on the web; reminders from there and from Reminders.
+            val notesHere = view == "all" || current != null || tag != null
+            if (!searching && !selecting && !remindersSelecting && (notesHere || view == "reminders")) {
+                Box(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(16.dp)) {
+                    MorphFab(fabOpen, { fabOpen = it }, Modifier.noteBounds(from.value.takeIf { it.endsWith("|fab") }, 16.dp)) {
+                        if (notesHere) FabAction("New note", R.drawable.ic_square_pen) { fabOpen = false; onNew(current?.id, tag) }
+                        FabAction("Add reminder", R.drawable.ic_bell) { fabOpen = false; onNewReminder() }
                     }
                 }
             }
@@ -637,7 +667,7 @@ private fun BoxScope.Tick(on: Boolean) = Box(
 
 /** `icon` null is the three dots. */
 @Composable
-private fun androidx.compose.foundation.layout.RowScope.PillAction(label: String, icon: Int?, enabled: Boolean, onClick: () -> Unit) = Column(
+fun androidx.compose.foundation.layout.RowScope.PillAction(label: String, icon: Int?, enabled: Boolean, onClick: () -> Unit) = Column(
     Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).clickable(enabled = enabled, onClick = onClick).alpha(if (enabled) 1f else .38f).padding(vertical = 6.dp),
     horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -698,3 +728,45 @@ fun listFor(view: String, notes: List<NoteRow>, today: String = dateKey()): List
         else -> shelved.filter { it.kind == "note" }
     }
 }
+
+/** Dims the screen under an open + menu; a tap on it closes the menu. */
+@Composable
+fun FabScrim(open: Boolean, onClose: () -> Unit) = AnimatedVisibility(open, enter = fadeIn(), exit = fadeOut()) {
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.scrim.copy(alpha = .4f)).clickable(interactionSource = null, indication = null, onClick = onClose))
+}
+
+/** A + button that turns into × and unfolds [actions] above it. */
+@Composable
+fun MorphFab(open: Boolean, onOpen: (Boolean) -> Unit, modifier: Modifier = Modifier, actions: @Composable () -> Unit) {
+    val turn by animateFloatAsState(if (open) 135f else 0f, label = "fabTurn")
+    val corner by animateDpAsState(if (open) 28.dp else 16.dp, label = "fabCorner")
+    val fill by animateColorAsState(if (open) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer, label = "fabFill")
+    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        AnimatedVisibility(
+            open,
+            enter = fadeIn() + expandVertically(expandFrom = Alignment.Bottom) + scaleIn(transformOrigin = TransformOrigin(1f, 1f)),
+            exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Bottom) + scaleOut(transformOrigin = TransformOrigin(1f, 1f)),
+        ) {
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) { actions() }
+        }
+        FloatingActionButton(
+            onClick = { onOpen(!open) },
+            modifier = modifier,
+            shape = RoundedCornerShape(corner),
+            containerColor = fill,
+            contentColor = if (open) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer,
+        ) { Icon(Icons.Default.Add, if (open) "Close" else "Add", Modifier.rotate(turn)) }
+    }
+}
+
+/** One action of the expanded + button: its label beside a small button, both tappable. */
+@Composable
+fun FabAction(label: String, icon: Int, onClick: () -> Unit) =
+    Row(Modifier.padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Surface(onClick = onClick, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 3.dp) {
+            Text(label, Modifier.padding(16.dp, 8.dp), style = MaterialTheme.typography.labelLarge)
+        }
+        SmallFloatingActionButton(onClick = onClick, Modifier.padding(start = 12.dp), containerColor = MaterialTheme.colorScheme.secondaryContainer) {
+            Icon(painterResource(icon), label, Modifier.size(20.dp))
+        }
+    }

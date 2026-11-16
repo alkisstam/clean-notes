@@ -10,7 +10,7 @@ export interface Note {
   /** Note this one is nested under. Absent on top-level notes and ones made before sub-notes existed. */
   parentId?: string | null;
   tags: string[];
-  kind: 'note' | 'daily';
+  kind: 'note' | 'daily' | 'reminder';
   /** YYYY-MM-DD, daily notes only. */
   date?: string;
   pinned: boolean;
