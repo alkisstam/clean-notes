@@ -21,10 +21,12 @@ import java.time.LocalTime
 import java.time.ZoneId
 
 /** When a task's reminder fires, in epoch millis; null for done tasks and ones without a due date and time. */
-fun remindAt(t: TaskRef, zone: ZoneId = ZoneId.systemDefault()): Long? {
-    if (t.done || t.due == null || t.remind == null) return null
-    return runCatching { LocalDate.parse(t.due).atTime(LocalTime.parse(t.remind)).atZone(zone).toInstant().toEpochMilli() }.getOrNull()
-}
+fun remindAt(t: TaskRef, zone: ZoneId = ZoneId.systemDefault()): Long? =
+    if (t.done) null else taskAt(t)?.atZone(zone)?.toInstant()?.toEpochMilli()
+
+/** A task's local reminder time, done or not; null without a due date and time. */
+fun taskAt(t: TaskRef): LocalDateTime? =
+    if (t.due == null || t.remind == null) null else runCatching { LocalDate.parse(t.due).atTime(LocalTime.parse(t.remind)) }.getOrNull()
 
 /** The note's own reminder, local "YYYY-MM-DDTHH:MM", or null. */
 fun noteRemindAt(note: JSONObject): String? = if (note.isNull("remindAt")) null else note.optString("remindAt").ifEmpty { null }
@@ -64,8 +66,7 @@ fun reminderItems(notes: List<NoteRow>): List<ReminderItem> = notes.filter { it.
         ReminderItem(row.id, row.id, null, title, it, noteRepeat(note), note.optBoolean("favorite"), noteDone(note), row.kind)
     }
     val tasks = extractTasks(row.id, title, note.getJSONObject("content")).mapNotNull { t ->
-        val at = if (t.due == null || t.remind == null) null else runCatching { LocalDate.parse(t.due).atTime(LocalTime.parse(t.remind)) }.getOrNull()
-        at?.let { ReminderItem(row.id + t.id, row.id, t.id, t.text, it, null, false, t.done, row.kind) }
+        taskAt(t)?.let { ReminderItem(row.id + t.id, row.id, t.id, t.text, it, null, false, t.done, row.kind) }
     }
     listOfNotNull(own) + tasks
 }

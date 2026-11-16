@@ -190,8 +190,9 @@ class Sync(private val context: Context, private val db: AppDb) {
         var updated = 0
         var deleted = 0
         var oldest = Long.MAX_VALUE
+        val have = dao.attachmentIds().toSet()
         attachments.forEach {
-            if (dao.attachmentIds().contains(it.id)) return@forEach
+            if (it.id in have) return@forEach
             dao.put(it.copy(savedAt = savedAt))
             oldest = minOf(oldest, it.time)
         }

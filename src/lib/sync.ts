@@ -94,19 +94,18 @@ async function serverSync(): Promise<boolean> {
   const rows = <T>(table: SyncRecord['table']) => incoming.filter((r) => r.table === table).map((r) => r.data as T);
   const haveFiles = new Set(await db.files.toCollection().primaryKeys());
   const haveImages = new Set(await db.images.toCollection().primaryKeys());
-  const newFiles: PdfFile[] = [];
-  const blobs: PdfBlob[] = [];
-  for (const f of rows<PdfFile>('files').filter((f) => !haveFiles.has(f.id))) {
-    const blob = await downloadBlob(f.id, 'application/pdf');
-    if (!blob) continue;
-    newFiles.push(f);
-    blobs.push({ id: f.id, blob });
-  }
-  const newImages: NoteImage[] = [];
-  for (const { type, ...meta } of rows<Omit<NoteImage, 'blob'> & { type: string }>('images').filter((i) => !haveImages.has(i.id))) {
-    const blob = await downloadBlob(meta.id, type);
-    if (blob) newImages.push({ ...meta, blob });
-  }
+  // Fetched together; the browser already limits connections per host.
+  const [gotFiles, gotImages] = await Promise.all([
+    Promise.all(rows<PdfFile>('files').filter((f) => !haveFiles.has(f.id)).map(async (f) => ({ f, blob: await downloadBlob(f.id, 'application/pdf') }))),
+    Promise.all(
+      rows<Omit<NoteImage, 'blob'> & { type: string }>('images')
+        .filter((i) => !haveImages.has(i.id))
+        .map(async ({ type, ...meta }) => ({ meta, blob: await downloadBlob(meta.id, type) })),
+    ),
+  ]);
+  const newFiles: PdfFile[] = gotFiles.flatMap(({ f, blob }) => (blob ? [f] : []));
+  const blobs: PdfBlob[] = gotFiles.flatMap(({ f, blob }) => (blob ? [{ id: f.id, blob }] : []));
+  const newImages: NoteImage[] = gotImages.flatMap(({ meta, blob }) => (blob ? [{ ...meta, blob }] : []));
   const r = await mergeSnapshot({
     notes: rows<Note>('notes'),
     notebooks: rows<Notebook>('notebooks'),
