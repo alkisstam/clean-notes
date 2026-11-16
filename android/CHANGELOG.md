@@ -1,5 +1,18 @@
 # Changelog — Android app
 
+## 1.2.0 — 2026-11-16
+
+### Added
+- A Reminders page in the menu, grouped into Today, Scheduled and Completed. Reminders can be favorited, which keeps them at the top.
+- Add reminder makes a reminder with a title, to-dos, a date and time, and a repeat (daily, weekly, monthly or yearly). Completing it ticks its to-dos.
+- Long-press reminders to select several, then Complete, Favorite or Delete them together.
+- The + button in the notes list and inside a note opens into a menu of actions, including New note and Add reminder.
+
+### Fixed
+- A completed repeating reminder stays completed, instead of moving to its next time.
+- If the sync server loses its data or is restored from an older copy, the app now notices and sends all its notes again, instead of quietly no longer syncing.
+- Syncing very large PDFs and images no longer runs out of memory and closes the app.
+
 ## 1.1.0 — 2026-11-16
 
 ### Changed

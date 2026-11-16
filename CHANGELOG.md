@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.10 — 2026-11-16
+
+### Changed
+- The app is now called Sheaf Notes. Your notes, settings and sync stay as they were.
+
+### Fixed
+- The window can no longer be pulled away from the app by a link or file dropped outside the editor, so no outside page can reach the app's settings.
+- If the sync server loses its data or is restored from an older copy, devices now notice and send all their notes again, instead of quietly no longer syncing.
+- New PDFs and images from other devices download together, so the first sync of a large library is faster.
+
 ## 1.0.9 — 2026-11-14
 
 ### Added
