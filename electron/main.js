@@ -45,7 +45,7 @@ app.whenReady().then(() => {
   });
 
   // Electron forgets file grants on restart, which pauses auto-backup. Only bundled code runs here, so grant checks.
-  session.defaultSession.setPermissionCheckHandler(() => true);
+  session.defaultSession.setPermissionCheckHandler((_wc, _perm, origin) => origin.startsWith('app://'));
 
   const win = new BrowserWindow({
     width: 1280,
@@ -57,6 +57,10 @@ app.whenReady().then(() => {
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^(https?|mailto|tel):/.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
+  });
+  // A dropped link or file would otherwise load in this window with the desktop bridge.
+  win.webContents.on('will-navigate', (e, url) => {
+    if (!url.startsWith('app://')) e.preventDefault();
   });
   // The page draws the menu so it matches the app; it asks back here for the edit itself.
   win.webContents.on('context-menu', (_e, p) => {
