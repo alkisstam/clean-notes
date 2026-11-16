@@ -61,6 +61,13 @@ fun patchTask(doc: JSONObject, id: String, attrs: Map<String, Any?>): JSONObject
     return copy
 }
 
+/** A copy of the document with every task ticked, or every task unticked. */
+fun checkAllTasks(doc: JSONObject, checked: Boolean): JSONObject {
+    val copy = JSONObject(doc.toString())
+    walkDoc(copy) { n -> if (n.optString("type") == "taskItem") n.optJSONObject("attrs")?.put("checked", checked) }
+    return copy
+}
+
 fun appendTask(doc: JSONObject, id: String, text: String, due: String?, remind: String? = null): JSONObject {
     val copy = JSONObject(doc.toString())
     val item = JSONObject()

@@ -22,6 +22,12 @@ class TasksTest {
     @Test fun extractsNestedTasksWithTheirOwnTextSkippingEmptyOnes() =
         assertEquals(listOf(Triple("a", "Parent", false), Triple("b", "Child", true)), tasks(doc).map { Triple(it.id, it.text, it.done) })
 
+    @Test fun checksEveryTaskIncludingNestedOnes() {
+        assertEquals(listOf(true, true), tasks(checkAllTasks(doc, true)).map { it.done })
+        assertEquals(listOf(false, false), tasks(checkAllTasks(doc, false)).map { it.done })
+        assertEquals(listOf(false, true), tasks(doc).map { it.done })
+    }
+
     @Test fun patchesWithoutTouchingTheOriginal() {
         val next = patchTask(doc, "b", mapOf("checked" to false))
         assertEquals(false, tasks(next)[1].done)

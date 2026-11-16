@@ -175,7 +175,7 @@ fun RemindersBody(app: App, groups: ReminderGroups, colors: Map<String, String>,
                     app.scope.launch {
                         picked.forEach { r ->
                             if (r.taskId != null) app.setTaskAttrs(r.noteId, r.taskId, mapOf("checked" to !allDone))
-                            else app.updateNote(r.noteId) { n, now -> n.put("doneAt", if (allDone) JSONObject.NULL else now) }
+                            else setDone(app, r, !allDone)
                         }
                     }
                     done()
@@ -214,11 +214,15 @@ private suspend fun deleteReminder(app: App, r: ReminderItem) = when {
 /** A to-do ticks in its note; a repeating reminder moves to its next time; any other reminder is marked done, or undone. */
 private suspend fun tick(app: App, r: ReminderItem) {
     if (r.taskId != null) return app.setTaskAttrs(r.noteId, r.taskId, mapOf("checked" to !r.done))
-    app.updateNote(r.noteId) { n, now ->
-        when {
-            r.done -> n.put("doneAt", JSONObject.NULL)
-            r.repeat != null -> n.put("remindAt", nextRepeat(r.at, r.repeat, maxOf(r.at, LocalDateTime.now())).toString().take(16))
-            else -> n.put("doneAt", now)
-        }
+    if (r.repeat != null && !r.done) app.updateNote(r.noteId) { n, _ -> n.put("remindAt", nextRepeat(r.at, r.repeat, maxOf(r.at, LocalDateTime.now())).toString().take(16)) }
+    else setDone(app, r, !r.done)
+}
+
+/** Completes or restores a note's own reminder; one made with Add reminder ticks or unticks its to-dos along with it. */
+private suspend fun setDone(app: App, r: ReminderItem, done: Boolean) {
+    val own = r.kind == "reminder"
+    app.updateNote(r.noteId, contentChanged = own) { n, now ->
+        n.put("doneAt", if (done) now else JSONObject.NULL)
+        if (own) n.put("content", checkAllTasks(n.getJSONObject("content"), done))
     }
 }
