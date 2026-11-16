@@ -64,6 +64,17 @@ class App : Application() {
         if (sync.paired.value) SyncWorker.schedule(this)
         // Every change to the notes (edits, sync, ticks, trash) re-picks the next reminder.
         scope.launch { db.dao().liveNotes().debounce(1000).collect { Reminders.schedule(this@App, it) } }
+        scope.launch { seedIfEmpty() }
+    }
+
+    /** A short guide on first run, as seedIfEmpty() in src/lib/seed.ts. */
+    private suspend fun seedIfEmpty() {
+        if (ui.getBoolean("seeded", false)) return
+        if (db.dao().allNotes().isEmpty()) db.withTransaction {
+            db.dao().put(NotebookRow(SEED_NOTEBOOK, "Getting started", SEED_TIME, JSONObject().put("id", SEED_NOTEBOOK).put("name", "Getting started").put("createdAt", SEED_TIME).put("updatedAt", SEED_TIME).toString()))
+            db.dao().put(noteRow(welcomeNote()))
+        }
+        ui.edit { putBoolean("seeded", true) }
     }
 
     /** Runs writes from the editor one at a time, in the order they arrived. */
