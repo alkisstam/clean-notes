@@ -2,9 +2,10 @@ import type { JSONContent } from '@tiptap/core';
 import { db, uid } from './db';
 import { dateKey, longDate } from './dates';
 import { docText, emptyDoc, imageIdsIn, pdfIdsIn } from './doc';
-import { store } from './store';
+import { formatAt, linkedReminder, nextRepeat, type ReminderItem } from './reminders';
+import { store, type ReminderEdit } from './store';
 import { renameTagIn } from './tags';
-import { appendTask, patchTask } from './tasks';
+import { appendTask, checkAllTasks, extractTasks, patchTask, renameTask } from './tasks';
 import type { Note, Tombstone, View } from './types';
 
 /** The open editor registers this so other actions can save its pending keystrokes first. */
@@ -278,7 +279,7 @@ export async function openDaily(date: string = dateKey()) {
   s.openNote(note.id);
 }
 
-export async function setTaskAttrs(noteId: string, taskId: string, attrs: { checked?: boolean; due?: string | null }) {
+export async function setTaskAttrs(noteId: string, taskId: string, attrs: { checked?: boolean; due?: string | null; remind?: string | null }) {
   flushEditor();
   const note = await db.notes.get(noteId);
   if (!note) return;
@@ -323,4 +324,73 @@ export async function retag(from: string, to: string) {
   if (s.view.type === 'tag' && (s.view.path === from || s.view.path.startsWith(from + '/'))) {
     s.setView(to ? { type: 'tag', path: to + s.view.path.slice(from.length) } : { type: 'all' });
   }
+}
+
+/** Opens the reminder attached to a note, or a new one attached to it. */
+export async function remindNote(noteId: string) {
+  flushEditor();
+  const notes = await db.notes.where('kind').equals('reminder').toArray();
+  const linked = linkedReminder(notes, noteId);
+  store.getState().editReminder(linked ? { id: linked.id } : { attach: noteId });
+}
+
+/** Saves the reminder editor: a reminder note, new or changed, or a to-do's own text, date and time. */
+export async function saveReminder(edit: ReminderEdit, r: { title: string; at: string; repeat: string | null; favorite: boolean; noteRef: string | null; todos: { id: string; text: string; done: boolean }[] }) {
+  flushEditor();
+  if (edit.task) {
+    const { noteId, taskId } = edit.task;
+    const note = await db.notes.get(noteId);
+    if (!note) return;
+    const [day, time] = r.at.split('T');
+    let content = patchTask(note.content, taskId, { due: day, remind: time });
+    if (extractTasks(note).find((t) => t.id === taskId)?.text !== r.title) content = renameTask(content, taskId, r.title);
+    await db.notes.update(noteId, { content, text: docText(content), writer: `tasks:${uid()}`, updatedAt: Date.now() });
+    return;
+  }
+  const old = edit.id ? await db.notes.get(edit.id) : undefined;
+  // Only to-do lists are edited here; anything else in the document is kept as it is.
+  const kept = (old?.content.content ?? []).filter((b) => b.type !== 'taskList');
+  let content: JSONContent = { type: 'doc', content: kept };
+  for (const t of r.todos.filter((t) => t.text.trim())) {
+    content = appendTask(content, t.id, t.text.trim(), null);
+    if (t.done) content = patchTask(content, t.id, { checked: true });
+  }
+  if (!content.content?.length) content = emptyDoc();
+  const fields = { title: r.title, content, text: docText(content), remindAt: r.at, repeat: r.repeat, favorite: r.favorite, noteRef: r.noteRef };
+  if (old) {
+    // A new time makes a completed reminder active again.
+    await db.notes.update(old.id, { ...fields, ...(old.remindAt !== r.at && { doneAt: null }), writer: `tasks:${uid()}`, updatedAt: Date.now() });
+  } else {
+    await db.notes.add(baseNote({ ...fields, kind: 'reminder', doneAt: null }));
+  }
+}
+
+/** A to-do ticks in its note; a repeating reminder moves to its next time; any other reminder is marked done, or undone. */
+export async function tickReminder(r: ReminderItem) {
+  if (r.taskId) return setTaskAttrs(r.noteId, r.taskId, { checked: !r.done });
+  if (r.repeat && !r.done) {
+    const now = new Date();
+    return patchNote(r.noteId, { remindAt: formatAt(nextRepeat(r.at, r.repeat, r.at > now ? r.at : now)) });
+  }
+  return setReminderDone(r, !r.done);
+}
+
+/** Completes or restores a reminder; one made with Add reminder ticks or unticks its to-dos with it. Its attached note is left alone. */
+export async function setReminderDone(r: ReminderItem, done: boolean) {
+  if (r.taskId) return setTaskAttrs(r.noteId, r.taskId, { checked: done });
+  const note = await db.notes.get(r.noteId);
+  if (!note) return;
+  const own = note.kind === 'reminder';
+  await db.notes.update(r.noteId, {
+    doneAt: done ? Date.now() : null,
+    ...(own && { content: checkAllTasks(note.content, done), writer: `tasks:${uid()}` }),
+    updatedAt: Date.now(),
+  });
+}
+
+/** A reminder note goes to the Trash; other notes and to-dos only lose their reminder. */
+export async function deleteReminder(r: ReminderItem) {
+  if (r.taskId) return setTaskAttrs(r.noteId, r.taskId, { remind: null });
+  if (r.kind === 'reminder') return trashNotes([r.noteId]);
+  return patchNote(r.noteId, { remindAt: null, repeat: null });
 }

@@ -2,7 +2,7 @@ import { TaskItem } from '@tiptap/extension-list';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { dateKey, dueLabel } from '../lib/dates';
 
-type OpenDue = (anchor: DOMRect, due: string | null, set: (due: string | null) => void) => void;
+type OpenDue = (anchor: DOMRect, due: string | null, set: (due: string | null) => void, task: { id: string; remind: string | null }) => void;
 type HostDue = (due: string | null, remind: string | null, set: (due: string | null, remind: string | null) => void, task: string) => void;
 /** The page shows its own calendar by the button, since Chromium on Wayland opens the native one in the screen's corner. A host may show its own instead, as the Android app does to match its Tasks screen. */
 export const dueHooks = { open: null as OpenDue | null, host: null as HostDue | null };
@@ -74,7 +74,7 @@ export const TaskItemDue = TaskItem.extend({
       check.addEventListener('change', () => setAttrs({ checked: check.checked }));
       dueBtn.addEventListener('click', () => {
         if (dueHooks.host) return dueHooks.host(node.attrs.due, node.attrs.remind, (due, remind) => setAttrs({ due, remind }), node.attrs.id);
-        if (dueHooks.open) return dueHooks.open(dueBtn.getBoundingClientRect(), node.attrs.due, (due) => setAttrs(due ? { due } : { due, remind: null }));
+        if (dueHooks.open) return dueHooks.open(dueBtn.getBoundingClientRect(), node.attrs.due, (due) => setAttrs(due ? { due } : { due, remind: null }), { id: node.attrs.id, remind: node.attrs.remind });
         dueInput.value = node.attrs.due ?? '';
         try {
           dueInput.showPicker();

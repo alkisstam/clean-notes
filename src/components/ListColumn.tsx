@@ -20,6 +20,8 @@ import { Menu, MenuPopup, type MenuItem } from './Overlay';
 import { dropProps, NOTE_DRAG } from './Sidebar';
 import { noteMenuItems } from './EditorPane';
 import { currentEditor } from '../editor/NoteEditor';
+import { RemindersBody } from './Reminders';
+import { linkedReminder } from '../lib/reminders';
 
 const Hit = ({ s }: { s: Snippet }) => (
   <>
@@ -53,11 +55,17 @@ const NoteRow = memo(function NoteRow({ note, active, notebook, hit, index, acti
   const hasPdf = useMemo(() => pdfIdsIn(note.content).length > 0, [note.content]);
   const hasImage = useMemo(() => imageIdsIn(note.content).length > 0, [note.content]);
   const [ctx, setCtx] = useState<DOMRect | null>(null);
+  // Only looked up while the menu is open, for its Add or Edit reminder.
+  const reminded = useLiveQuery(
+    async () => (ctx ? Boolean(linkedReminder(await db.notes.where('kind').equals('reminder').toArray(), note.id)) : false),
+    [ctx, note.id],
+    false,
+  );
   const bg = noteBg(note.color);
   const ctxItems: MenuItem[] = ctx
     ? [
         ...(selectable ? [{ label: 'Select', icon: <SquareCheck size={14} />, run: () => store.getState().setSelected([note.id]) }] : []),
-        ...noteMenuItems(note, active ? currentEditor() : null),
+        ...noteMenuItems(note, active ? currentEditor() : null, reminded),
       ]
     : [];
   return (
@@ -265,6 +273,7 @@ function viewTitle(view: View, notebooks: Notebook[], selectedDate: string) {
     case 'all': return 'All notes';
     case 'daily': return selectedDate === dateKey() ? 'Today' : shortDate(selectedDate);
     case 'tasks': return 'Tasks';
+    case 'reminders': return 'Reminders';
     case 'pdfs': return 'PDFs';
     case 'pinned': return 'Pinned';
     case 'archive': return 'Archive';
@@ -465,6 +474,8 @@ export function ListColumn({ notes, notebooks, searchRef }: { notes: Note[]; not
     );
   } else if (view.type === 'tasks') {
     body = <TasksBody notes={notes} />;
+  } else if (view.type === 'reminders') {
+    body = <RemindersBody notes={notes} />;
   } else if (view.type === 'pdfs') {
     body = pdfFiles.length ? (
       <div className="list-scroll">
@@ -570,6 +581,11 @@ export function ListColumn({ notes, notebooks, searchRef }: { notes: Note[]; not
         <h1 title={title}>{title}</h1>
         {canCreate && (
           <button type="button" className="icon-btn accent" aria-label="New note" title="New note (Alt N)" onClick={() => void createNote()}>
+            <Plus size={17} />
+          </button>
+        )}
+        {view.type === 'reminders' && !searching && (
+          <button type="button" className="icon-btn accent" aria-label="New reminder" title="New reminder" onClick={() => store.getState().editReminder({})}>
             <Plus size={17} />
           </button>
         )}

@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Download, FileClock, FolderPlus, HardDrive, Laptop, Moon, QrCode, RefreshCw, Sun, Upload, X } from 'lucide-react';
+import { Bell, BellOff, Download, FileClock, FolderPlus, HardDrive, Laptop, Moon, QrCode, RefreshCw, Sun, Upload, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { autoBackupSupported, chooseBackupFile, exportBackup, importBackup, stopAutoBackup } from '../lib/backup';
 import { relativeTime } from '../lib/dates';
@@ -153,6 +153,45 @@ const SHORTCUTS: [string, string][] = [
   ['Ctrl click', 'Open a link'],
 ];
 
+/** Reminders only fire while the app runs, so this says where, and on desktop lets it keep running. */
+function RemindersSettings() {
+  const [perm, setPerm] = useState(() => ('Notification' in window ? Notification.permission : 'denied'));
+  const [prefs, setPrefs] = useState<{ background: boolean; autostart: boolean } | null>(null);
+  useEffect(() => {
+    void window.desktop?.prefs().then(setPrefs);
+  }, []);
+  const change = (p: { background?: boolean; autostart?: boolean }) => {
+    setPrefs((old) => old && { ...old, ...p });
+    void window.desktop!.setPrefs(p);
+  };
+  return (
+    <section className="settings-section">
+      <h3>Reminders</h3>
+      {window.desktop ? (
+        <>
+          <p>Reminders show while Sheaf Notes is running.</p>
+          {prefs && (
+            <div className="settings-checks">
+              <label><input type="checkbox" checked={prefs.background} onChange={(e) => change({ background: e.target.checked })} /> Keep running in the tray when the window is closed</label>
+              <label><input type="checkbox" checked={prefs.autostart} onChange={(e) => change({ autostart: e.target.checked })} /> Start at login, in the tray</label>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <p>Reminders show while Sheaf Notes is open in a tab or as an installed app. The phone app reminds you even when it is closed.</p>
+          {perm === 'default' && (
+            <div className="settings-row">
+              <button type="button" className="btn" onClick={() => void Notification.requestPermission().then(setPerm)}><Bell size={14} /> Allow notifications</button>
+            </div>
+          )}
+          {perm === 'denied' && <p className="settings-stat"><BellOff size={14} /><span>Notifications are blocked. Allow them in the browser's site settings.</span></p>}
+        </>
+      )}
+    </section>
+  );
+}
+
 function Settings({ close }: { close: () => void }) {
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
@@ -207,6 +246,8 @@ function Settings({ close }: { close: () => void }) {
           ))}
         </div>
       </section>
+
+      <RemindersSettings />
 
       <section className="settings-section">
         <h3>Your data</h3>

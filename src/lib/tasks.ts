@@ -15,16 +15,37 @@ export function extractTasks(note: Pick<Note, 'id' | 'title' | 'content'>): Task
       text,
       done: Boolean(n.attrs.checked),
       due: n.attrs.due ?? null,
+      remind: n.attrs.remind ?? null,
     });
   });
   return tasks;
 }
 
 /** Returns a copy of the document with one task's attributes changed. */
-export function patchTask(doc: JSONContent, id: string, attrs: { checked?: boolean; due?: string | null }): JSONContent {
+export function patchTask(doc: JSONContent, id: string, attrs: { checked?: boolean; due?: string | null; remind?: string | null }): JSONContent {
   const copy: JSONContent = structuredClone(doc);
   walkDoc(copy, (n) => {
     if (n.type === 'taskItem' && n.attrs?.id === id) n.attrs = { ...n.attrs, ...attrs };
+  });
+  return copy;
+}
+
+/** A copy of the document with every task ticked, or every task unticked. */
+export function checkAllTasks(doc: JSONContent, checked: boolean): JSONContent {
+  const copy: JSONContent = structuredClone(doc);
+  walkDoc(copy, (n) => {
+    if (n.type === 'taskItem') n.attrs = { ...n.attrs, checked };
+  });
+  return copy;
+}
+
+/** A copy of the document with one task's own text replaced; its formatting goes with it. */
+export function renameTask(doc: JSONContent, id: string, text: string): JSONContent {
+  const copy: JSONContent = structuredClone(doc);
+  walkDoc(copy, (n) => {
+    if (n.type !== 'taskItem' || n.attrs?.id !== id) return;
+    const para = n.content?.find((c) => c.type === 'paragraph');
+    if (para) para.content = [{ type: 'text', text }];
   });
   return copy;
 }

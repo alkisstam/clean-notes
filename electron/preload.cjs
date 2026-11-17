@@ -8,4 +8,7 @@ contextBridge.exposeInMainWorld('desktop', {
   printPdf: (html, name) => ipcRenderer.invoke('print-pdf', html, name),
   sharePdf: (html, name) => ipcRenderer.invoke('share-pdf', html, name),
   shareFile: (bytes, name) => ipcRenderer.invoke('share-file', bytes, name),
+  show: () => ipcRenderer.send('show-window'),
+  prefs: () => ipcRenderer.invoke('desktop-prefs'),
+  setPrefs: (p) => ipcRenderer.invoke('set-desktop-prefs', p),
 });

@@ -1,11 +1,12 @@
 import {
-  Archive, BookOpen, CalendarDays, ChevronRight, CircleCheck, FileText, Hash, Layers, Library, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Pin, Plus, Settings2, Sun, Trash2, Laptop,
+  Archive, Bell, BookOpen, CalendarDays, ChevronRight, CircleCheck, FileText, Hash, Layers, Library, Moon, PanelLeftClose, PanelLeftOpen, Pencil, Pin, Plus, Settings2, Sun, Trash2, Laptop,
 } from 'lucide-react';
 import { useMemo, type DragEvent, type ReactNode } from 'react';
 import { createNotebook, deleteNotebook, editTags, openDaily, patchNote, renameNotebook, retag } from '../lib/actions';
 import { store, useStore, type ThemePref } from '../lib/store';
 import { buildTagTree, normalizeTag, type TagNode } from '../lib/tags';
 import { extractTasks } from '../lib/tasks';
+import { groupReminders, reminderItems } from '../lib/reminders';
 import type { Note, Notebook, View } from '../lib/types';
 import { Menu } from './Overlay';
 
@@ -160,6 +161,7 @@ export function Sidebar({ notes, notebooks }: { notes: Note[]; notebooks: Notebo
   const live = useMemo(() => notes.filter((n) => !n.trashedAt), [notes]);
   const shelved = useMemo(() => live.filter((n) => !n.archivedAt), [live]);
   const tree = useMemo(() => buildTagTree(shelved.map((n) => n.tags)), [shelved]);
+  const openReminders = useMemo(() => { const g = groupReminders(reminderItems(notes), new Date()); return g.today.length + g.scheduled.length; }, [notes]);
   const openTasks = useMemo(() => shelved.reduce((sum, n) => sum + extractTasks(n).filter((t) => !t.done).length, 0), [shelved]);
   const trashCount = notes.length - live.length;
   const archiveCount = live.length - shelved.length;
@@ -178,6 +180,7 @@ export function Sidebar({ notes, notebooks }: { notes: Note[]; notebooks: Notebo
           <NavRow view={{ type: 'all' }} icon={<Library size={15} />} label="All notes" count={allCount} />
           <NavRow view={{ type: 'daily' }} icon={<CalendarDays size={15} />} label="Today" onClick={() => void openDaily()} />
           <NavRow view={{ type: 'tasks' }} icon={<CircleCheck size={15} />} label="Tasks" count={openTasks} />
+          <NavRow view={{ type: 'reminders' }} icon={<Bell size={15} />} label="Reminders" count={openReminders} />
           <NavRow view={{ type: 'pdfs' }} icon={<FileText size={15} />} label="PDFs" />
           <NavRow view={{ type: 'pinned' }} icon={<Pin size={15} />} label="Pinned" count={pinnedCount} />
           <NavRow view={{ type: 'archive' }} icon={<Archive size={15} />} label="Archive" count={archiveCount} />

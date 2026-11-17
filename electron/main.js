@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session, shell, Tray } from 'electron';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,10 +15,71 @@ protocol.registerSchemesAsPrivileged([
 const serverFile = () => path.join(app.getPath('userData'), 'sync-server.txt');
 let server = '';
 
+// Reminders only fire while the page runs, so by default closing the window leaves the app in the tray.
+const prefsFile = () => path.join(app.getPath('userData'), 'desktop.json');
+let prefs = { background: true };
+const autostartFile = () => path.join(app.getPath('appData'), 'autostart', 'sheaf-notes.desktop');
+let win = null;
+let tray = null;
+let quitting = false;
+
+// A second launch, from the menu or at login, shows the running window instead of opening another.
+if (!app.requestSingleInstanceLock()) app.exit();
+app.on('second-instance', () => showWindow());
+
+function showWindow() {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+function setTray(on) {
+  if (on && !tray) {
+    tray = new Tray(path.join(dist, 'icons', 'icon-192.png'));
+    tray.setToolTip('Sheaf Notes');
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: 'Open Sheaf Notes', click: showWindow },
+      { label: 'Quit', click: () => { quitting = true; app.quit(); } },
+    ]));
+    tray.on('click', showWindow);
+  } else if (!on && tray) {
+    tray.destroy();
+    tray = null;
+  }
+}
+
+// Linux has no login item API, so start at login is a desktop entry in ~/.config/autostart. It starts hidden, in the tray.
+function autostart() {
+  if (process.platform !== 'linux') return app.getLoginItemSettings().openAtLogin;
+  return fs.existsSync(autostartFile());
+}
+function setAutostart(on) {
+  if (process.platform !== 'linux') return app.setLoginItemSettings({ openAtLogin: on, args: ['--hidden'] });
+  if (!on) return fs.rmSync(autostartFile(), { force: true });
+  // An AppImage runs from a temporary mount, so its own file is what starts it again.
+  const exe = process.env.APPIMAGE || process.execPath;
+  fs.mkdirSync(path.dirname(autostartFile()), { recursive: true });
+  fs.writeFileSync(autostartFile(), `[Desktop Entry]\nType=Application\nName=Sheaf Notes\nExec="${exe}" --hidden\nX-GNOME-Autostart-enabled=true\n`);
+}
+
 app.whenReady().then(() => {
   try {
     server = fs.readFileSync(serverFile(), 'utf8').trim();
   } catch {}
+  try {
+    prefs = { ...prefs, ...JSON.parse(fs.readFileSync(prefsFile(), 'utf8')) };
+  } catch {}
+  ipcMain.handle('desktop-prefs', () => ({ background: prefs.background, autostart: autostart() }));
+  ipcMain.handle('set-desktop-prefs', (_e, next) => {
+    if (typeof next.background === 'boolean') {
+      prefs.background = next.background;
+      fs.writeFileSync(prefsFile(), JSON.stringify(prefs));
+      setTray(prefs.background);
+    }
+    if (typeof next.autostart === 'boolean') setAutostart(next.autostart);
+  });
+  ipcMain.on('show-window', showWindow);
   ipcMain.handle('sync-server', () => server);
   ipcMain.handle('set-sync-server', (_e, url) => {
     const u = new URL(url);
@@ -47,9 +108,10 @@ app.whenReady().then(() => {
   // Electron forgets file grants on restart, which pauses auto-backup. Only bundled code runs here, so grant checks.
   session.defaultSession.setPermissionCheckHandler((_wc, _perm, origin) => origin.startsWith('app://'));
 
-  const win = new BrowserWindow({
+  win = new BrowserWindow({
     width: 1280,
     height: 840,
+    show: !process.argv.includes('--hidden'),
     autoHideMenuBar: true,
     icon: path.join(dist, 'icons', 'icon-512.png'),
     webPreferences: { preload: path.join(import.meta.dirname, 'preload.cjs') },
@@ -66,8 +128,17 @@ app.whenReady().then(() => {
   win.webContents.on('context-menu', (_e, p) => {
     if (p.isEditable) win.webContents.send('edit-menu', { x: p.x, y: p.y, flags: p.editFlags });
   });
+  win.on('close', (e) => {
+    if (prefs.background && !quitting) {
+      e.preventDefault();
+      win.hide();
+    }
+  });
+  setTray(prefs.background);
   void win.loadURL('app://notes/index.html');
 });
+
+app.on('before-quit', () => (quitting = true));
 
 const roles = new Set(['cut', 'copy', 'paste', 'undo', 'redo', 'selectAll']);
 ipcMain.on('edit', (e, role) => {
@@ -110,4 +181,6 @@ function revealShared(bytes, name) {
 ipcMain.handle('share-pdf', async (_e, html, name) => revealShared(await renderPdf(html), name));
 ipcMain.handle('share-file', (_e, bytes, name) => revealShared(Buffer.from(bytes), name));
 
-app.on('window-all-closed', () => app.quit());
+app.on('window-all-closed', () => {
+  if (!prefs.background) app.quit();
+});

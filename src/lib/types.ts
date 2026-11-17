@@ -21,8 +21,16 @@ export interface Note {
   archivedAt?: number | null;
   /** Preset id from colors.ts, like "soft-rose", so each theme can pick its own shade. */
   color?: string | null;
-  /** Local "YYYY-MM-DDTHH:MM" when the Android app reminds about the note. */
+  /** Local "YYYY-MM-DDTHH:MM" when a reminder note (kind "reminder") fires. */
   remindAt?: string | null;
+  /** "daily", "weekly", "monthly" or "yearly", on reminder notes. */
+  repeat?: string | null;
+  /** Keeps a reminder at the top of its group. */
+  favorite?: boolean;
+  /** When a reminder was completed. */
+  doneAt?: number | null;
+  /** The note a reminder is attached to. */
+  noteRef?: string | null;
   /** Which editor instance wrote last, so an editor ignores its own echoes. */
   writer?: string;
 }
@@ -72,6 +80,7 @@ export type View =
   | { type: 'all' }
   | { type: 'daily' }
   | { type: 'tasks' }
+  | { type: 'reminders' }
   | { type: 'pdfs' }
   | { type: 'pinned' }
   | { type: 'archive' }
@@ -86,4 +95,6 @@ export interface TaskRef {
   text: string;
   done: boolean;
   due: string | null;
+  /** "HH:MM" on the due date, when the to-do has a reminder. */
+  remind?: string | null;
 }

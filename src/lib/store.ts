@@ -46,8 +46,16 @@ export type DialogState =
   | { kind: 'bulkTags'; noteIds: string[]; common: string[]; allTags: string[] }
   | { kind: 'pickNote'; onPick: (id: string, title: string) => void; onUnlink?: () => void };
 
+/** The reminder open in the editor pane: an existing one ([id]), a new one (maybe [attach]ed to a note), or a to-do's. */
+export interface ReminderEdit {
+  id?: string;
+  attach?: string;
+  task?: { noteId: string; taskId: string };
+}
+
 interface State {
   view: View;
+  reminder: ReminderEdit | null;
   noteId: string | null;
   query: string;
   dailyDate: string;
@@ -73,6 +81,7 @@ interface State {
   fwd: string[];
 
   setView: (view: View) => void;
+  editReminder: (r: ReminderEdit | null) => void;
   openNote: (id: string | null, opts?: { taskId?: string; focusTitle?: boolean }) => void;
   travel: (dir: 'back' | 'fwd') => Promise<void>;
   setQuery: (q: string) => void;
@@ -100,6 +109,7 @@ let toastId = 0;
 
 export const useStore = create<State>((set, get) => ({
   view: read<View>('cn.view', { type: 'all' }),
+  reminder: null,
   noteId: read<string | null>('cn.note', null),
   query: '',
   dailyDate: dateKey(),
@@ -132,11 +142,13 @@ export const useStore = create<State>((set, get) => ({
     write('cn.view', view);
     set({ view, query: '', pane: 'list', selected: null });
   },
+  editReminder: (reminder) => set({ reminder, pane: reminder ? 'editor' : get().pane }),
   openNote: (noteId, opts) => {
     write('cn.note', noteId);
     const prev = get().noteId;
     set({
       noteId,
+      reminder: null,
       pane: noteId ? 'editor' : get().pane,
       focusTaskId: opts?.taskId ?? null,
       focusTitle: opts?.focusTitle ?? false,

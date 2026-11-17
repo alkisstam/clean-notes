@@ -6,7 +6,8 @@ import { exportJson, exportName, exportPage, exportPages, exportText } from '../
 import type { Note } from '../src/lib/types';
 import { findRanges, includesFolded, snippet } from '../src/lib/search';
 import { buildTagTree, nestNotes, normalizeTag, noteHasTag, renameTagIn } from '../src/lib/tags';
-import { appendTask, extractTasks, groupTasks, patchTask } from '../src/lib/tasks';
+import { appendTask, extractTasks, groupTasks, patchTask, renameTask } from '../src/lib/tasks';
+import { advancedRemindAt, dueReminders, formatAt, groupReminders, linkedReminder, nextRepeat, parseAt, reminderItems } from '../src/lib/reminders';
 import { cellOverrides, clearKeys, sanitizeStyle, styleAttrs } from '../src/editor/TableStyle';
 
 describe('table style', () => {
@@ -234,5 +235,66 @@ describe('export', () => {
   it('strips characters files cannot have', () => {
     expect(exportName('a/b:c?', 'pdf')).toBe('abc.pdf');
     expect(exportName(' / ', 'txt')).toBe('Untitled.txt');
+  });
+});
+
+// Same cases as TasksTest.kt on Android.
+describe('reminders', () => {
+  const at = (s: string) => parseAt(s)!;
+  const todo = (id: string, text: string, due: string | null = null, remind: string | null = null) => ({
+    type: 'taskItem',
+    attrs: { id, checked: false, due, remind },
+    content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+  });
+  const note = (id: string, patch: Partial<Note> = {}): Note => ({
+    id, title: id, content: { type: 'doc', content: [] }, text: '', notebookId: null, tags: [], kind: 'reminder', pinned: false, createdAt: 1, updatedAt: 1, trashedAt: null, ...patch,
+  });
+
+  it('repeats from the first time, keeping the 31st where the month has it', () => {
+    expect(formatAt(nextRepeat(at('2026-01-31T09:00'), 'monthly', at('2026-02-01T00:00')))).toBe('2026-02-28T09:00');
+    expect(formatAt(nextRepeat(at('2026-01-31T09:00'), 'monthly', at('2026-03-01T00:00')))).toBe('2026-03-31T09:00');
+    expect(formatAt(nextRepeat(at('2026-11-10T18:30'), 'daily', at('2026-11-16T12:00')))).toBe('2026-11-16T18:30');
+    expect(formatAt(nextRepeat(at('2024-02-29T08:00'), 'yearly', at('2024-03-01T00:00')))).toBe('2025-02-28T08:00');
+  });
+
+  it('moves a passed repeating reminder on, but not a completed or future one', () => {
+    const now = at('2026-11-16T12:00');
+    expect(advancedRemindAt(note('n', { remindAt: '2026-11-10T18:30', repeat: 'weekly' }), now)).toBe('2026-11-17T18:30');
+    expect(advancedRemindAt(note('n', { remindAt: '2026-11-20T18:30', repeat: 'weekly' }), now)).toBeNull();
+    expect(advancedRemindAt(note('n', { remindAt: '2026-11-10T18:30', repeat: 'weekly', doneAt: 5 }), now)).toBeNull();
+  });
+
+  it('groups by day and done, favorites first', () => {
+    const notes = [
+      note('late', { remindAt: '2026-11-15T09:00' }),
+      note('fav', { remindAt: '2026-11-16T20:00', favorite: true }),
+      note('later', { remindAt: '2026-11-18T09:00' }),
+      note('done', { remindAt: '2026-11-16T07:00', doneAt: 5 }),
+      note('none'),
+    ];
+    const g = groupReminders(reminderItems(notes), at('2026-11-16T12:00'));
+    expect(g.today.map((r) => r.noteId)).toEqual(['fav', 'late']);
+    expect(g.scheduled.map((r) => r.noteId)).toEqual(['later']);
+    expect(g.completed.map((r) => r.noteId)).toEqual(['done']);
+  });
+
+  it('shows the attached note unless it is in the Trash, and finds the open reminder for a note', () => {
+    const r = note('r', { remindAt: '2026-11-20T09:00', noteRef: 'n' });
+    expect(reminderItems([r, note('n', { kind: 'note' })])[0].ref?.id).toBe('n');
+    expect(reminderItems([r, note('n', { kind: 'note', trashedAt: 3 })])[0].ref).toBeNull();
+    expect(linkedReminder([r], 'n')?.id).toBe('r');
+    expect(linkedReminder([{ ...r, doneAt: 1 }], 'n')).toBeUndefined();
+  });
+
+  it('lists to-do reminders, and a reminder note fires for its attached note', () => {
+    const content = { type: 'doc', content: [{ type: 'taskList', content: [todo('t', 'Call', '2026-11-20', '15:00')] }] };
+    const n = note('n', { kind: 'note', content });
+    expect(reminderItems([n]).map((r) => [r.taskId, formatAt(r.at), r.ref?.id])).toEqual([['t', '2026-11-20T15:00', 'n']]);
+    expect(dueReminders([note('r', { remindAt: '2026-11-20T09:00', noteRef: 'n' })])[0].noteId).toBe('r');
+  });
+
+  it('renames a to-do keeping the others', () => {
+    const doc = { type: 'doc', content: [{ type: 'taskList', content: [todo('a', 'One'), todo('b', 'Two')] }] };
+    expect(extractTasks({ id: 'n', title: '', content: renameTask(doc, 'a', 'Uno') }).map((t) => t.text)).toEqual(['Uno', 'Two']);
   });
 });

@@ -13,13 +13,13 @@ import { BubbleMenu } from '@tiptap/react/menus';
 import { StarterKit } from '@tiptap/starter-kit';
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
 import {
-  BetweenHorizontalEnd, BetweenVerticalEnd, Bold, CalendarPlus, Check, ChevronLeft, ChevronRight, ChevronsLeftRight, ClipboardPaste, Code, Copy, ExternalLink, FileSymlink, FileText,
+  Bell, BetweenHorizontalEnd, BetweenVerticalEnd, Bold, CalendarPlus, Check, ChevronLeft, ChevronRight, ChevronsLeftRight, ClipboardPaste, Code, Copy, ExternalLink, FileSymlink, FileText,
   Ellipsis, EllipsisVertical, Grid2x2, Heading2, Highlighter, ImagePlus, Italic, Link2, List, ListOrdered, ListTodo, Minus, Paintbrush, Quote, Scissors, SquareCode, Strikethrough,
   Table, Table2, Trash2, Underline, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { journalEdit, registerFlusher, saveContent } from '../lib/actions';
+import { flushEditor, journalEdit, registerFlusher, saveContent } from '../lib/actions';
 import { importImage, looksLikeImage } from '../lib/images';
 import { importPdf, looksLikePdf } from '../lib/pdf';
 import { Menu, MenuPopup } from '../components/Overlay';
@@ -242,7 +242,7 @@ export function linkToNote(editor: Editor) {
 
 const noteIdOf = (href: string | undefined) => (href?.startsWith(NOTE_HREF) ? href.slice(NOTE_HREF.length) : null);
 
-type DueState = { anchor: DOMRect; due: string | null; set: (due: string | null) => void };
+type DueState = { anchor: DOMRect; due: string | null; set: (due: string | null) => void; noteId: string; task: { id: string; remind: string | null } };
 
 function DuePopover({ state, onClose }: { state: DueState; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -271,7 +271,21 @@ function DuePopover({ state, onClose }: { state: DueState; onClose: () => void }
   return createPortal(
     <div ref={ref} className="due-popover" role="dialog" aria-label="Due date" style={pos ?? { visibility: 'hidden' }}>
       <Calendar selected={state.due ?? dateKey()} onPick={pick} />
-      {state.due && <button type="button" className="link-btn" onClick={() => pick(null)}>Clear date</button>}
+      <div className="due-popover-actions">
+        {/* The reminder page sets the time; the note saves first so the to-do is there to find. */}
+        <button
+          type="button"
+          className="link-btn"
+          onClick={() => {
+            onClose();
+            flushEditor();
+            store.getState().editReminder({ task: { noteId: state.noteId, taskId: state.task.id } });
+          }}
+        >
+          <Bell size={12} /> {state.task.remind ? `Reminder at ${state.task.remind}` : 'Add reminder'}
+        </button>
+        {state.due && <button type="button" className="link-btn" onClick={() => pick(null)}>Clear date</button>}
+      </div>
     </div>,
     document.body,
   );
@@ -1048,11 +1062,11 @@ export function NoteEditor({ note, readOnly, editorRef }: Props) {
   const [due, setDue] = useState<DueState | null>(null);
   useEffect(() => {
     if (readOnly) return;
-    dueHooks.open = (anchor, value, set) => setDue({ anchor, due: value, set });
+    dueHooks.open = (anchor, value, set, task) => setDue({ anchor, due: value, set, noteId, task });
     return () => {
       dueHooks.open = null;
     };
-  }, [readOnly]);
+  }, [readOnly, noteId]);
   const [slashIndex, setSlashIndex] = useState(0);
   const slashLive = useRef({ state: slash, index: slashIndex });
   slashLive.current = { state: slash, index: slashIndex };

@@ -1,8 +1,8 @@
 import {
-  Archive, ArchiveRestore, ArrowLeft, ArrowRight, BookOpen, ChevronLeft, ChevronRight, Copy, CornerLeftUp, Download, PanelTop, Palette, Feather, FilePlus, FileSymlink, Redo2, Undo2, Maximize2, Minimize2, Pin, PinOff, Plus, RotateCcw, Share2, Trash2, X,
+  Archive, ArchiveRestore, ArrowLeft, Bell, ArrowRight, BookOpen, ChevronLeft, ChevronRight, Copy, CornerLeftUp, Download, PanelTop, Palette, Feather, FilePlus, FileSymlink, Redo2, Undo2, Maximize2, Minimize2, Pin, PinOff, Plus, RotateCcw, Share2, Trash2, X,
 } from 'lucide-react';
 import { lazy, Component, Fragment, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { createNote, createSubNote, deleteForever, duplicateNote, editTags, journalEdit, openDaily, patchNote, restoreNote, trashNote } from '../lib/actions';
+import { createNote, createSubNote, deleteForever, duplicateNote, editTags, journalEdit, openDaily, patchNote, remindNote, restoreNote, trashNote } from '../lib/actions';
 import { addDays, dateKey, fullDate, fullDateTime, relativeTime } from '../lib/dates';
 import { currentEditor, editorHooks, linkToNote, NoteEditor } from '../editor/NoteEditor';
 import { store, useStore } from '../lib/store';
@@ -12,9 +12,14 @@ import { shareFormats } from '../lib/export';
 import type { Editor } from '@tiptap/core';
 import type { Note, Notebook } from '../lib/types';
 import { Menu, type MenuItem } from './Overlay';
+import { ReminderEditor } from './Reminders';
+import { linkedReminder, parseAt } from '../lib/reminders';
+
+const remindLabel = (at?: string | null) =>
+  parseAt(at)?.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) ?? '';
 
 /** The note actions shared by the three-dots menu and the list's right-click menu. */
-export function noteMenuItems(note: Note, editor: Editor | null): MenuItem[] {
+export function noteMenuItems(note: Note, editor: Editor | null, reminded = false): MenuItem[] {
   const isDaily = note.kind === 'daily';
   return [
     { label: 'New note', icon: <Plus size={14} />, run: () => void createNote() },
@@ -32,6 +37,7 @@ export function noteMenuItems(note: Note, editor: Editor | null): MenuItem[] {
     ...(note.parentId ? [{ label: 'Move to top level', icon: <CornerLeftUp size={14} />, run: () => void patchNote(note.id, { parentId: null }) }] : []),
     ...(editor ? [{ label: 'Link to note', icon: <FileSymlink size={14} />, run: () => linkToNote(editor) }] : []),
     { label: 'Background color', icon: <Palette size={14} />, run: () => store.getState().setDialog({ kind: 'noteColor', noteIds: [note.id] }) },
+    ...(note.kind !== 'reminder' ? [{ label: reminded ? 'Edit reminder' : 'Add reminder', icon: <Bell size={14} />, run: () => void remindNote(note.id) }] : []),
     ...(shareFormats().length ? [{ label: 'Share', icon: <Share2 size={14} />, run: () => store.getState().setDialog({ kind: 'export', noteIds: [note.id], mode: 'share' }) }] : []),
     { label: 'Export', icon: <Download size={14} />, run: () => store.getState().setDialog({ kind: 'export', noteIds: [note.id], mode: 'save' }) },
     ...(!isDaily
@@ -196,6 +202,7 @@ function Document({ note, notes, notebooks, allTags }: { note: Note; notes: Note
   const [title, setTitle] = useState(note.title);
   const editingTitle = useRef(false);
   const isDaily = note.kind === 'daily';
+  const reminder = useMemo(() => linkedReminder(notes, note.id), [notes, note.id]);
   const inTrash = Boolean(note.trashedAt);
 
   // Re-render on every editor change, so Undo and Redo show whether there is anything to do.
@@ -363,7 +370,7 @@ function Document({ note, notes, notebooks, allTags }: { note: Note; notes: Note
             <Menu
               label="Note actions"
               items={[
-                ...noteMenuItems(note, editor),
+                ...noteMenuItems(note, editor, Boolean(reminder)),
                 { label: showToolbar ? 'Hide toolbar' : 'Show toolbar', icon: <PanelTop size={14} />, run: () => store.getState().toggleToolbar() },
               ]}
             />
@@ -408,6 +415,12 @@ function Document({ note, notes, notebooks, allTags }: { note: Note; notes: Note
           />
           <div className="doc-dates">Created {fullDate(note.createdAt)} · Last edited {fullDateTime(note.updatedAt)}</div>
           {!inTrash && <TagInput note={note} allTags={allTags} />}
+          {!inTrash && (
+            <button type="button" className="doc-remind" data-past={reminder ? (parseAt(reminder.remindAt) ?? new Date()) < new Date() : undefined} onClick={() => void remindNote(note.id)}>
+              <Bell size={13} />
+              {reminder ? remindLabel(reminder.remindAt) : 'Add reminder'}
+            </button>
+          )}
           <Boundary message="This note could not be displayed." resetKey={note.id}>
             <NoteEditor note={note} readOnly={inTrash} />
           </Boundary>
@@ -426,12 +439,17 @@ export function EditorPane({ notes, notebooks, allTags }: { notes: Note[]; noteb
   const pdf = useStore((s) => s.pdf);
   const note = notes.find((n) => n.id === noteId);
   const bg = noteBg(note?.color);
+  const reminder = useStore((s) => s.reminder);
+  // A reminder note opened from search or a link shows as its reminder, not as a document.
+  const edit = reminder ?? (note?.kind === 'reminder' && !note.trashedAt ? { id: note.id } : null);
 
   return (
     <main className="editor-col" data-pdf={Boolean(pdf)} data-pdf-focus={Boolean(pdf?.focus)}>
       <div className="editor-split">
         <div className="doc-pane" data-color={bg ? '' : undefined} data-tone={noteTone(note?.color)} style={bg ? ({ '--note-bg': bg } as React.CSSProperties) : undefined}>
-          {note ? (
+          {edit ? (
+            <ReminderEditor key={JSON.stringify(edit)} edit={edit} notes={notes} />
+          ) : note ? (
             <Document key={note.id} note={note} notes={notes} notebooks={notebooks} allTags={allTags} />
           ) : (
             <div className="empty blank-state">

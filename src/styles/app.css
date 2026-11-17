@@ -347,6 +347,69 @@ kbd { font: 500 10.5px var(--font-mono); color: var(--ink-3); }
 }
 .task-check input:focus-visible + .task-box { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* Reminders */
+.reminder-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 2px 0 12px; }
+.reminder-tiles button {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 10px 11px 9px;
+  border-radius: 12px; background: var(--hover); color: var(--ink-2); text-align: left; transition: background 0.12s;
+}
+.reminder-tiles button svg { margin-bottom: 6px; }
+.reminder-tiles strong { font: 500 19px/1.1 var(--font-ui); color: var(--ink); }
+.reminder-tiles span { font-size: 11.5px; }
+.reminder-tiles button[aria-selected='true'] { background: var(--accent-soft); color: var(--accent); }
+.reminder-tiles button[aria-selected='true'] strong { color: var(--accent); }
+.reminder-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 10px; margin-bottom: 4px; border-radius: 12px; background: var(--hover); transition: background 0.1s, box-shadow 0.1s; }
+.reminder-row[data-active='true'] { background: var(--raised); box-shadow: 0 0 0 1px var(--line), 0 2px 8px -3px rgb(40 30 15 / 0.14); }
+.reminder-row .task-check { margin-top: 2px; }
+.reminder-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; cursor: pointer; }
+.reminder-row-title { display: flex; align-items: center; gap: 5px; font-weight: 500; overflow-wrap: anywhere; line-height: 1.35; }
+.reminder-row[data-done='true'] .reminder-row-title { color: var(--ink-3); text-decoration: line-through; }
+.reminder-fav { flex: none; color: var(--accent); fill: currentColor; }
+.reminder-row-meta { display: flex; align-items: center; gap: 5px; color: var(--ink-3); font: 400 10.5px/1.5 var(--font-mono); }
+.reminder-row-meta[data-late='true'] { color: var(--accent); font-weight: 600; }
+.reminder-note { position: relative; display: flex; max-width: 100%; margin-top: 5px; }
+.reminder-note-main {
+  display: flex; align-items: center; gap: 9px; min-width: 0; max-width: 100%; padding: 6px 12px 6px 6px;
+  border-radius: 10px; background: var(--raised); box-shadow: 0 0 0 1px var(--line); text-align: left;
+}
+.reminder-note-main:hover { box-shadow: 0 0 0 1px var(--line-strong); }
+.reminder-note-icon { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); }
+.reminder-note-text { display: flex; flex-direction: column; min-width: 0; }
+.reminder-note-text strong { font-weight: 500; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reminder-note-text small { color: var(--ink-3); font-size: 12px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.reminder-note:not([data-compact='true']) { width: 100%; margin: 4px 0 8px; }
+.reminder-note:not([data-compact='true']) .reminder-note-main { width: 100%; padding: 11px 36px 11px 11px; border-radius: 14px; gap: 12px; }
+.reminder-note:not([data-compact='true']) .reminder-note-icon { width: 34px; height: 34px; }
+.reminder-note:not([data-compact='true']) .reminder-note-text strong { font-size: 13.5px; }
+.reminder-note-remove { position: absolute; top: 6px; right: 6px; color: var(--accent); }
+.reminder-head { display: inline-flex; align-items: center; gap: 7px; padding-left: 4px; color: var(--ink-2); font-weight: 500; font-size: 12.5px; }
+.reminder-form { max-width: 560px; margin: 0 auto; padding: 12px 24px 30vh; animation: rise 0.34s var(--ease) both; }
+.reminder-card { padding: 16px 18px 6px; border-radius: 22px; background: var(--hover); }
+.reminder-title { width: 100%; padding: 4px 0 10px; border: 0; background: none; font: 500 24px/1.25 var(--font-text); letter-spacing: -0.015em; }
+.reminder-title::placeholder { color: var(--ink-3); opacity: 0.7; }
+.reminder-title:focus-visible, .reminder-todo input:focus-visible, .reminder-option :is(input, select, button):focus-visible { outline: none; }
+.reminder-todos { display: flex; flex-direction: column; gap: 2px; padding-bottom: 8px; }
+.reminder-todo { display: flex; align-items: center; gap: 10px; min-height: 30px; }
+.reminder-todo .task-check { margin-top: 0; }
+.reminder-todo input:not([type]) { flex: 1; min-width: 0; border: 0; background: none; padding: 3px 0; }
+.reminder-add-todo { align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; margin: 2px 0 0 -4px; }
+.reminder-option { display: flex; align-items: center; gap: 14px; min-height: 46px; border-top: 1px solid var(--line); color: var(--ink-2); }
+.reminder-option :is(input, select, button) { flex: 1; min-width: 0; height: 40px; padding: 0; border: 0; background: none; color: var(--ink); font: 500 14px var(--font-ui); text-align: left; cursor: pointer; }
+.reminder-option select[data-dim='true'] { color: var(--ink-3); }
+.reminder-option select option { background: var(--raised); color: var(--ink); }
+.reminder-card .calendar { padding: 0 0 10px 30px; border-bottom: 0; margin: 0; }
+.time-picker { display: flex; flex-direction: column; gap: 4px; padding: 0 0 12px 30px; }
+.time-picker-head { color: var(--ink-3); font-size: 10.5px; font-weight: 500; margin-top: 4px; }
+.time-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 2px; }
+.time-grid button { height: 30px; border-radius: 7px; font: 400 11.5px var(--font-mono); white-space: nowrap; transition: background 0.1s; }
+.time-grid button:hover { background: var(--hover); }
+/* The card is already the hover shade, so its pickers hover one step darker. */
+.reminder-card :is(.time-grid, .calendar-grid) button:hover { background: var(--active); }
+.time-grid button[data-selected='true'] { background: var(--ink); color: var(--paper); font-weight: 500; }
+.reminder-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.settings-checks { display: flex; flex-direction: column; gap: 7px; margin-top: 9px; }
+.settings-checks label { display: flex; align-items: center; gap: 8px; font-size: 12.5px; cursor: pointer; }
+
 /* PDF list */
 .pdf-row { width: 100%; display: flex; gap: 11px; padding: 9px; text-align: left; border-radius: 9px; align-items: center; }
 .pdf-row:hover { background: var(--hover); }

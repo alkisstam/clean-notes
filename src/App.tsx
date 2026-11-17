@@ -5,6 +5,7 @@ import { clearJournal, createNote, openDaily, recoverJournal } from './lib/actio
 import { db } from './lib/db';
 import { seedIfEmpty } from './lib/seed';
 import { startAutoSync } from './lib/sync';
+import { startReminders } from './lib/notify';
 import { useStore, store } from './lib/store';
 import { allTagPaths } from './lib/tags';
 import type { Note, Notebook } from './lib/types';
@@ -27,6 +28,9 @@ declare global {
       printPdf: (html: string, name: string) => Promise<boolean>;
       sharePdf: (html: string, name: string) => Promise<void>;
       shareFile: (bytes: ArrayBuffer, name: string) => Promise<void>;
+      show: () => void;
+      prefs: () => Promise<{ background: boolean; autostart: boolean }>;
+      setPrefs: (p: { background?: boolean; autostart?: boolean }) => Promise<void>;
     };
   }
 }
@@ -152,6 +156,7 @@ export function App() {
         if (matchMedia('(max-width: 767px)').matches && !open) s.setPane('list');
         setReady(true);
         startAutoSync();
+        startReminders();
       } catch {
         setDbError(true);
       }
