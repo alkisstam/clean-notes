@@ -114,12 +114,25 @@ fun NotesApp(app: App, shared: MutableState<Intent?>) {
     var connecting by rememberSaveable { mutableStateOf(false) }
     // The reminder being added ("new") or edited.
     var reminderId by rememberSaveable { mutableStateOf<String?>(null) }
+    // A new reminder's attached note, or the to-do ("noteId/taskId") whose reminder is edited.
+    var reminderAttach by rememberSaveable { mutableStateOf<String?>(null) }
+    var reminderTask by rememberSaveable { mutableStateOf<String?>(null) }
     // One key per view, matching View in src/lib/types.ts: "all", "trash", "nb:<id>", ...
     var view by rememberSaveable { mutableStateOf("all") }
     // A PDF to open with the note, when the note was opened from the PDFs list.
     var openPdf by rememberSaveable { mutableStateOf<String?>(null) }
     // Out here, so the list keeps its scroll while a note is open in its place, and has its notes on its first frame back.
     val notes by app.db.dao().liveNotes().collectAsStateWithLifecycle(emptyList())
+    val remindNote = { noteId: String ->
+        reminderAttach = noteId
+        reminderTask = null
+        reminderId = linkedReminder(notes, noteId)?.id ?: "new"
+    }
+    val remindTask = { noteId: String, taskId: String ->
+        reminderAttach = null
+        reminderTask = "$noteId/$taskId"
+        reminderId = "task"
+    }
     val listState = rememberLazyListState()
     val gridState = rememberLazyGridState()
     val paired by app.sync.paired.collectAsState()
@@ -177,17 +190,27 @@ fun NotesApp(app: App, shared: MutableState<Intent?>) {
     } else if (view == "trash") {
         BackHandler { view = "all" }
         TrashScreen(app, onBack = { view = "all" })
-    } else if (reminderId != null) {
-        BackHandler { reminderId = null }
-        key(reminderId) { ReminderScreen(app, reminderId.takeIf { it != "new" }) { reminderId = null } }
     } else if (connecting) {
         BackHandler { connecting = false }
         PairScreen(app.sync, onBack = { connecting = false })
     } else @OptIn(ExperimentalSharedTransitionApi::class) SharedTransitionLayout {
         // Keyed on open-or-not, so moving between notes swaps them without the card animation.
-        AnimatedContent(openId, contentKey = { it != null }, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "note") { id ->
+        // The reminder editor is in here too, so it grows out of its card as a note does.
+        val screen = if (reminderId != null) "reminder:$reminderId/$reminderTask" else openId?.let { "note:$it" }
+        AnimatedContent(screen, contentKey = { it?.substringBefore(':') }, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "note") { target ->
+            val id = target?.takeIf { it.startsWith("note:") }?.removePrefix("note:")
             CompositionLocalProvider(LocalShared provides this@SharedTransitionLayout, LocalNoteAnim provides this, LocalOpenFrom provides openFrom) {
-                if (id != null) {
+                if (target?.startsWith("reminder:") == true) {
+                    BackHandler { reminderId = null }
+                    key(target) {
+                        ReminderScreen(
+                            app, reminderId.takeIf { it != "new" && it != "task" }, reminderAttach,
+                            reminderTask?.takeIf { reminderId == "task" }?.split('/')?.let { it[0] to it[1] },
+                            onClose = { reminderId = null },
+                            onOpenNote = { reminderId = null; trail = emptyList(); openPdf = null; openId = it },
+                        )
+                    }
+                } else if (id != null) {
                     // Keyed, so switching to another note (a new sub-note) builds a fresh editor for it.
                     key(id) {
                         NoteScreen(
@@ -196,6 +219,9 @@ fun NotesApp(app: App, shared: MutableState<Intent?>) {
                             onOpenTag = { openId = null; trail = emptyList(); view = "tag:$it" },
                             onOpenNote = { openId = it },
                             onFollowLink = { trail = trail + id; openId = it; openPdf = null },
+                            // Opened from inside a note, so there is no card to grow out of.
+                            onRemindNote = { openFrom.value = ""; remindNote(it) },
+                            onRemindTask = { n, t -> openFrom.value = ""; remindTask(n, t) },
                         )
                     }
                 } else {
@@ -213,8 +239,10 @@ fun NotesApp(app: App, shared: MutableState<Intent?>) {
                                 openId = id
                             }
                         },
-                        onNewReminder = { reminderId = "new" },
-                        onEditReminder = { reminderId = it },
+                        onNewReminder = { reminderAttach = null; reminderTask = null; reminderId = "new" },
+                        onEditReminder = { reminderAttach = null; reminderTask = null; reminderId = it },
+                        onEditTask = remindTask,
+                        onRemindNote = { openFrom.value = ""; remindNote(it) },
                     )
                 }
             }

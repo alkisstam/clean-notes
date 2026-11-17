@@ -52,7 +52,10 @@ import java.time.format.FormatStyle
 /** Today, Scheduled and Completed as three cards in one row, and the picked group's reminders as cards below. */
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
-fun RemindersBody(app: App, groups: ReminderGroups, colors: Map<String, String>, onOpen: (String) -> Unit, onEdit: (String) -> Unit, onSelecting: (Boolean) -> Unit) {
+fun RemindersBody(
+    app: App, groups: ReminderGroups, colors: Map<String, String>, onOpen: (String) -> Unit, onEdit: (String) -> Unit, onEditTask: (noteId: String, taskId: String) -> Unit,
+    onSelecting: (Boolean) -> Unit,
+) {
     // Kept like the list's sort, so it survives the reminder editor replacing this screen.
     val ui = remember { app.getSharedPreferences("ui", Context.MODE_PRIVATE) }
     var tab by remember { mutableStateOf(ui.getString("reminderTab", "today")!!) }
@@ -64,6 +67,7 @@ fun RemindersBody(app: App, groups: ReminderGroups, colors: Map<String, String>,
     val now = LocalDateTime.now()
     val dark = LocalDark.current
     val haptic = LocalHapticFeedback.current
+    val from = LocalOpenFrom.current
     // Keys of the picked reminders; null outside select mode.
     var selected by rememberSaveable { mutableStateOf<List<String>?>(null) }
     val toggle = { key: String -> selected = selected.orEmpty().let { if (key in it) it - key else it + key } }
@@ -116,10 +120,14 @@ fun RemindersBody(app: App, groups: ReminderGroups, colors: Map<String, String>,
             val picked = r.key in selected.orEmpty()
             val shape = RoundedCornerShape(16.dp)
             Surface(
-                modifier = Modifier.fillMaxWidth().animateItem().clip(shape).combinedClickable(
+                modifier = Modifier.fillMaxWidth().animateItem().noteBounds("rem:${r.key}|reminders", 16.dp).clip(shape).combinedClickable(
                     onClick = {
                         if (selected != null) toggle(r.key)
-                        else if (r.kind == "reminder" && r.taskId == null) onEdit(r.noteId) else onOpen(r.noteId)
+                        else if (r.kind != "reminder" && r.taskId == null) onOpen(r.noteId)
+                        else {
+                            from.value = "rem:${r.key}|reminders"
+                            if (r.taskId != null) onEditTask(r.noteId, r.taskId) else onEdit(r.noteId)
+                        }
                     },
                     onLongClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -149,6 +157,7 @@ fun RemindersBody(app: App, groups: ReminderGroups, colors: Map<String, String>,
                             )
                             if (r.repeat != null) Icon(painterResource(R.drawable.ic_repeat), "Repeats ${r.repeat}", Modifier.padding(start = 6.dp).size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        r.ref?.let { n -> NoteCard(n, Modifier.padding(top = 8.dp), compact = true) { if (selected != null) toggle(r.key) else onOpen(n.id) } }
                     }
                     if (r.favorite) Box(Modifier.padding(start = 8.dp)) {
                         Icon(painterResource(R.drawable.ic_star_filled), "Favorite", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)

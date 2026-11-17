@@ -86,7 +86,10 @@ import kotlinx.coroutines.runBlocking
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 /** `pdf` is the web's PdfTarget as JSON text: {fileId, page?, query?}. */
-fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> Unit, onOpenTag: (String) -> Unit, onOpenNote: (String) -> Unit, onFollowLink: (String) -> Unit) {
+fun NoteScreen(
+    app: App, id: String, tag: String?, pdf: String?, onClose: () -> Unit, onOpenTag: (String) -> Unit, onOpenNote: (String) -> Unit, onFollowLink: (String) -> Unit,
+    onRemindNote: (String) -> Unit, onRemindTask: (noteId: String, taskId: String) -> Unit,
+) {
     val live by app.db.dao().liveNotes().collectAsStateWithLifecycle(emptyList())
     val allTags = remember(live) { allTagPaths(live.map { it.tagList }) }
     // Read up front so the first frame already has the note's color.
@@ -108,17 +111,20 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
         if (live.any { it.id == target }) view.flush { onFollowLink(target) }
         else Toast.makeText(context, "That note was deleted", Toast.LENGTH_SHORT).show()
     }
-    view.dating?.let { (due, remind) -> DueDialog(due, remind, view::setDue) { view.dating = null } }
+    view.dating?.let { (due, remind, task) ->
+        // A reminder on a to-do is set on the reminder page; a day alone only puts it in Tasks.
+        DueDialog(due, remind, view::setDue, { view.dating = null }, onAddReminder = task.ifEmpty { null }?.let { t ->
+            { day: String? -> if (day != null && day != due) view.setDue(day, remind) else view.dating = null; view.flush { onRemindTask(id, t) } }
+        })
+    }
     // Saving pending keystrokes first keeps the editor from adopting a copy older than what it shows.
     if (view.tagging) note?.let { n ->
         TagPicker(n.tagList, allTags, { sel -> view.tagging = false; view.flush { app.scope.launch { app.editTags(id) { sel } } } }) { view.tagging = false }
     }
     if (view.linking) NotePicker("Link to note", live.filter { it.id != id }, { t -> view.linkNote(t.id, t.title.ifBlank { "Untitled" }) }, { view.linking = false }, if (view.linked) view::unlinkNote else null)
-    if (view.reminding) note?.let { n ->
-        NoteReminderDialog(noteRemindAt(JSONObject(n.raw)), { at ->
-            view.reminding = false
-            view.flush { app.scope.launch { app.updateNote(id) { j, _ -> j.put("remindAt", at ?: JSONObject.NULL) } } }
-        }) { view.reminding = false }
+    if (view.reminding) LaunchedEffect(Unit) {
+        view.reminding = false
+        view.flush { onRemindNote(id) }
     }
     BackHandler { back() }
     BackHandler(adding) { adding = false }
@@ -149,14 +155,14 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
                         IconButton(onClick = view::undo, enabled = view.canUndo) { Icon(painterResource(R.drawable.ic_undo), "Undo", Modifier.size(22.dp)) }
                         IconButton(onClick = view::redo, enabled = view.canRedo) { Icon(painterResource(R.drawable.ic_redo), "Redo", Modifier.size(22.dp)) }
                         IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More") }
-                        note?.let { n -> NoteMenu(app, n, live, menu, { menu = false }, view::flush, onClose, onLinkNote = view::startLink, onExport = view::export, onShare = { f -> view.flush { shareNotes(app, context, listOf(id), f) } }) }
+                        note?.let { n -> NoteMenu(app, n, live, menu, { menu = false }, view::flush, onClose, onRemindNote, onLinkNote = view::startLink, onExport = view::export, onShare = { f -> view.flush { shareNotes(app, context, listOf(id), f) } }) }
                     },
                 )
             },
         ) { pad ->
             note?.let { n ->
                 Column(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize().imePadding()) {
-                    NoteView(app, n, view, pdf, path, Modifier.weight(1f).fillMaxWidth())
+                    NoteView(app, n, view, pdf, path, remember(live, id) { linkedReminder(live, id)?.let { noteRemindAt(JSONObject(it.raw)) } }, Modifier.weight(1f).fillMaxWidth())
                 }
             }
         }
@@ -185,7 +191,7 @@ fun NoteScreen(app: App, id: String, tag: String?, pdf: String?, onClose: () -> 
 /** The note's ⋮ menu, also opened by a long press in the list. `before` runs first, to save pending keystrokes. */
 @Composable
 fun NoteMenu(
-    app: App, note: NoteRow, live: List<NoteRow>, expanded: Boolean, onDismiss: () -> Unit, before: (() -> Unit) -> Unit, onTrashed: () -> Unit,
+    app: App, note: NoteRow, live: List<NoteRow>, expanded: Boolean, onDismiss: () -> Unit, before: (() -> Unit) -> Unit, onTrashed: () -> Unit, onRemind: (String) -> Unit,
     centered: Boolean = false,
     onLinkNote: (() -> Unit)? = null,
     onExport: ((String) -> Unit)? = null,
@@ -197,7 +203,6 @@ fun NoteMenu(
     var nesting by remember { mutableStateOf(false) }
     var moving by remember { mutableStateOf(false) }
     var coloring by remember { mutableStateOf(false) }
-    var reminding by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
     var sharing by remember { mutableStateOf(false) }
     val notebooks by app.db.dao().liveNotebooks().collectAsStateWithLifecycle(emptyList())
@@ -220,7 +225,7 @@ fun NoteMenu(
         }
         MenuItem("Move to notebook", { onDismiss(); moving = true }, R.drawable.ic_folder_input)
         MenuItem("Background color", { onDismiss(); coloring = true }, R.drawable.ic_palette)
-        MenuItem(if (noteRemindAt(JSONObject(note.raw)) != null) "Edit reminder" else "Add reminder", { onDismiss(); reminding = true }, R.drawable.ic_bell)
+        MenuItem(if (linkedReminder(live, id) != null) "Edit reminder" else "Add reminder", { onDismiss(); before { onRemind(id) } }, R.drawable.ic_bell)
         if (onShare != null) MenuItem("Share", { onDismiss(); sharing = true }, R.drawable.ic_share_2)
         if (onExport != null) MenuItem("Export", { onDismiss(); exporting = true }, R.drawable.ic_download)
         MenuItem("Move to Trash", {
@@ -239,10 +244,6 @@ fun NoteMenu(
     if (coloring) ColorPicker(JSONObject(note.raw).optString("color"), { color ->
         before { app.scope.launch { app.updateNote(id) { j, _ -> j.put("color", color ?: JSONObject.NULL) } } }
     }) { coloring = false }
-    if (reminding) NoteReminderDialog(noteRemindAt(JSONObject(note.raw)), { at ->
-        reminding = false
-        before { app.scope.launch { app.updateNote(id) { j, _ -> j.put("remindAt", at ?: JSONObject.NULL) } } }
-    }) { reminding = false }
     if (exporting && onExport != null) FormatDialog("Export note", { exporting = false; onExport(it) }) { exporting = false }
     if (sharing && onShare != null) FormatDialog("Share note", { sharing = false; onShare(it) }) { sharing = false }
     if (nesting) {
@@ -266,11 +267,6 @@ fun NoteMenu(
         NotebookPicker("Move to notebook", notebooks, { note.notebookId == it?.id }, { target -> moving = false; before { app.scope.launch { app.moveNote(id, target) } } }, { moving = false })
     }
 }
-
-/** The note's own reminder in the to-do date dialog. A day without a time reminds at 9:00. */
-@Composable
-fun NoteReminderDialog(remindAt: String?, onSet: (String?) -> Unit, onDismiss: () -> Unit) =
-    DueDialog(remindAt?.substringBefore('T'), remindAt?.substringAfter('T', "")?.ifEmpty { null }, { day, time -> onSet(day?.let { "${it}T${time ?: "09:00"}" }) }, onDismiss)
 
 /** Breadcrumb for the note page: its notebook's name, or null, and the notes it is nested under, outermost first. */
 fun notePath(note: NoteRow, live: List<NoteRow>, notebooks: List<NotebookRow>): JSONObject {

@@ -14,6 +14,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -34,6 +35,42 @@ fun noteRemindAt(note: JSONObject): String? = if (note.isNull("remindAt")) null 
 fun noteRepeat(note: JSONObject): String? = if (note.isNull("repeat")) null else note.optString("repeat").ifEmpty { null }
 
 fun noteDone(note: JSONObject) = !note.isNull("doneAt")
+
+/** The note a reminder made with Add reminder is attached to, or null. */
+fun noteRef(note: JSONObject): String? = if (note.isNull("noteRef")) null else note.optString("noteRef").ifEmpty { null }
+
+/** The open reminder attached to [noteId], so a second Add reminder edits it instead of making another. */
+fun linkedReminder(notes: List<NoteRow>, noteId: String): NoteRow? = notes.firstOrNull {
+    it.kind == "reminder" && it.trashedAt == null && it.archivedAt == null && JSONObject(it.raw).let { n -> noteRef(n) == noteId && !noteDone(n) }
+}
+
+/**
+ * Reminders used to sit on the note itself; each becomes a reminder note attached to it. The id comes from the note's,
+ * so two devices converting the same one make the same record.
+ */
+fun migratedReminder(note: JSONObject, now: Long): JSONObject? {
+    if (note.optString("kind") == "reminder") return null
+    val at = noteRemindAt(note) ?: return null
+    val id = note.getString("id")
+    val content = JSONObject().put("type", "doc").put("content", JSONArray().put(JSONObject().put("type", "paragraph")))
+    return JSONObject()
+        .put("id", java.util.UUID.nameUUIDFromBytes("reminder:$id".toByteArray()).toString())
+        .put("title", note.optString("title").ifBlank { "Untitled" })
+        .put("content", content)
+        .put("text", "")
+        .put("notebookId", JSONObject.NULL)
+        .put("tags", JSONArray())
+        .put("kind", "reminder")
+        .put("pinned", false)
+        .put("createdAt", now)
+        .put("updatedAt", now)
+        .put("trashedAt", JSONObject.NULL)
+        .put("remindAt", at)
+        .put("repeat", noteRepeat(note) ?: JSONObject.NULL)
+        .put("favorite", note.optBoolean("favorite"))
+        .put("doneAt", if (noteDone(note)) note.get("doneAt") else JSONObject.NULL)
+        .put("noteRef", id)
+}
 
 /** The first time after [now] that a reminder repeating from [at] falls on; counted from [at] so Jan 31 stays the 31st where it can. */
 fun nextRepeat(at: LocalDateTime, repeat: String, now: LocalDateTime): LocalDateTime {
@@ -57,18 +94,23 @@ fun advancedRemindAt(note: JSONObject, now: LocalDateTime): String? {
 }
 
 /** One line on the Reminders page: a note's own reminder (taskId null) or a to-do's. */
-data class ReminderItem(val key: String, val noteId: String, val taskId: String?, val title: String, val at: LocalDateTime, val repeat: String?, val favorite: Boolean, val done: Boolean, val kind: String)
+/** [ref] is the note shown as a card under it: the attached note, or a to-do's own note; null when there is none or it is in the Trash. */
+data class ReminderItem(val key: String, val noteId: String, val taskId: String?, val title: String, val at: LocalDateTime, val repeat: String?, val favorite: Boolean, val done: Boolean, val kind: String, val ref: NoteRow? = null)
 
-fun reminderItems(notes: List<NoteRow>): List<ReminderItem> = notes.filter { it.trashedAt == null && it.archivedAt == null }.flatMap { row ->
-    val note = JSONObject(row.raw)
-    val title = row.title.ifBlank { "Untitled" }
-    val own = noteRemindAt(note)?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }?.let {
-        ReminderItem(row.id, row.id, null, title, it, noteRepeat(note), note.optBoolean("favorite"), noteDone(note), row.kind)
+fun reminderItems(notes: List<NoteRow>): List<ReminderItem> {
+    val live = notes.filter { it.trashedAt == null && it.archivedAt == null }
+    val byId = live.associateBy { it.id }
+    return live.flatMap { row ->
+        val note = JSONObject(row.raw)
+        val title = row.title.ifBlank { "Untitled" }
+        val own = noteRemindAt(note)?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }?.let {
+            ReminderItem(row.id, row.id, null, title, it, noteRepeat(note), note.optBoolean("favorite"), noteDone(note), row.kind, noteRef(note)?.let(byId::get))
+        }
+        val tasks = extractTasks(row.id, title, note.getJSONObject("content")).mapNotNull { t ->
+            taskAt(t)?.let { ReminderItem(row.id + t.id, row.id, t.id, t.text, it, null, false, t.done, row.kind, row.takeIf { row.kind != "reminder" }) }
+        }
+        listOfNotNull(own) + tasks
     }
-    val tasks = extractTasks(row.id, title, note.getJSONObject("content")).mapNotNull { t ->
-        taskAt(t)?.let { ReminderItem(row.id + t.id, row.id, t.id, t.text, it, null, false, t.done, row.kind) }
-    }
-    listOfNotNull(own) + tasks
 }
 
 data class ReminderGroups(val today: List<ReminderItem>, val scheduled: List<ReminderItem>, val completed: List<ReminderItem>)
@@ -92,7 +134,8 @@ fun reminders(note: JSONObject, zone: ZoneId = ZoneId.systemDefault()): List<Due
     val title = note.optString("title").ifBlank { "Untitled" }
     val tasks = extractTasks(id, title, note.getJSONObject("content")).mapNotNull { t -> remindAt(t, zone)?.let { Due(t.id, id, t.text, title, it) } }
     val own = noteRemindAt(note)?.takeIf { !noteDone(note) }?.let { runCatching { LocalDateTime.parse(it).atZone(zone).toInstant().toEpochMilli() }.getOrNull() }
-    return tasks + listOfNotNull(own?.let { Due(id, id, title, "Reminder", it) })
+    // Tapping it opens the attached note, if there is one.
+    return tasks + listOfNotNull(own?.let { Due(id, noteRef(note) ?: id, title, "Reminder", it) })
 }
 
 /** The earliest reminder after [after]. */

@@ -133,6 +133,8 @@ fun NoteList(
     onNew: (notebook: String?, tag: String?) -> Unit,
     onNewReminder: () -> Unit,
     onEditReminder: (String) -> Unit,
+    onEditTask: (noteId: String, taskId: String) -> Unit,
+    onRemindNote: (String) -> Unit,
 ) {
     val notebooks by app.db.dao().liveNotebooks().collectAsStateWithLifecycle(emptyList())
     val trashed by app.db.dao().liveTrash().collectAsStateWithLifecycle(emptyList())
@@ -386,7 +388,7 @@ fun NoteList(
                     if (query.isNotBlank()) SearchBody(app, all, query, onOpen, onOpenPdf)
                     else if (view == "daily") DailyBody(app, all, onOpen)
                     else if (view == "tasks") TasksBody(app, tasks, onOpen)
-                    else if (view == "reminders") RemindersBody(app, reminderGroups, colors, onOpen, onEditReminder) { remindersSelecting = it }
+                    else if (view == "reminders") RemindersBody(app, reminderGroups, colors, onOpen, onEditReminder, onEditTask) { remindersSelecting = it }
                     else if (view == "pdfs") PdfsBody(app, all, onOpenPdf)
                     else {
                         val toggle = { id: String ->
@@ -455,7 +457,7 @@ fun NoteList(
                                             }
                                         }
                                         if (selecting) Tick(note.id in selected.orEmpty())
-                                        NoteMenu(app, note, all, pressed, { pressed = false }, { it() }, {}, centered = true, onSelect = { selected = listOf(note.id) })
+                                        NoteMenu(app, note, all, pressed, { pressed = false }, { it() }, {}, onRemindNote, centered = true, onSelect = { selected = listOf(note.id) })
                                     }
                                 }
                             }
@@ -486,7 +488,7 @@ fun NoteList(
                                 )
                             }
                             if (selecting) Tick(note.id in selected.orEmpty())
-                            NoteMenu(app, note, all, pressed, { pressed = false }, { it() }, {}, centered = true, onSelect = { selected = listOf(note.id) })
+                            NoteMenu(app, note, all, pressed, { pressed = false }, { it() }, {}, onRemindNote, centered = true, onSelect = { selected = listOf(note.id) })
                             }
                             HorizontalDivider()
                             }
@@ -557,7 +559,7 @@ fun NoteList(
                 Box(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(16.dp)) {
                     MorphFab(fabOpen, { fabOpen = it }, Modifier.noteBounds(from.value.takeIf { it.endsWith("|fab") }, 16.dp)) {
                         if (notesHere) FabAction("New note", R.drawable.ic_square_pen) { fabOpen = false; onNew(current?.id, tag) }
-                        FabAction("Add reminder", R.drawable.ic_bell) { fabOpen = false; onNewReminder() }
+                        FabAction("Add reminder", R.drawable.ic_bell) { fabOpen = false; from.value = "rem:new|fab"; onNewReminder() }
                     }
                 }
             }

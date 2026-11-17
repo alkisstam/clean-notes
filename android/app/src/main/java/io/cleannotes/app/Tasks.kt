@@ -61,6 +61,16 @@ fun patchTask(doc: JSONObject, id: String, attrs: Map<String, Any?>): JSONObject
     return copy
 }
 
+/** A copy of the document with one task's own text replaced; its formatting goes with it. */
+fun renameTask(doc: JSONObject, id: String, text: String): JSONObject {
+    val copy = JSONObject(doc.toString())
+    walkDoc(copy) { n ->
+        if (n.optString("type") != "taskItem" || n.optJSONObject("attrs")?.text("id") != id) return@walkDoc
+        n.children().find { it.optString("type") == "paragraph" }?.put("content", JSONArray().put(JSONObject().put("type", "text").put("text", text)))
+    }
+    return copy
+}
+
 /** A copy of the document with every task ticked, or every task unticked. */
 fun checkAllTasks(doc: JSONObject, checked: Boolean): JSONObject {
     val copy = JSONObject(doc.toString())

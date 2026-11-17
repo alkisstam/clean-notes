@@ -72,8 +72,8 @@ class NoteViewState {
         linking = false
         web?.evaluateJavascript("cnUnlinkNote()", null)
     }
-    /** A to-do's date button was tapped: its current due date and reminder time. The screen shows its date dialog while set. */
-    var dating by mutableStateOf<Pair<String?, String?>?>(null)
+    /** A to-do's date button was tapped: its current due date and reminder time, and its id. The screen shows its date dialog while set. */
+    var dating by mutableStateOf<Triple<String?, String?, String>?>(null)
 
     fun setDue(due: String?, remind: String?) {
         dating = null
@@ -168,7 +168,7 @@ private fun withLinkItem(callback: ActionMode.Callback, state: NoteViewState) = 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 /** `path` is the breadcrumb as JSON text: {notebook, parents: [{id, title}]}. */
-fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, path: String?, modifier: Modifier = Modifier) {
+fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, path: String?, remindAt: String?, modifier: Modifier = Modifier) {
     val dark = LocalDark.current
     val deviceFonts = !LocalWebFonts.current
     var payload by remember { mutableStateOf<String?>(null) }
@@ -231,7 +231,7 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, path: 
         }
     }
 
-    LaunchedEffect(note.raw, dark, deviceFonts, path) {
+    LaunchedEffect(note.raw, dark, deviceFonts, path, remindAt) {
         // Ids are UUIDs, so a substring match finds exactly the attachments this note uses.
         val used = app.db.dao().attachments().filter { note.raw.contains(it.id) }
         payload = JSONObject()
@@ -242,6 +242,7 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, path: 
             .put("deviceFonts", deviceFonts)
             .put("pdf", pdf?.let(::JSONObject) ?: JSONObject.NULL)
             .put("path", path?.let(::JSONObject) ?: JSONObject.NULL)
+            .put("remindAt", remindAt ?: JSONObject.NULL)
             .toString()
     }
 
@@ -294,7 +295,7 @@ fun NoteView(app: App, note: NoteRow, state: NoteViewState, pdf: String?, path: 
                         }
                         "tags" -> state.tagging = true
                         "remind" -> state.reminding = true
-                        "due" -> state.dating = (if (msg.isNull("due")) null else msg.getString("due")) to (if (msg.isNull("remind")) null else msg.optString("remind").ifEmpty { null })
+                        "due" -> state.dating = Triple(if (msg.isNull("due")) null else msg.getString("due"), if (msg.isNull("remind")) null else msg.optString("remind").ifEmpty { null }, msg.optString("task"))
                         "openNote" -> state.onOpenNote?.invoke(msg.getString("id"))
                         "history" -> {
                             state.canUndo = msg.getBoolean("undo")

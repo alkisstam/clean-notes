@@ -35,6 +35,8 @@ interface Payload {
   pdf?: PdfTarget | null;
   /** For the breadcrumb, since this page only holds the open note. */
   path?: Path;
+  /** The attached reminder's time, for the bell pill. */
+  remindAt?: string | null;
 }
 
 interface Path {
@@ -153,7 +155,8 @@ function PdfLayer() {
 const remindLabel = (at: string) =>
   new Date(at).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
-function Page({ id, path }: { id: string; path: Path | null }) {
+// remindAt is the time of the reminder attached to this note, which lives in a note of its own.
+function Page({ id, path, remindAt }: { id: string; path: Path | null; remindAt: string | null }) {
   const note = useLiveQuery(() => db.notes.get(id), [id]);
   const [title, setTitle] = useState<string | null>(null);
   useEffect(() => {
@@ -214,14 +217,14 @@ function Page({ id, path }: { id: string; path: Path | null }) {
         <button
           type="button"
           className="doc-remind"
-          data-past={note.remindAt ? new Date(note.remindAt).getTime() < Date.now() : undefined}
+          data-past={remindAt ? new Date(remindAt).getTime() < Date.now() : undefined}
           onClick={() => {
             (document.activeElement as HTMLElement | null)?.blur();
             CleanNotes.postMessage(JSON.stringify({ type: 'remind' }));
           }}
         >
           <Bell size={13} />
-          {note.remindAt ? remindLabel(note.remindAt) : 'Add reminder'}
+          {remindAt ? remindLabel(remindAt) : 'Add reminder'}
         </button>
         <NoteEditor note={note} />
       </article>
@@ -249,9 +252,9 @@ const w = window as unknown as {
 formatMenu.placement = 'bottom';
 // The app shows the same date dialog as its Tasks screen, then answers with cnSetDue().
 let dueSet: ((due: string | null, remind: string | null) => void) | null = null;
-dueHooks.host = (due, remind, set) => {
+dueHooks.host = (due, remind, set, task) => {
   dueSet = set;
-  CleanNotes.postMessage(JSON.stringify({ type: 'due', due, remind }));
+  CleanNotes.postMessage(JSON.stringify({ type: 'due', due, remind, task }));
 };
 w.cnSetDue = (due, remind) => {
   dueSet?.(due, remind);
@@ -328,7 +331,7 @@ w.cnClosePdf = () => store.getState().setPdf(null);
 w.cnAck = () => acks.shift()?.();
 
 // Called by the app on open and whenever its copy changes. The page's own database is only a cache for this note.
-w.cnLoad = async ({ note, images, files, dark, deviceFonts, pdf, path }) => {
+w.cnLoad = async ({ note, images, files, dark, deviceFonts, pdf, path, remindAt }) => {
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   const fonts: [string, string][] = [['--font-ui', 'sans-serif'], ['--font-text', 'serif'], ['--font-mono', 'monospace']];
   for (const [name, value] of fonts) {
@@ -364,7 +367,7 @@ w.cnLoad = async ({ note, images, files, dark, deviceFonts, pdf, path }) => {
   });
   if (opening) store.getState().setPdf(pdf ?? null);
   // Rendered on every load too, so a renamed parent or notebook shows in the breadcrumb.
-  root.render(<Page key={note.id} id={note.id} path={path ?? null} />);
+  root.render(<Page key={note.id} id={note.id} path={path ?? null} remindAt={remindAt ?? null} />);
 };
 
 // Saves pending keystrokes and hands the note to the app before it closes this page.

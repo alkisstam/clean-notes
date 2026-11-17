@@ -186,10 +186,10 @@ fun rememberReminderPermission(): () -> Unit {
     }
 }
 
-/** Picks a due date and an optional reminder time on it; Clear removes both. */
+/** Picks a due date and an optional reminder time on it; Clear removes both. With [onAddReminder], the reminder row hands off to the reminder page instead. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DueDialog(initial: String?, initialRemind: String?, onDone: (String?, String?) -> Unit, onDismiss: () -> Unit) {
+fun DueDialog(initial: String?, initialRemind: String?, onDone: (String?, String?) -> Unit, onDismiss: () -> Unit, onAddReminder: ((day: String?) -> Unit)? = null) {
     val state = rememberDatePickerState(initialSelectedDateMillis = initial?.let(::keyToMillis))
     var remind by remember { mutableStateOf(initialRemind) }
     var timing by remember { mutableStateOf(false) }
@@ -212,7 +212,7 @@ fun DueDialog(initial: String?, initialRemind: String?, onDone: (String?, String
     ) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
             DatePicker(state, title = null, headline = null, showModeToggle = false)
-            Row(Modifier.fillMaxWidth().clickable { timing = true }.padding(24.dp, 4.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clickable { if (onAddReminder != null) onAddReminder(state.selectedDateMillis?.let(::millisToKey)) else timing = true }.padding(24.dp, 4.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(painterResource(R.drawable.ic_bell), null, Modifier.size(18.dp))
                 Text(remind?.let { "Reminder at $it" } ?: "Add reminder", Modifier.weight(1f).padding(start = 12.dp))
                 if (remind != null) IconButton(onClick = { remind = null }) { Icon(Icons.Default.Close, "Remove reminder", Modifier.size(18.dp)) }

@@ -142,4 +142,31 @@ class TasksTest {
         val note = JSONObject().put("id", "n").put("title", "Rent").put("content", doc).put("remindAt", "2026-11-20T18:30").put("doneAt", 1)
         assertEquals(emptyList<Due>(), reminders(note, java.time.ZoneOffset.UTC).filter { it.key == "n" })
     }
+
+    @Test fun renamesOnlyThatTaskKeepingItsChildren() {
+        val next = renameTask(doc, "a", "Renamed")
+        assertEquals(listOf("Renamed", "Child"), tasks(next).map { it.text })
+        assertEquals("Parent", tasks(doc)[0].text)
+    }
+
+    @Test fun convertsANotesOwnReminderToOneAttachedToIt() {
+        val note = JSONObject().put("id", "n").put("title", "Rent").put("kind", "note").put("remindAt", "2026-11-20T18:30").put("repeat", "monthly").put("favorite", true).put("doneAt", JSONObject.NULL)
+        val r = migratedReminder(note, 7)!!
+        assertEquals(listOf("reminder", "Rent", "n", "2026-11-20T18:30", "monthly", true), listOf(r.getString("kind"), r.getString("title"), noteRef(r), noteRemindAt(r), noteRepeat(r), r.getBoolean("favorite")))
+        assertEquals(false, noteDone(r))
+        assertEquals(r.getString("id"), migratedReminder(note, 9)!!.getString("id"))
+        assertEquals(null, migratedReminder(JSONObject(note.toString()).put("remindAt", JSONObject.NULL), 7))
+        assertEquals(null, migratedReminder(JSONObject(note.toString()).put("kind", "reminder"), 7))
+    }
+
+    @Test fun showsTheAttachedNoteUnlessItIsInTheTrash() {
+        fun row(id: String, raw: JSONObject) = noteRow(raw.put("id", id).put("title", id).put("content", JSONObject().put("type", "doc")).put("kind", raw.optString("kind", "note"))
+            .put("pinned", false).put("updatedAt", 1).put("trashedAt", raw.opt("trashedAt") ?: JSONObject.NULL).put("notebookId", JSONObject.NULL).put("tags", JSONArray()))
+        val reminder = JSONObject().put("kind", "reminder").put("remindAt", "2026-11-20T09:00").put("noteRef", "n")
+        val live = listOf(row("r", JSONObject(reminder.toString())), row("n", JSONObject()))
+        assertEquals("n", reminderItems(live).single().ref?.id)
+        assertEquals("r", linkedReminder(live, "n")?.id)
+        assertEquals(null, reminderItems(listOf(row("r", JSONObject(reminder.toString())), row("n", JSONObject().put("trashedAt", 3)))).single().ref)
+        assertEquals(null, linkedReminder(listOf(row("r", JSONObject(reminder.toString()).put("doneAt", 1))), "n"))
+    }
 }

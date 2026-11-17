@@ -65,6 +65,17 @@ class App : Application() {
         // Every change to the notes (edits, sync, ticks, trash) re-picks the next reminder.
         scope.launch { db.dao().liveNotes().debounce(1000).collect { Reminders.schedule(this@App, it) } }
         scope.launch { seedIfEmpty() }
+        scope.launch { migrateReminders() }
+    }
+
+    /** Old reminders on a note itself become reminder notes attached to it; see migratedReminder(). */
+    private suspend fun migrateReminders() {
+        val now = System.currentTimeMillis()
+        db.dao().allNotes().forEach { row ->
+            val reminder = migratedReminder(JSONObject(row.raw), now) ?: return@forEach
+            saveNote(reminder)
+            updateNote(row.id) { n, _ -> n.put("remindAt", JSONObject.NULL).put("repeat", JSONObject.NULL).put("doneAt", JSONObject.NULL).put("favorite", false) }
+        }
     }
 
     /** A short guide on first run, as seedIfEmpty() in src/lib/seed.ts. */

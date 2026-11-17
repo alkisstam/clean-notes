@@ -24,6 +24,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -63,6 +65,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -78,20 +81,38 @@ private data class Todo(val id: String, val text: String, val done: Boolean)
 
 val REPEATS = listOf(null to "Don't repeat", "daily" to "Daily", "weekly" to "Weekly", "monthly" to "Monthly", "yearly" to "Yearly")
 
-/** Adds or edits a reminder note (kind "reminder"): title, to-dos, date, time and repeat. [id] null makes a new one. */
+/**
+ * Adds or edits a reminder note (kind "reminder"): title, attached note, to-dos, date, time and repeat. [id] null makes a new one,
+ * attached to [attach] if given. With [task] (note id to to-do id) it edits that to-do's own text, date and time instead.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReminderScreen(app: App, id: String?, onClose: () -> Unit) {
+fun ReminderScreen(app: App, id: String?, attach: String?, task: Pair<String, String>?, onClose: () -> Unit, onOpenNote: (String) -> Unit) {
     val ctx = LocalContext.current
     val note = remember(id) { id?.let { runBlocking { app.db.dao().noteOnce(it) } }?.let { JSONObject(it.raw) } }
+    val todo = remember(task) {
+        task?.let { (noteId, taskId) ->
+            runBlocking { app.db.dao().noteOnce(noteId) }?.let { row -> extractTasks(noteId, row.title, JSONObject(row.raw).getJSONObject("content")).find { it.id == taskId } }
+        }
+    }
+    // The to-do was deleted meanwhile.
+    if (task != null && todo == null) {
+        LaunchedEffect(Unit) { onClose() }
+        return
+    }
+    var ref by rememberSaveable { mutableStateOf(task?.first ?: note?.let(::noteRef) ?: attach) }
+    val refRow = remember(ref) { ref?.let { runBlocking { app.db.dao().noteOnce(it) } }?.takeIf { it.trashedAt == null } }
+    val nextHour = LocalDateTime.now().withMinute(0).withSecond(0).withNano(0).plusHours(1)
     val start = remember(id) {
         note?.let(::noteRemindAt)?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }
-            ?: LocalDateTime.now().withMinute(0).withSecond(0).withNano(0).plusHours(1)
+            ?: todo?.let(::taskAt)
+            ?: todo?.due?.let { runCatching { java.time.LocalDate.parse(it).atTime(nextHour.toLocalTime()) }.getOrNull() }
+            ?: nextHour
     }
     // Only to-do lists at the top of the document are edited here; anything else in it is kept as it is.
     val content = remember(id) { note?.getJSONObject("content") ?: JSONObject().put("type", "doc").put("content", JSONArray()) }
     val blocks = remember(id) { content.optJSONArray("content")?.let { a -> List(a.length()) { a.getJSONObject(it) } }.orEmpty() }
-    var title by rememberSaveable { mutableStateOf(note?.optString("title").orEmpty()) }
+    var title by rememberSaveable { mutableStateOf(note?.optString("title") ?: todo?.text ?: refRow?.title.orEmpty()) }
     var favorite by rememberSaveable { mutableStateOf(note?.optBoolean("favorite") ?: false) }
     var repeat by rememberSaveable { mutableStateOf(note?.let(::noteRepeat)) }
     val todos = remember(id) {
@@ -104,17 +125,29 @@ fun ReminderScreen(app: App, id: String?, onClose: () -> Unit) {
     val time = rememberTimePickerState(start.hour, start.minute, DateFormat.is24HourFormat(ctx))
     val day = date.selectedDateMillis?.let(::millisToKey) ?: dateKey()
     val allowReminders = rememberReminderPermission()
-    LaunchedEffect(Unit) { if (id == null) allowReminders() }
+    LaunchedEffect(Unit) { if (id == null && todo?.remind == null) allowReminders() }
     val titleFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { if (id == null) titleFocus.requestFocus() }
+    LaunchedEffect(Unit) { if (id == null && task == null && attach == null) titleFocus.requestFocus() }
     val addTodo = {
         val t = Todo(UUID.randomUUID().toString(), "", false)
         todos += t
         focusTodo = t.id
     }
 
-    val save = {
+    val save = save@{
         val at = "${day}T%02d:%02d".format(time.hour, time.minute)
+        if (task != null && todo != null) {
+            val name = title.trim()
+            app.scope.launch {
+                app.updateNote(task.first, contentChanged = true) { n, _ ->
+                    var c = patchTask(n.getJSONObject("content"), task.second, mapOf("due" to day, "remind" to "%02d:%02d".format(time.hour, time.minute)))
+                    if (name != todo.text) c = renameTask(c, task.second, name)
+                    n.put("content", c).put("text", docText(c))
+                }
+            }
+            onClose()
+            return@save
+        }
         var doc = JSONObject().put("type", "doc").put("content", JSONArray(blocks.filter { it.optString("type") != "taskList" }))
         todos.filter { it.text.isNotBlank() }.forEach { t ->
             doc = appendTask(doc, t.id, t.text.trim(), null)
@@ -124,6 +157,7 @@ fun ReminderScreen(app: App, id: String?, onClose: () -> Unit) {
         val fav = favorite
         val rep = repeat
         val name = title.trim()
+        val attached = ref
         app.scope.launch {
             if (id == null) {
                 val now = System.currentTimeMillis()
@@ -143,13 +177,14 @@ fun ReminderScreen(app: App, id: String?, onClose: () -> Unit) {
                         .put("remindAt", at)
                         .put("repeat", rep ?: JSONObject.NULL)
                         .put("favorite", fav)
-                        .put("doneAt", JSONObject.NULL),
+                        .put("doneAt", JSONObject.NULL)
+                        .put("noteRef", attached ?: JSONObject.NULL),
                 )
             } else app.updateNote(id, contentChanged = true) { n, _ ->
                 // A new time makes a completed reminder active again.
                 if (noteRemindAt(n) != at) n.put("doneAt", JSONObject.NULL)
                 n.put("title", name).put("content", doc).put("text", docText(doc))
-                    .put("remindAt", at).put("repeat", rep ?: JSONObject.NULL).put("favorite", fav)
+                    .put("remindAt", at).put("repeat", rep ?: JSONObject.NULL).put("favorite", fav).put("noteRef", attached ?: JSONObject.NULL)
             }
         }
         onClose()
@@ -161,13 +196,17 @@ fun ReminderScreen(app: App, id: String?, onClose: () -> Unit) {
         focusedIndicatorColor = Color.Transparent,
         unfocusedIndicatorColor = Color.Transparent,
     )
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).systemBarsPadding().imePadding()) {
+    Box(Modifier.noteBounds(LocalOpenFrom.current.value.takeIf { it.startsWith("rem:") }, 0.dp).fillMaxSize().background(MaterialTheme.colorScheme.background).systemBarsPadding().imePadding()) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.End) {
                 if (id != null) IconButton(onClick = { app.scope.launch { app.trashNote(id) }; onClose() }) {
                     Icon(painterResource(R.drawable.ic_trash), "Move reminder to Trash")
                 }
-                IconButton(onClick = { favorite = !favorite }) {
+                if (task != null && todo?.remind != null) IconButton(onClick = { app.scope.launch { app.setTaskAttrs(task.first, task.second, mapOf("remind" to null)) }; onClose() }) {
+                    Icon(painterResource(R.drawable.ic_trash), "Remove reminder")
+                }
+                // To-dos have no favorite flag of their own.
+                if (task == null) IconButton(onClick = { favorite = !favorite }) {
                     Icon(
                         painterResource(if (favorite) R.drawable.ic_star_filled else R.drawable.ic_star),
                         if (favorite) "Remove from favorites" else "Add to favorites",
@@ -183,7 +222,10 @@ fun ReminderScreen(app: App, id: String?, onClose: () -> Unit) {
                         textStyle = MaterialTheme.typography.titleLarge,
                         colors = clear,
                     )
-                    todos.forEachIndexed { i, t ->
+                    refRow?.let { r ->
+                        NoteCard(r, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), onRemove = if (task == null) ({ ref = null }) else null) { onOpenNote(r.id) }
+                    }
+                    if (task == null) todos.forEachIndexed { i, t ->
                         val focus = remember(t.id) { FocusRequester() }
                         LaunchedEffect(focusTodo) { if (focusTodo == t.id) { focus.requestFocus(); focusTodo = null } }
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -202,7 +244,7 @@ fun ReminderScreen(app: App, id: String?, onClose: () -> Unit) {
                             )
                         }
                     }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    if (task == null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         IconButton(onClick = addTodo) { Icon(painterResource(R.drawable.ic_circle_check), "Add to-do") }
                     }
                     HorizontalDivider(Modifier.padding(horizontal = 12.dp))
@@ -217,8 +259,8 @@ fun ReminderScreen(app: App, id: String?, onClose: () -> Unit) {
                     AnimatedVisibility(open == "time") {
                         Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) { TimePicker(time) }
                     }
-                    HorizontalDivider(Modifier.padding(horizontal = 12.dp))
-                    Option(R.drawable.ic_repeat, REPEATS.first { it.first == repeat }.second, open == "repeat", dim = repeat == null) {
+                    if (task == null) HorizontalDivider(Modifier.padding(horizontal = 12.dp))
+                    if (task == null) Option(R.drawable.ic_repeat, REPEATS.first { it.first == repeat }.second, open == "repeat", dim = repeat == null) {
                         open = if (open == "repeat") null else "repeat"
                     }
                     AnimatedVisibility(open == "repeat") {
@@ -247,6 +289,30 @@ fun ReminderScreen(app: App, id: String?, onClose: () -> Unit) {
                 TextButton(onClick = save, Modifier.width(96.dp), enabled = title.isNotBlank()) { Text("Save", fontWeight = FontWeight.SemiBold) }
             }
         }
+    }
+}
+
+/** A note attached to a reminder: its title, and a preview of its text unless [compact]. Tapping opens it; [onRemove] detaches it. */
+@Composable
+fun NoteCard(note: NoteRow, modifier: Modifier = Modifier, compact: Boolean = false, onRemove: (() -> Unit)? = null, onClick: () -> Unit) = Box(modifier) {
+    Surface(onClick = onClick, shape = RoundedCornerShape(if (compact) 14.dp else 20.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+        Row(Modifier.padding(if (compact) 8.dp else 12.dp).padding(end = if (onRemove != null) 24.dp else 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(Modifier.size(if (compact) 28.dp else 36.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(painterResource(R.drawable.ic_file_text), null, Modifier.size(if (compact) 15.dp else 18.dp), tint = MaterialTheme.colorScheme.onPrimary)
+                }
+            }
+            Column(Modifier.padding(start = 12.dp)) {
+                Text(note.title.ifBlank { "Untitled" }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+                if (!compact && note.text.isNotBlank()) Text(
+                    note.text.replace('\n', ' '), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+    if (onRemove != null) IconButton(onClick = onRemove, Modifier.align(Alignment.TopEnd).size(32.dp)) {
+        Icon(Icons.Default.Close, "Detach note", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
     }
 }
 
