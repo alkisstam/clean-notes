@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0 — 2026-11-17
+
+### Added
+- Reminders, as in the phone app: a Reminders view in the sidebar with Today, Scheduled and Completed, and a reminder page with a title, to-dos, a date, a time and a repeat. Reminders can be favorited, which keeps them at the top. Right-click one to complete, favorite or delete it.
+- Add reminder in a note's menu, or the bell under its tags, attaches the note to a reminder as a card. Click the card to open the note. Completing or deleting the reminder leaves the note alone.
+- A to-do's date pop-up has Add reminder, which sets a time on the to-do.
+- Reminders show as notifications while the app is open. Ones missed while it was closed show together as one.
+- The desktop app keeps running in the tray when its window is closed, so reminders still show, and can start at login. Both are in Settings → Reminders; quit from the tray icon.
+
 ## 1.0.10 — 2026-11-16
 
 ### Changed
