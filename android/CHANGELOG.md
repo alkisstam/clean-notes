@@ -1,5 +1,15 @@
 # Changelog — Android app
 
+## 1.3.0 — 2026-11-17
+
+### Changed
+- Add reminder on a note (long-press, the note's menu or the bell under its title) opens the reminder page with the note attached as a card, instead of a date pop-up. Tap the card to open the note, or × to detach it. A note with a reminder offers Edit reminder instead.
+- Completing or deleting a reminder no longer touches its note.
+- On a to-do's date, Add reminder opens the same page with the to-do as the title. A date alone still only puts it in Tasks.
+- Tapping a reminder opens it for editing instead of opening its note; its note shows as a card underneath.
+- The reminder page grows out of its card, or the + button, the way a note does.
+- Reminders set on a note before this version are moved to the Reminders page with the note attached.
+
 ## 1.2.0 — 2026-11-16
 
 ### Added

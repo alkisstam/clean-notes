@@ -13,8 +13,8 @@ android {
         applicationId = "com.alkisstam.notes"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "1.2.0"
+        versionCode = 14
+        versionName = "1.3.0"
     }
 
     // The release key never enters the repo: its path and passwords come from ~/.gradle/gradle.properties
