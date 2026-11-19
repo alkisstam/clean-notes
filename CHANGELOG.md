@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0 — 2026-11-19
+
+### Added
+- Select in a reminder's right-click menu picks several at once, with Select all and Cancel, to complete, favorite or delete them together.
+- Reminder notifications have Done, which completes the reminder or ticks the to-do, and Dismiss. On the web this needs Chrome or Edge; on Linux it uses the system's notifications (notify-send).
+
+### Changed
+- Clicking a reminder opens it to read. The pencil button edits it, with Cancel and Save.
+- Deleting a reminder asks first.
+
 ## 1.1.0 — 2026-11-17
 
 ### Added

@@ -1,5 +1,15 @@
 # Changelog — Android app
 
+## 1.4.0 — 2026-11-19
+
+### Added
+- Reminder notifications have Done, which completes the reminder or ticks the to-do, and Dismiss. Done on a repeating reminder leaves its next time as it is.
+- Select mode on Reminders has Select all and Cancel.
+
+### Changed
+- Tapping a reminder opens it to read. The pencil button edits it, with Cancel and Save.
+- Deleting a reminder, from its page or from select mode, asks first.
+
 ## 1.3.0 — 2026-11-17
 
 ### Changed
