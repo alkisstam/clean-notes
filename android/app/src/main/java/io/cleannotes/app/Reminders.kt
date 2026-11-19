@@ -126,13 +126,13 @@ fun groupReminders(items: List<ReminderItem>, today: LocalDate): ReminderGroups 
 }
 
 /** One notification to show: a to-do's or a whole note's. `key` keeps their notifications apart. */
-data class Due(val key: String, val noteId: String, val title: String, val text: String, val at: Long)
+data class Due(val key: String, val noteId: String, val title: String, val text: String, val at: Long, val taskId: String? = null)
 
 /** Every reminder in a note's JSON: its to-dos' and its own. */
 fun reminders(note: JSONObject, zone: ZoneId = ZoneId.systemDefault()): List<Due> {
     val id = note.getString("id")
     val title = note.optString("title").ifBlank { "Untitled" }
-    val tasks = extractTasks(id, title, note.getJSONObject("content")).mapNotNull { t -> remindAt(t, zone)?.let { Due(t.id, id, t.text, title, it) } }
+    val tasks = extractTasks(id, title, note.getJSONObject("content")).mapNotNull { t -> remindAt(t, zone)?.let { Due(t.id, id, t.text, title, it, t.id) } }
     val own = noteRemindAt(note)?.takeIf { !noteDone(note) }?.let { runCatching { LocalDateTime.parse(it).atZone(zone).toInstant().toEpochMilli() }.getOrNull() }
     // Tapping it opens the attached note, if there is one.
     return tasks + listOfNotNull(own?.let { Due(id, noteRef(note) ?: id, title, "Reminder", it) })
@@ -148,6 +148,8 @@ fun nextReminder(due: List<Due>, after: Long): Long? = due.map { it.at }.filter 
 object Reminders {
     private const val CHANNEL = "reminders"
     const val OPEN_NOTE = "io.cleannotes.app.OPEN_NOTE"
+    const val DONE = "io.cleannotes.app.REMINDER_DONE"
+    const val DISMISS = "io.cleannotes.app.REMINDER_DISMISS"
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("reminders", Context.MODE_PRIVATE)
 
@@ -181,6 +183,11 @@ object Reminders {
             due.forEach { t ->
                 val open = Intent(app, MainActivity::class.java).setAction(OPEN_NOTE).putExtra("noteId", t.noteId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 val tap = PendingIntent.getActivity(app, t.key.hashCode(), open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                val act = { action: String ->
+                    val i = Intent(app, ReminderReceiver::class.java).setAction(action)
+                        .putExtra("notif", t.key.hashCode()).putExtra("key", t.key).putExtra("taskNote", if (t.taskId != null) t.noteId else null)
+                    PendingIntent.getBroadcast(app, "$action:${t.key}".hashCode(), i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                }
                 nm.notify(t.key.hashCode(), NotificationCompat.Builder(app, CHANNEL)
                     .setSmallIcon(R.drawable.ic_bell)
                     .setContentTitle(t.title)
@@ -188,6 +195,8 @@ object Reminders {
                     .setCategory(NotificationCompat.CATEGORY_REMINDER)
                     .setPriority(NotificationCompat.PRIORITY_HIGH)
                     .setContentIntent(tap)
+                    .addAction(0, "Done", act(DONE))
+                    .addAction(0, "Dismiss", act(DISMISS))
                     .setAutoCancel(true)
                     .build())
             }
@@ -200,6 +209,19 @@ object Reminders {
         }
         schedule(app, notes)
     }
+
+    /** Done or Dismiss on a notification. Done ticks a to-do or completes a reminder; a repeating one has already moved on to its next time. */
+    suspend fun act(app: App, intent: Intent) {
+        app.getSystemService(NotificationManager::class.java).cancel(intent.getIntExtra("notif", 0))
+        if (intent.action != DONE) return
+        val key = intent.getStringExtra("key") ?: return
+        intent.getStringExtra("taskNote")?.let { owner ->
+            app.setTaskAttrs(owner, key, mapOf("checked" to true))
+            return
+        }
+        val note = app.db.dao().noteOnce(key)?.let { JSONObject(it.raw) } ?: return
+        if (noteRepeat(note) == null) setDone(app, key, note.optString("kind") == "reminder", true)
+    }
 }
 
 /** The reminder alarm, and boot and app updates, which clear alarms. */
@@ -209,7 +231,8 @@ class ReminderReceiver : BroadcastReceiver() {
         val done = goAsync()
         app.scope.launch {
             try {
-                Reminders.fire(app)
+                if (intent.action == Reminders.DONE || intent.action == Reminders.DISMISS) Reminders.act(app, intent)
+                else Reminders.fire(app)
             } finally {
                 done.finish()
             }

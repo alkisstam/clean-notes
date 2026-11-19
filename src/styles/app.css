@@ -397,6 +397,8 @@ kbd { font: 500 10.5px var(--font-mono); color: var(--ink-3); }
 .reminder-option :is(input, select, button) { flex: 1; min-width: 0; height: 40px; padding: 0; border: 0; background: none; color: var(--ink); font: 500 14px var(--font-ui); text-align: left; cursor: pointer; }
 .reminder-option select[data-dim='true'] { color: var(--ink-3); }
 .reminder-option select option { background: var(--raised); color: var(--ink); }
+.reminder-option :is(select, button):disabled { cursor: default; opacity: 1; }
+.reminder-option select:disabled { appearance: none; }
 .reminder-card .calendar { padding: 0 0 10px 30px; border-bottom: 0; margin: 0; }
 .time-picker { display: flex; flex-direction: column; gap: 4px; padding: 0 0 12px 30px; }
 .time-picker-head { color: var(--ink-3); font-size: 10.5px; font-weight: 500; margin-top: 4px; }

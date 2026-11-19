@@ -1,6 +1,6 @@
 import { db } from './db';
 import { advancedRemindAt, dueReminders, type Due } from './reminders';
-import { patchNote } from './actions';
+import { patchNote, setReminderDone } from './actions';
 import { store } from './store';
 
 // The page can only show notifications while it is open: a tab, the installed web app, or the desktop app (which keeps running in the tray).
@@ -39,9 +39,31 @@ async function open(d: Due) {
   else s.openNote(d.noteId);
 }
 
-function show(title: string, body: string, tag: string, onClick: () => void) {
-  const n = new Notification(title, { body, tag, icon: new URL('icons/icon-192.png', location.href).href });
-  n.onclick = onClick;
+/** Done from a notification. A repeating reminder has already moved on to its next time, so it is left as it is. */
+async function complete(d: Due) {
+  if (!d.taskId && (await db.notes.get(d.noteId))?.repeat) return;
+  await setReminderDone(d, true);
+}
+
+/** With [d], the notification gets Done and Dismiss: through notify-send in the desktop app, or the service worker on the web. */
+async function show(title: string, body: string, tag: string, onClick: () => void, d?: Due) {
+  const icon = new URL('icons/icon-192.png', location.href).href;
+  if (d && window.desktop?.notify) {
+    try {
+      const action = await window.desktop.notify({ title, body });
+      if (action === 'default') onClick();
+      else if (action === 'done') await complete(d);
+      return;
+    } catch {
+      /* No notify-send: a plain notification below. */
+    }
+  }
+  const reg = d && (await navigator.serviceWorker?.getRegistration());
+  if (reg) {
+    const actions = [{ action: 'done', title: 'Done' }, { action: 'dismiss', title: 'Dismiss' }];
+    return reg.showNotification(title, { body, tag, icon, data: d, actions } as NotificationOptions);
+  }
+  new Notification(title, { body, tag, icon }).onclick = onClick;
 }
 
 /** Asks once, from a click, since browsers refuse to ask otherwise. The desktop app is always allowed. */
@@ -61,13 +83,13 @@ async function tick(started: number) {
     const fresh = due.filter((d) => !missed.includes(d));
     if (missed.length === 1) fresh.unshift(missed[0]);
     else if (missed.length > 1) {
-      show(`${missed.length} missed reminders`, missed.map((d) => d.title).join(', '), 'missed', () => {
+      void show(`${missed.length} missed reminders`, missed.map((d) => d.title).join(', '), 'missed', () => {
         window.desktop?.show();
         window.focus();
         store.getState().setView({ type: 'reminders' });
       });
     }
-    for (const d of fresh) show(d.title, d.taskId ? 'To-do' : 'Reminder', d.key, () => void open(d));
+    for (const d of fresh) void show(d.title, d.taskId ? 'To-do' : 'Reminder', d.key, () => void open(d), d);
   }
   // Repeating reminders that have come round move on to their next time.
   const nowDate = new Date(now);
@@ -85,6 +107,11 @@ export function startReminders() {
   if (running) return;
   running = true;
   const started = Date.now();
+  navigator.serviceWorker?.addEventListener('message', (e) => {
+    if (e.data?.type !== 'reminder') return;
+    if (e.data.action === 'done') void complete(e.data.due);
+    else void open(e.data.due);
+  });
   const run = () => void tick(started).catch(() => {});
   run();
   setInterval(run, 20_000);

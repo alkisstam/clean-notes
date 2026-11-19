@@ -29,6 +29,7 @@ declare global {
       sharePdf: (html: string, name: string) => Promise<void>;
       shareFile: (bytes: ArrayBuffer, name: string) => Promise<void>;
       show: () => void;
+      notify?: (n: { title: string; body: string }) => Promise<string>;
       prefs: () => Promise<{ background: boolean; autostart: boolean }>;
       setPrefs: (p: { background?: boolean; autostart?: boolean }) => Promise<void>;
     };

@@ -1,4 +1,4 @@
-import { ArrowLeft, Bell, CalendarDays, CircleCheck, Clock, FileText, ListPlus, Plus, Repeat, Star, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Bell, CalendarDays, CircleCheck, Clock, FileText, ListPlus, Pencil, Plus, Repeat, SquareCheck, Star, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { deleteReminder, saveReminder, setReminderDone, patchNote, tickReminder, setTaskAttrs, trashNotes } from '../lib/actions';
 import { dueLabel } from '../lib/dates';
@@ -52,16 +52,20 @@ function NoteCard({ note, compact, onRemove }: { note: Note; compact?: boolean; 
   );
 }
 
-function ReminderRow({ r, active }: { r: ReminderItem; active: boolean }) {
+type RowSelect = { selecting: boolean; ticked: boolean; onSelect: () => void; onToggle: () => void };
+
+function ReminderRow({ r, active, sel }: { r: ReminderItem; active: boolean; sel: RowSelect }) {
   const [ctx, setCtx] = useState<DOMRect | null>(null);
   const late = !r.done && r.at < new Date();
   const items: MenuItem[] = [
+    { label: 'Select', icon: <SquareCheck size={14} />, run: sel.onSelect },
     { label: r.done ? 'Restore' : 'Complete', icon: <CircleCheck size={14} />, run: () => void setReminderDone(r, !r.done) },
     // To-dos have no favorite flag of their own.
     ...(r.taskId ? [] : [{ label: r.favorite ? 'Unfavorite' : 'Favorite', icon: <Star size={14} />, run: () => void patchNote(r.noteId, { favorite: !r.favorite }) }]),
-    { label: 'Delete', icon: <Trash2 size={14} />, danger: true, run: () => void deleteReminder(r) },
+    { label: 'Delete', icon: <Trash2 size={14} />, danger: true, run: () => confirmDelete([r]) },
   ];
   const open = () => {
+    if (sel.selecting) return sel.onToggle();
     const s = store.getState();
     if (r.taskId) s.editReminder({ task: { noteId: r.noteId, taskId: r.taskId } });
     else if (r.kind === 'reminder') s.editReminder({ id: r.noteId });
@@ -71,14 +75,18 @@ function ReminderRow({ r, active }: { r: ReminderItem; active: boolean }) {
     <div
       className="reminder-row"
       data-done={r.done}
-      data-active={active}
+      data-active={active || sel.ticked}
       onContextMenu={(e) => {
         e.preventDefault();
-        setCtx(new DOMRect(e.clientX, e.clientY, 0, 0));
+        if (!sel.selecting) setCtx(new DOMRect(e.clientX, e.clientY, 0, 0));
       }}
     >
       <label className="task-check round">
-        <input type="checkbox" checked={r.done} aria-label={`Mark "${r.title}" ${r.done ? 'not done' : 'done'}`} onChange={() => void tickReminder(r)} />
+        {sel.selecting ? (
+          <input type="checkbox" checked={sel.ticked} aria-label={`Select "${r.title}"`} onChange={sel.onToggle} />
+        ) : (
+          <input type="checkbox" checked={r.done} aria-label={`Mark "${r.title}" ${r.done ? 'not done' : 'done'}`} onChange={() => void tickReminder(r)} />
+        )}
         <span className="task-box" />
       </label>
       <div className="reminder-row-main" role="button" tabIndex={0} onClick={open} onKeyDown={(e) => e.key === 'Enter' && open()}>
@@ -94,9 +102,50 @@ function ReminderRow({ r, active }: { r: ReminderItem; active: boolean }) {
   );
 }
 
+function confirmDelete(rs: ReminderItem[], then?: () => void) {
+  store.getState().setDialog({
+    kind: 'confirm',
+    title: rs.length > 1 ? `Delete ${rs.length} reminders?` : 'Delete reminder?',
+    confirm: 'Delete',
+    danger: true,
+    onConfirm: () => {
+      void (async () => { for (const r of rs) await deleteReminder(r); })();
+      then?.();
+    },
+  });
+}
+
+function ReminderSelectBar({ picked, all, set }: { picked: ReminderItem[]; all: ReminderItem[]; set: (keys: string[] | null) => void }) {
+  const allDone = picked.length > 0 && picked.every((r) => r.done);
+  const favable = picked.filter((r) => !r.taskId);
+  const allFav = favable.length > 0 && favable.every((r) => r.favorite);
+  const allOn = picked.length === all.length && all.length > 0;
+  const done = () => set(null);
+  const actions: { label: string; icon: React.ReactNode; run: () => void; off?: boolean }[] = [
+    { label: allDone ? 'Restore' : 'Complete', icon: <CircleCheck size={15} />, run: () => { void (async () => { for (const r of picked) await setReminderDone(r, !allDone); })(); done(); } },
+    { label: allFav ? 'Unfavorite' : 'Favorite', icon: <Star size={15} fill={allFav ? 'currentColor' : 'none'} />, off: !favable.length, run: () => { void (async () => { for (const r of favable) await patchNote(r.noteId, { favorite: !allFav }); })(); done(); } },
+    { label: 'Delete', icon: <Trash2 size={15} />, run: () => confirmDelete(picked, done) },
+  ];
+  return (
+    <div className="select-bar" role="toolbar" aria-label="Selected reminders">
+      <div className="select-bar-top">
+        <strong>{picked.length} selected</strong>
+        <button type="button" className="link-btn" onClick={() => set(allOn ? [] : all.map((r) => r.key))}>{allOn ? 'Deselect all' : 'Select all'}</button>
+        <button type="button" className="link-btn" onClick={done}>Cancel</button>
+      </div>
+      <div className="select-bar-actions">
+        {actions.map((a) => (
+          <button key={a.label} type="button" className="icon-btn small" aria-label={a.label} title={a.label} disabled={!picked.length || a.off} onClick={a.run}>{a.icon}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** Today, Scheduled and Completed as three tiles, and the picked group's reminders below. */
 export function RemindersBody({ notes }: { notes: Note[] }) {
   const [tab, setTab] = useState<Tab>(readTab);
+  const [selected, setSelected] = useState<string[] | null>(null);
   const editing = useStore((s) => s.reminder);
   const groups = useMemo(() => groupReminders(reminderItems(notes), new Date()), [notes]);
   const list = groups[tab];
@@ -107,6 +156,8 @@ export function RemindersBody({ notes }: { notes: Note[] }) {
     ['completed', 'Completed', <CircleCheck size={15} />],
   ];
   return (
+    <>
+    {selected && <ReminderSelectBar picked={list.filter((r) => selected.includes(r.key))} all={list} set={setSelected} />}
     <div className="list-scroll">
       <div className="reminder-tiles" role="tablist">
         {tiles.map(([key, label, icon]) => (
@@ -117,6 +168,7 @@ export function RemindersBody({ notes }: { notes: Note[] }) {
             aria-selected={tab === key}
             onClick={() => {
               setTab(key);
+              setSelected(null);
               try {
                 localStorage.setItem('cn.reminderTab', key);
               } catch {
@@ -131,7 +183,19 @@ export function RemindersBody({ notes }: { notes: Note[] }) {
         ))}
       </div>
       {list.length ? (
-        list.map((r) => <ReminderRow key={r.key} r={r} active={r.key === activeKey} />)
+        list.map((r) => (
+          <ReminderRow
+            key={r.key}
+            r={r}
+            active={r.key === activeKey}
+            sel={{
+              selecting: selected !== null,
+              ticked: Boolean(selected?.includes(r.key)),
+              onSelect: () => setSelected([r.key]),
+              onToggle: () => setSelected((s) => (s?.includes(r.key) ? s.filter((k) => k !== r.key) : [...(s ?? []), r.key])),
+            }}
+          />
+        ))
       ) : (
         <div className="empty">
           <strong>{tab === 'scheduled' ? 'Nothing scheduled' : tab === 'completed' ? 'No completed reminders' : 'Nothing due today'}</strong>
@@ -141,6 +205,7 @@ export function RemindersBody({ notes }: { notes: Note[] }) {
         </div>
       )}
     </div>
+    </>
   );
 }
 
@@ -173,8 +238,28 @@ function TimePicker({ value, onPick }: { value: string; onPick: (time: string, d
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
-/** Adds or edits a reminder in the editor pane: title, attached note, to-dos, date, time and repeat; or a to-do's own date and time. */
+/** An existing reminder opens to view; Edit switches to the form, and Cancel goes back with the changes dropped. */
 export function ReminderEditor({ edit, notes }: { edit: ReminderEdit; notes: Note[] }) {
+  const [existing] = useState(() => {
+    if (edit.id) return true;
+    const owner = edit.task && notes.find((n) => n.id === edit.task!.noteId);
+    return Boolean(owner && extractTasks(owner).find((t) => t.id === edit.task!.taskId)?.remind);
+  });
+  const [editing, setEditing] = useState(!existing);
+  const [rev, setRev] = useState(0);
+  return (
+    <ReminderForm
+      key={rev}
+      edit={edit}
+      notes={notes}
+      editing={editing}
+      onEdit={existing ? (on, drop) => { setEditing(on); if (drop) setRev(rev + 1); } : null}
+    />
+  );
+}
+
+/** Adds or edits a reminder in the editor pane: title, attached note, to-dos, date, time and repeat; or a to-do's own date and time. */
+function ReminderForm({ edit, notes, editing, onEdit }: { edit: ReminderEdit; notes: Note[]; editing: boolean; onEdit: ((on: boolean, drop?: boolean) => void) | null }) {
   // Read once, so a sync landing mid-edit doesn't replace what is being typed.
   const [init] = useState(() => {
     const note = edit.id ? notes.find((n) => n.id === edit.id) : undefined;
@@ -204,6 +289,7 @@ export function ReminderEditor({ edit, notes }: { edit: ReminderEdit; notes: Not
   const titleRef = useRef<HTMLInputElement>(null);
   const refNote = notes.find((n) => n.id === ref && !n.trashedAt);
   const isTask = Boolean(edit.task);
+  const ro = !editing;
 
   useEffect(() => {
     if (!edit.id && !edit.task && !edit.attach) titleRef.current?.focus();
@@ -220,12 +306,16 @@ export function ReminderEditor({ edit, notes }: { edit: ReminderEdit; notes: Not
     s.editReminder(null);
     if (s.noteId === edit.id) s.openNote(null);
   };
+  const cancel = () => (onEdit ? onEdit(false, true) : close());
   const save = () => {
     if (!title.trim()) return;
     askToNotify();
     void saveReminder(edit, { title: title.trim(), at: `${day}T${time || '09:00'}`, repeat, favorite, noteRef: ref, todos });
-    close();
+    if (onEdit) onEdit(false);
+    else close();
   };
+  const askDelete = (heading: string, run: () => void) =>
+    store.getState().setDialog({ kind: 'confirm', title: heading, confirm: 'Delete', danger: true, onConfirm: () => { run(); close(); } });
   const addTodo = () => {
     const t = { id: crypto.randomUUID(), text: '', done: false };
     setTodos([...todos, t]);
@@ -240,18 +330,26 @@ export function ReminderEditor({ edit, notes }: { edit: ReminderEdit; notes: Not
         </button>
         <span className="reminder-head"><Bell size={14} /> {isTask ? 'To-do reminder' : edit.id ? 'Reminder' : 'New reminder'}</span>
         <span className="doc-spacer" />
+        {ro && (
+          <button type="button" className="icon-btn" aria-label="Edit reminder" title="Edit" onClick={() => onEdit?.(true)}>
+            <Pencil size={15} />
+          </button>
+        )}
         {edit.id && (
-          <button type="button" className="icon-btn" aria-label="Move reminder to Trash" title="Move to Trash" onClick={() => { void trashNotes([edit.id!]); close(); }}>
+          <button type="button" className="icon-btn" aria-label="Move reminder to Trash" title="Move to Trash" onClick={() => askDelete('Delete reminder?', () => void trashNotes([edit.id!]))}>
             <Trash2 size={15} />
           </button>
         )}
         {isTask && init.todo?.remind && (
-          <button type="button" className="icon-btn" aria-label="Remove reminder" title="Remove reminder" onClick={() => { void setTaskAttrs(edit.task!.noteId, edit.task!.taskId, { remind: null }); close(); }}>
+          <button type="button" className="icon-btn" aria-label="Remove reminder" title="Remove reminder" onClick={() => askDelete('Remove reminder?', () => void setTaskAttrs(edit.task!.noteId, edit.task!.taskId, { remind: null }))}>
             <Trash2 size={15} />
           </button>
         )}
         {!isTask && (
-          <button type="button" className="icon-btn" aria-label={favorite ? 'Remove from favorites' : 'Add to favorites'} aria-pressed={favorite} onClick={() => setFavorite(!favorite)}>
+          <button type="button" className="icon-btn" aria-label={favorite ? 'Remove from favorites' : 'Add to favorites'} aria-pressed={favorite} onClick={() => {
+              setFavorite(!favorite);
+              if (ro && edit.id) void patchNote(edit.id, { favorite: !favorite });
+            }}>
             <Star size={15} fill={favorite ? 'currentColor' : 'none'} />
           </button>
         )}
@@ -263,21 +361,22 @@ export function ReminderEditor({ edit, notes }: { edit: ReminderEdit; notes: Not
             e.preventDefault();
             save();
           }}
-          onKeyDown={(e) => e.key === 'Escape' && close()}
+          onKeyDown={(e) => e.key === 'Escape' && cancel()}
         >
           <div className="reminder-card">
-            <input ref={titleRef} className="reminder-title" value={title} placeholder="Title" aria-label="Title" onChange={(e) => setTitle(e.target.value)} />
-            {refNote && <NoteCard note={refNote} onRemove={isTask ? undefined : () => setRef(null)} />}
+            <input ref={titleRef} className="reminder-title" readOnly={ro} value={title} placeholder="Title" aria-label="Title" onChange={(e) => setTitle(e.target.value)} />
+            {refNote && <NoteCard note={refNote} onRemove={isTask || ro ? undefined : () => setRef(null)} />}
             {!isTask && (
               <div className="reminder-todos">
                 {todos.map((t, i) => (
                   <div key={t.id} className="reminder-todo">
                     <label className="task-check round">
-                      <input type="checkbox" checked={t.done} aria-label={t.done ? 'Mark to-do not done' : 'Mark to-do done'} onChange={() => setTodos(todos.map((x) => (x.id === t.id ? { ...x, done: !x.done } : x)))} />
+                      <input type="checkbox" disabled={ro} checked={t.done} aria-label={t.done ? 'Mark to-do not done' : 'Mark to-do done'} onChange={() => setTodos(todos.map((x) => (x.id === t.id ? { ...x, done: !x.done } : x)))} />
                       <span className="task-box" />
                     </label>
                     <input
                       data-todo={t.id}
+                      readOnly={ro}
                       value={t.text}
                       placeholder="To-do"
                       aria-label="To-do"
@@ -296,12 +395,12 @@ export function ReminderEditor({ edit, notes }: { edit: ReminderEdit; notes: Not
                     />
                   </div>
                 ))}
-                <button type="button" className="link-btn reminder-add-todo" onClick={addTodo}><ListPlus size={13} /> Add to-do</button>
+                {!ro && <button type="button" className="link-btn reminder-add-todo" onClick={addTodo}><ListPlus size={13} /> Add to-do</button>}
               </div>
             )}
             <div className="reminder-option">
               <CalendarDays size={16} />
-              <button type="button" aria-expanded={open === 'date'} onClick={() => setOpen(open === 'date' ? null : 'date')}>{dueLabel(day)}</button>
+              <button type="button" disabled={ro} aria-expanded={open === 'date'} onClick={() => setOpen(open === 'date' ? null : 'date')}>{dueLabel(day)}</button>
             </div>
             {open === 'date' && (
               <Calendar
@@ -314,7 +413,7 @@ export function ReminderEditor({ edit, notes }: { edit: ReminderEdit; notes: Not
             )}
             <div className="reminder-option">
               <Clock size={16} />
-              <button type="button" aria-expanded={open === 'time'} aria-label={`Time, ${timeLabel(parseAt(`${day}T${time}`) ?? new Date())}`} onClick={() => setOpen(open === 'time' ? null : 'time')}>
+              <button type="button" disabled={ro} aria-expanded={open === 'time'} aria-label={`Time, ${timeLabel(parseAt(`${day}T${time}`) ?? new Date())}`} onClick={() => setOpen(open === 'time' ? null : 'time')}>
                 {timeLabel(parseAt(`${day}T${time}`) ?? new Date())}
               </button>
             </div>
@@ -330,16 +429,18 @@ export function ReminderEditor({ edit, notes }: { edit: ReminderEdit; notes: Not
             {!isTask && (
               <label className="reminder-option">
                 <Repeat size={16} />
-                <select value={repeat ?? ''} aria-label="Repeat" data-dim={!repeat} onChange={(e) => setRepeat(e.target.value || null)}>
+                <select value={repeat ?? ''} disabled={ro} aria-label="Repeat" data-dim={!repeat} onChange={(e) => setRepeat(e.target.value || null)}>
                   {REPEATS.map(([key, label]) => <option key={label} value={key ?? ''}>{label}</option>)}
                 </select>
               </label>
             )}
           </div>
-          <div className="reminder-actions">
-            <button type="button" className="btn" onClick={close}>Cancel</button>
-            <button type="submit" className="btn primary" disabled={!title.trim()}>Save</button>
-          </div>
+          {!ro && (
+            <div className="reminder-actions">
+              <button type="button" className="btn" onClick={cancel}>Cancel</button>
+              <button type="submit" className="btn primary" disabled={!title.trim()}>Save</button>
+            </div>
+          )}
         </form>
       </div>
     </>

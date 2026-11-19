@@ -30,6 +30,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -166,8 +168,10 @@ fun RemindersBody(
             }
         }
     }
+    var askDelete by remember { mutableStateOf(false) }
     selected?.let { keys ->
         val picked = list.filter { it.key in keys }
+        val allOn = list.isNotEmpty() && picked.size == list.size
         val allDone = picked.isNotEmpty() && picked.all { it.done }
         // To-dos have no favorite flag of their own.
         val favable = picked.filter { it.taskId == null }
@@ -179,12 +183,18 @@ fun RemindersBody(
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             shadowElevation = 6.dp,
         ) {
-            Row(Modifier.padding(horizontal = 8.dp, vertical = 10.dp)) {
+            Column {
+            Row(Modifier.padding(start = 24.dp, end = 8.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("${picked.size} selected", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                TextButton(onClick = { selected = if (allOn) emptyList() else list.map { it.key } }) { Text(if (allOn) "Deselect all" else "Select all") }
+                TextButton(onClick = done) { Text("Cancel") }
+            }
+            Row(Modifier.padding(start = 8.dp, end = 8.dp, bottom = 10.dp)) {
                 PillAction(if (allDone) "Restore" else "Complete", R.drawable.ic_circle_check, picked.isNotEmpty()) {
                     app.scope.launch {
                         picked.forEach { r ->
                             if (r.taskId != null) app.setTaskAttrs(r.noteId, r.taskId, mapOf("checked" to !allDone))
-                            else setDone(app, r, !allDone)
+                            else setDone(app, r.noteId, r.kind == "reminder", !allDone)
                         }
                     }
                     done()
@@ -193,12 +203,22 @@ fun RemindersBody(
                     app.scope.launch { favable.forEach { r -> app.updateNote(r.noteId) { n, _ -> n.put("favorite", !allFav) } } }
                     done()
                 }
-                PillAction("Delete", R.drawable.ic_trash, picked.isNotEmpty()) {
-                    app.scope.launch { picked.forEach { deleteReminder(app, it) } }
-                    done()
-                }
+                PillAction("Delete", R.drawable.ic_trash, picked.isNotEmpty()) { askDelete = true }
+            }
             }
         }
+        if (askDelete) AlertDialog(
+            onDismissRequest = { askDelete = false },
+            title = { Text(if (picked.size > 1) "Delete ${picked.size} reminders?" else "Delete reminder?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    askDelete = false
+                    app.scope.launch { picked.forEach { deleteReminder(app, it) } }
+                    done()
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { askDelete = false }) { Text("Cancel") } },
+        )
     }
     }
 }
@@ -224,13 +244,12 @@ private suspend fun deleteReminder(app: App, r: ReminderItem) = when {
 private suspend fun tick(app: App, r: ReminderItem) {
     if (r.taskId != null) return app.setTaskAttrs(r.noteId, r.taskId, mapOf("checked" to !r.done))
     if (r.repeat != null && !r.done) app.updateNote(r.noteId) { n, _ -> n.put("remindAt", nextRepeat(r.at, r.repeat, maxOf(r.at, LocalDateTime.now())).toString().take(16)) }
-    else setDone(app, r, !r.done)
+    else setDone(app, r.noteId, r.kind == "reminder", !r.done)
 }
 
 /** Completes or restores a note's own reminder; one made with Add reminder ticks or unticks its to-dos along with it. */
-private suspend fun setDone(app: App, r: ReminderItem, done: Boolean) {
-    val own = r.kind == "reminder"
-    app.updateNote(r.noteId, contentChanged = own) { n, now ->
+suspend fun setDone(app: App, noteId: String, own: Boolean, done: Boolean) {
+    app.updateNote(noteId, contentChanged = own) { n, now ->
         n.put("doneAt", if (done) now else JSONObject.NULL)
         if (own) n.put("content", checkAllTasks(n.getJSONObject("content"), done))
     }

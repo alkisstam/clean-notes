@@ -376,7 +376,7 @@ export async function tickReminder(r: ReminderItem) {
 }
 
 /** Completes or restores a reminder; one made with Add reminder ticks or unticks its to-dos with it. Its attached note is left alone. */
-export async function setReminderDone(r: ReminderItem, done: boolean) {
+export async function setReminderDone(r: Pick<ReminderItem, 'noteId' | 'taskId'>, done: boolean) {
   if (r.taskId) return setTaskAttrs(r.noteId, r.taskId, { checked: done });
   const note = await db.notes.get(r.noteId);
   if (!note) return;

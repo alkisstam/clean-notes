@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session, shell, Tray } from 'electron';
+import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -80,6 +81,12 @@ app.whenReady().then(() => {
     if (typeof next.autostart === 'boolean') setAutostart(next.autostart);
   });
   ipcMain.on('show-window', showWindow);
+  // Electron's notifications have no buttons on Linux; notify-send waits and prints the action picked, or nothing.
+  ipcMain.handle('notify', (_e, { title, body }) => {
+    if (process.platform !== 'linux') throw new Error('Linux only');
+    const args = ['-a', 'Sheaf Notes', '-i', path.join(dist, 'icons', 'icon-192.png'), '-A', 'default=Open', '-A', 'done=Done', '-A', 'dismiss=Dismiss', '--', String(title), String(body)];
+    return new Promise((resolve, reject) => execFile('notify-send', args, (err, out) => (err ? reject(err) : resolve(out.trim()))));
+  });
   ipcMain.handle('sync-server', () => server);
   ipcMain.handle('set-sync-server', (_e, url) => {
     const u = new URL(url);
