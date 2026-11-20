@@ -7,7 +7,9 @@ plugins {
 
 android {
     namespace = "io.cleannotes.app"
-    compileSdk = 36
+    compileSdk {
+        version = release(37) { minorApiLevel = 1 }
+    }
 
     defaultConfig {
         applicationId = "com.alkisstam.notes"
